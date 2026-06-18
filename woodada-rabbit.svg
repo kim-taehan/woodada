@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 322" width="680" height="322" role="img">
+<title>woodada 토끼 캐릭터 레퍼런스</title>
+<desc>귀여운 2.5등신 토끼 캐릭터의 기본(idle)·달리기(run)·낮잠(nap, 스킬) 세 포즈 시안. 파츠 분리 구조.</desc>
+
+<rect x="20" y="18" width="200" height="252" rx="14" fill="#FBF6EE" stroke="#E5D9C5" stroke-width="1"/>
+<rect x="240" y="18" width="200" height="252" rx="14" fill="#FBF6EE" stroke="#E5D9C5" stroke-width="1"/>
+<rect x="460" y="18" width="200" height="252" rx="14" fill="#FBF6EE" stroke="#E5D9C5" stroke-width="1"/>
+
+<g transform="translate(120,105)">
+<circle cx="30" cy="62" r="11" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<ellipse cx="0" cy="68" rx="29" ry="26" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<ellipse cx="-13" cy="94" rx="8" ry="11" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<ellipse cx="13" cy="94" rx="8" ry="11" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<path d="M-19,-32 C-29,-60 -25,-78 -14,-78 C-7,-78 -10,-54 -11,-32 Z" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M-16,-36 C-22,-56 -20,-70 -14,-70 C-10,-70 -11,-52 -12,-36 Z" fill="#EF9BB0"/>
+<path d="M11,-32 C17,-54 18,-66 13,-68 C7,-70 3,-58 8,-50 C11,-46 9,-40 10,-32 Z" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M10,-36 C14,-52 14,-60 11,-62 C8,-62 6,-54 9,-48 Z" fill="#EF9BB0"/>
+<circle cx="0" cy="0" r="41" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<ellipse cx="-27" cy="12" rx="7.5" ry="4.5" fill="#F2A6B6"/>
+<ellipse cx="27" cy="12" rx="7.5" ry="4.5" fill="#F2A6B6"/>
+<circle cx="-16" cy="-1" r="8.5" fill="#2E2620"/>
+<circle cx="16" cy="-1" r="8.5" fill="#2E2620"/>
+<circle cx="-18" cy="-4" r="2.8" fill="#FFFFFF"/>
+<circle cx="14" cy="-4" r="2.8" fill="#FFFFFF"/>
+<path d="M-4,5 Q0,4 4,5 Q2,10 0,11 Q-2,10 -4,5 Z" fill="#EF9BB0"/>
+<path d="M0,11 L0,14" fill="none" stroke="#A99CB2" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M0,14 Q-5,18 -9,15" fill="none" stroke="#A99CB2" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M0,14 Q5,18 9,15" fill="none" stroke="#A99CB2" stroke-width="1.8" stroke-linecap="round"/>
+<rect x="-3" y="15.5" width="2.6" height="4" rx="1" fill="#FFFFFF" stroke="#C9BFD0" stroke-width="0.8"/>
+<rect x="0.4" y="15.5" width="2.6" height="4" rx="1" fill="#FFFFFF" stroke="#C9BFD0" stroke-width="0.8"/>
+</g>
+
+<g transform="translate(340,105)">
+<line x1="-72" y1="-18" x2="-48" y2="-22" stroke="#C9BFD0" stroke-width="3" stroke-linecap="round"/>
+<line x1="-78" y1="-2" x2="-52" y2="-4" stroke="#C9BFD0" stroke-width="3" stroke-linecap="round"/>
+<line x1="-74" y1="14" x2="-50" y2="12" stroke="#C9BFD0" stroke-width="3" stroke-linecap="round"/>
+<circle cx="34" cy="60" r="10" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<path d="M-10,-26 C-42,-34 -56,-22 -54,-14 C-38,-20 -22,-18 -8,-22 Z" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M-12,-22 C-38,-30 -50,-20 -49,-14 C-36,-19 -24,-16 -12,-19 Z" fill="#EF9BB0"/>
+<path d="M-6,-30 C-36,-44 -52,-34 -50,-26 C-34,-32 -20,-28 -6,-26 Z" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5" stroke-linejoin="round"/>
+<g transform="rotate(-10)">
+<ellipse cx="2" cy="70" rx="31" ry="25" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+</g>
+<ellipse cx="-22" cy="96" rx="10" ry="14" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5" transform="rotate(28 -22 96)"/>
+<ellipse cx="30" cy="92" rx="8" ry="11" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5" transform="rotate(-20 30 92)"/>
+<ellipse cx="8" cy="100" rx="8" ry="11" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5" transform="rotate(10 8 100)"/>
+<circle cx="2" cy="-2" r="40" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<ellipse cx="-22" cy="12" rx="7" ry="4.5" fill="#F2A6B6"/>
+<ellipse cx="26" cy="12" rx="7" ry="4.5" fill="#F2A6B6"/>
+<circle cx="-13" cy="-3" r="8.5" fill="#2E2620"/>
+<circle cx="19" cy="-3" r="8.5" fill="#2E2620"/>
+<circle cx="-15" cy="-6" r="2.8" fill="#FFFFFF"/>
+<circle cx="17" cy="-6" r="2.8" fill="#FFFFFF"/>
+<path d="M0,4 Q4,3 8,4 Q6,9 4,10 Q2,9 0,4 Z" fill="#EF9BB0"/>
+<path d="M-6,14 Q3,21 14,15" fill="none" stroke="#A99CB2" stroke-width="1.8" stroke-linecap="round"/>
+<ellipse cx="4" cy="18" rx="5" ry="6" fill="#EF9BB0"/>
+</g>
+
+<g transform="translate(560,105)">
+<text x="40" y="-24" font-family="sans-serif" font-size="16" fill="#A99CB2">z</text>
+<text x="50" y="-40" font-family="sans-serif" font-size="20" fill="#A99CB2">z</text>
+<text x="62" y="-58" font-family="sans-serif" font-size="25" fill="#A99CB2">z</text>
+<circle cx="30" cy="64" r="11" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<ellipse cx="0" cy="70" rx="30" ry="26" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<ellipse cx="-13" cy="96" rx="8" ry="10" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<ellipse cx="13" cy="96" rx="8" ry="10" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<path d="M-17,-30 C-25,-46 -25,-60 -18,-62 C-12,-63 -13,-44 -12,-30 Z" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M-15,-34 C-20,-46 -20,-56 -16,-57 C-13,-57 -13,-44 -12,-34 Z" fill="#EF9BB0"/>
+<path d="M12,-30 C22,-40 24,-30 19,-22 C14,-26 11,-28 10,-30 Z" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5" stroke-linejoin="round"/>
+<path d="M13,-30 C20,-37 21,-30 18,-25 C14,-27 12,-29 11,-30 Z" fill="#EF9BB0"/>
+<circle cx="0" cy="0" r="41" fill="#F5F1EC" stroke="#A99CB2" stroke-width="2.5"/>
+<ellipse cx="-27" cy="13" rx="7.5" ry="4.5" fill="#F2A6B6"/>
+<ellipse cx="27" cy="13" rx="7.5" ry="4.5" fill="#F2A6B6"/>
+<path d="M-23,-2 Q-16,5 -9,-2" fill="none" stroke="#2E2620" stroke-width="3" stroke-linecap="round"/>
+<path d="M9,-2 Q16,5 23,-2" fill="none" stroke="#2E2620" stroke-width="3" stroke-linecap="round"/>
+<path d="M-4,6 Q0,5 4,6 Q2,11 0,12 Q-2,11 -4,6 Z" fill="#EF9BB0"/>
+<path d="M-5,14 Q0,18 5,14" fill="none" stroke="#A99CB2" stroke-width="1.8" stroke-linecap="round"/>
+</g>
+
+<text x="120" y="293" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#8A6A3A">기본 (idle)</text>
+<text x="340" y="293" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#8A6A3A">달리기 (run)</text>
+<text x="560" y="293" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#8A6A3A">낮잠 (nap)</text>
+</svg>

@@ -1,0 +1,48 @@
+import { describe, it, expect } from 'vitest';
+import { simulateRace } from '../../src/engine/RaceEngine.ts';
+import { createDefaultSkillRegistry } from '../../src/engine/skills/index.ts';
+import { createDefaultScoringRegistry } from '../../src/engine/scoring/index.ts';
+import { makeConfig, allThree } from './helpers.ts';
+
+const skills = createDefaultSkillRegistry();
+const scoring = createDefaultScoringRegistry();
+
+/**
+ * Spec §3 / §14: no character or start-slot should be heavily advantaged.
+ *
+ * NOTE: precise win-rate balance is intentionally DEFERRED while we iterate on
+ * gameplay feel (skill numbers/behaviour may still change). These are loose
+ * sanity checks — every character/slot must be able to win and none may
+ * dominate — not the final ±tolerance balance gate.
+ */
+describe('engine fairness (loose sanity — balance tuned later)', () => {
+  const N = 1200;
+  const ids = [...allThree, ...allThree]; // dog, cat, monkey, eagle, bear ×2 (new roster)
+  const charOfSlot = ids;
+
+  it('every character can win and none dominates', () => {
+    const wins: Record<string, number> = Object.fromEntries(allThree.map((c) => [c, 0]));
+    for (let s = 0; s < N; s++) {
+      const { result } = simulateRace(makeConfig({ characterIds: ids, seed: s }), skills, scoring);
+      wins[charOfSlot[Number(result.order[0].slice(1))]]++;
+    }
+    for (const cid of allThree) {
+      const rate = wins[cid] / N;
+      expect(rate).toBeGreaterThan(0.1); // can win
+      expect(rate).toBeLessThan(0.6); // does not dominate
+    }
+  });
+
+  it('every start slot can win and none dominates', () => {
+    const slotWins = new Array(ids.length).fill(0);
+    for (let s = 0; s < N; s++) {
+      const { result } = simulateRace(makeConfig({ characterIds: ids, seed: s }), skills, scoring);
+      slotWins[Number(result.order[0].slice(1))]++;
+    }
+    const expected = N / ids.length;
+    for (let i = 0; i < ids.length; i++) {
+      expect(slotWins[i]).toBeGreaterThan(expected * 0.3);
+      expect(slotWins[i]).toBeLessThan(expected * 2.2);
+    }
+  });
+});
