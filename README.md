@@ -3,6 +3,8 @@
 귀여운 동물들이 원형 트랙을 달려 순위를 정하는 **동물 경주 추첨 게임**. 사다리 게임처럼
 "이름 넣고 → 출발 → 결과 본다"가 3초 안에 끝난다.
 
+🎮 **플레이: https://kim-taehan.github.io/woodada/** (main 푸시 시 GitHub Actions로 자동 배포)
+
 ## 실행
 
 ```bash

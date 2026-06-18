@@ -11,6 +11,7 @@ import { defaultCharacterIds, characterCatalog } from '../../data/characters/ind
 import { gameModes } from '../../data/modes.ts';
 import { teamOrder, teamPalette, type TeamId } from '../../data/teams.ts';
 import { randomName } from '../../data/names.ts';
+import { openGuide } from './GuideOverlay.ts';
 
 const CHAR_LABEL: Record<string, string> = { dog: '🐶', cat: '🐱', monkey: '🐒', eagle: '🦅', bear: '🐻', penguin: '🐧' };
 const TEAM_EMOJI: Record<TeamId, string> = { red: '🔴', blue: '🔵', white: '⚪', black: '⚫' };
@@ -173,9 +174,13 @@ export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLEle
 
   startBtn.addEventListener('click', () => { if (!startBtn.disabled) onStart(); });
 
+  const guideBtn = el('button', { class: 'guide-btn', textContent: '📖 게임 가이드 (캐릭터·아이템)' });
+  guideBtn.addEventListener('click', () => openGuide('characters'));
+
   const setupEl = el('div', { class: 'setup' }, [
     el('h1', { class: 'title' }, [el('span', { class: 'emoji', textContent: '🐾 ' }), '우다다']),
     el('p', { class: 'subtitle', textContent: '모드 고르고 → 이름 넣고 → 출발!' }),
+    el('div', { class: 'guide-row' }, [guideBtn]),
     el('div', { class: 'mode-row' }, [indivBtn, teamBtn]),
     el('div', { class: 'opts-row' }, [
       el('span', { class: 'opt-group' }, [el('label', { textContent: '바퀴 수' }), lapsSelect]),
