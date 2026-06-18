@@ -46,6 +46,12 @@ interface CaptureOpts {
   teamIds?: string[];
   /** Relay (이어달리기) mode (waiting queue, baton hand-off, leg counter). */
   relay?: boolean;
+  /**
+   * Capture-only: after seeking to the end, advance the renderer's post-finish
+   * coast/scatter/emote clock by this many frames (engine untouched) so the
+   * settled celebration tableau (#33) can be shot. Ignored mid-race.
+   */
+  settleFrames?: number;
 }
 
 const DEFAULT_IDS = ['penguin', 'dog', 'cat', 'monkey', 'eagle', 'bear'];
@@ -60,10 +66,46 @@ const hooks = {
     let busiestFrame = 0;
     let busiestCount = 0;
     let finalLapFrame = 0;
+    // Eagle divebomb self-botch: a 'hit' whose target is the actor (lost gamble).
+    // Captured separately so the renderer's distinct self-crash FX can be shot.
+    let divebombSelfFrame = -1;
+    // First frame a penguin is inside an active icefield zone (belly-slide pose).
+    let penguinIceFrame = -1;
+    // First frame a cat is hopping clear over an icefield zone (engine-flagged
+    // iceJumping → renderer jump pose). Captured for the cat ice-hop proof shot.
+    let catJumpFrame = -1;
+    const penguinIds = new Set(cfg.participants.filter((p) => p.characterId === 'penguin').map((p) => p.id));
+    const catIds = new Set(cfg.participants.filter((p) => p.characterId === 'cat').map((p) => p.id));
+    const inAnyZone = (progress: number, zones: { startProgress: number; length: number }[]): boolean => {
+      const lapPos = ((progress % cfg.trackLength) + cfg.trackLength) % cfg.trackLength;
+      return zones.some((z) => {
+        const end = z.startProgress + z.length;
+        return end <= cfg.trackLength ? lapPos >= z.startProgress && lapPos < end : lapPos >= z.startProgress || lapPos < end - cfg.trackLength;
+      });
+    };
     frames.forEach((f) => {
       for (const e of f.events) {
         const key = `${e.type}:${e.variant}`;
         if (!(key in eventFrames)) eventFrames[key] = f.frame;
+        if (divebombSelfFrame < 0 && e.type === 'divebomb' && e.variant === 'hit' && e.targetId === e.racerId) {
+          divebombSelfFrame = f.frame;
+        }
+      }
+      if (penguinIceFrame < 0 && f.iceZones.length) {
+        for (const r of f.racers) {
+          if (penguinIds.has(r.id) && r.phase === 'running' && inAnyZone(r.progress, f.iceZones)) {
+            penguinIceFrame = f.frame;
+            break;
+          }
+        }
+      }
+      if (catJumpFrame < 0 && f.iceZones.length) {
+        for (const r of f.racers) {
+          if (catIds.has(r.id) && r.phase === 'running' && r.skill.iceJumping === true) {
+            catJumpFrame = f.frame;
+            break;
+          }
+        }
       }
       if (f.events.length > busiestCount) {
         busiestCount = f.events.length;
@@ -74,7 +116,7 @@ const hooks = {
         if (maxP >= cfg.trackLength * (laps - 1) && laps > 1) finalLapFrame = f.frame;
       }
     });
-    return { eventFrames, busiestFrame, busiestCount, finalLapFrame, totalFrames: frames.length, order: result.order };
+    return { eventFrames, busiestFrame, busiestCount, finalLapFrame, divebombSelfFrame, penguinIceFrame, catJumpFrame, totalFrames: frames.length, order: result.order };
   },
 
   /** Build a race and seek instantly to a frame index, then render it. */
@@ -88,6 +130,13 @@ const hooks = {
     const cfg = configFor(opts.characterIds ?? DEFAULT_IDS, opts.seed ?? 7, opts.laps ?? 1, opts.teamIds, opts.relay ?? false);
     const controller = new RaceController(renderer, cfg);
     controller.seek(frame);
+    // Capture-only: develop the post-finish coast/scatter/emote into its settled
+    // state (display-only; engine untouched). No-op unless the race has finished.
+    if (opts.settleFrames) controller.settle(opts.settleFrames);
+    // Let the just-spawned FX develop a few frames (grow rings, dizzy swirl,
+    // motion) so the deterministic still actually shows the effect, not its
+    // age-0 seed. Display-only; the simulation is untouched.
+    renderer.pumpFx(0.18);
   },
 };
 

@@ -38,11 +38,11 @@ export class RoomStore {
   /** Relay (이어달리기) toggle — Phase 2; kept here so config carries it. */
   relay = false;
 
-  addName(name: string): void {
+  addName(name: string, teamId?: TeamId): void {
     const trimmed = name.trim();
     if (!trimmed) return;
     if (this.drafts.length >= 16) return;
-    this.drafts.push({ name: trimmed });
+    this.drafts.push({ name: trimmed, teamId });
   }
 
   addBulk(text: string): void {

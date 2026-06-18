@@ -7,6 +7,7 @@ import { clear, el } from './dom.ts';
 import { RoomStore } from './store.ts';
 import { buildSetupScreen } from './screens/SetupScreen.ts';
 import { buildResultScreen } from './screens/ResultScreen.ts';
+import { recordOutcome } from './records.ts';
 import { RaceController } from './RaceController.ts';
 import { createRaceRenderer, type RaceRenderer } from '../renderer/RaceRenderer.ts';
 import type { RaceConfig, RaceResult } from '../engine/types.ts';
@@ -54,7 +55,26 @@ export class App {
     skip.remove();
 
     const result = await this.controller.run();
-    this.showResult(race, config, result);
+    // Don't jump to the podium: let the track keep showing the finish coast/
+    // scatter/emote (#33) and offer a big "시상식 보러가기" button (Feature C).
+    this.controller.coast();
+    this.showFinishGate(race, config, result);
+  }
+
+  /**
+   * Center overlay shown the moment the race ends. The track keeps animating
+   * underneath (controller.coast()); tapping the button switches to the podium
+   * + result card.
+   */
+  private showFinishGate(race: HTMLElement, config: RaceConfig, result: RaceResult): void {
+    const btn = el('button', { class: 'podium-gate', textContent: '🏆 시상식 보러가기' });
+    const gate = el('div', { class: 'finish-gate' }, [btn]);
+    btn.addEventListener('click', () => {
+      gate.remove();
+      this.controller?.showResult(result);
+      this.showResult(race, config, result);
+    });
+    race.append(gate);
   }
 
   private runCountdown(host: HTMLElement, skip: HTMLButtonElement): Promise<void> {
@@ -82,10 +102,14 @@ export class App {
   }
 
   private showResult(race: HTMLElement, config: RaceConfig, result: RaceResult): void {
+    // Compare + persist the per-mode best time (Feature B). Done once here, on
+    // the transition to the podium, so a new record is recorded exactly once.
+    const record = recordOutcome(config, result);
     const overlay = buildResultScreen(
       result,
       config,
       this.store.resultMapping,
+      record,
       () => {
         overlay.remove();
         void this.startRace();

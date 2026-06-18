@@ -21,6 +21,7 @@ export class RaceController {
   private engine: RaceEngine;
   private raf = 0;
   private running = false;
+  private coastRaf = 0;
 
   constructor(private renderer: RaceRenderer, config: RaceConfig) {
     this.engine = createRaceEngine(config, skills, scoring);
@@ -32,6 +33,10 @@ export class RaceController {
    * Run the race to the finish, animating with real-time pacing. Playback drops
    * to slow-motion for a moment whenever a skill fires, so each skill is easy to
    * read (this only affects display speed, never the deterministic outcome).
+   *
+   * On finish it resolves with the result but does NOT switch to the podium —
+   * the track keeps showing the post-finish coast/scatter/emote (#33) until the
+   * caller starts `coast()` and the user taps "시상식 보러가기" (Feature C).
    */
   run(): Promise<RaceResult> {
     this.running = true;
@@ -64,15 +69,38 @@ export class RaceController {
 
         if (this.engine.finished) {
           this.running = false;
-          const result = this.engine.result()!;
-          this.renderer.showResult(result);
-          resolve(result);
+          resolve(this.engine.result()!);
           return;
         }
         this.raf = requestAnimationFrame(tick);
       };
       this.raf = requestAnimationFrame(tick);
     });
+  }
+
+  /**
+   * After the race finishes, keep the track alive by advancing only the
+   * renderer's finish-clock (engine untouched) so the coast/scatter/emote (#33)
+   * plays out beneath the "시상식 보러가기" button. Loops until `stop()`. This is
+   * the live counterpart of the capture-only `settle()`.
+   */
+  coast(): void {
+    if (!this.engine.finished) return;
+    const last = this.engine.current();
+    let extra = 0;
+    const tick = () => {
+      extra += 1;
+      this.renderer.renderFrame({ ...last, frame: last.frame + extra, events: [] });
+      this.coastRaf = requestAnimationFrame(tick);
+    };
+    this.coastRaf = requestAnimationFrame(tick);
+  }
+
+  /** Switch the track to the podium tableau (called on "시상식 보러가기"). */
+  showResult(result: RaceResult): void {
+    cancelAnimationFrame(this.coastRaf);
+    this.coastRaf = 0;
+    this.renderer.showResult(result);
   }
 
   /** Seek instantly to a given frame index and render it (no animation). */
@@ -83,8 +111,23 @@ export class RaceController {
     }
   }
 
+  /**
+   * Capture-only (spec §13): once the race is over, re-render the final frame
+   * `extraFrames` further along by bumping only its frame index, so the renderer's
+   * display-only post-finish coast/scatter/emote (#33) develops into its settled
+   * tableau for a deterministic still. The engine is NOT stepped — the simulation
+   * is already done — this just advances the renderer's finish-clock.
+   */
+  settle(extraFrames: number): void {
+    if (!this.engine.finished) return;
+    const last = this.engine.current();
+    this.renderer.renderFrame({ ...last, frame: last.frame + extraFrames, events: [] });
+  }
+
   stop(): void {
     this.running = false;
     cancelAnimationFrame(this.raf);
+    cancelAnimationFrame(this.coastRaf);
+    this.coastRaf = 0;
   }
 }

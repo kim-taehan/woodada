@@ -31,6 +31,13 @@ interface RacerView {
   glow: Graphics;
   /** clock (seconds) until which the glow stays on. */
   glowUntil: number;
+  /**
+   * Eagle divebomb screen-space action: the clock at which the dive started, or
+   * -1 when not diving. During the window the sprite is lifted up the SCREEN
+   * (rises to an apex, hangs, then plunges fast) so "swooped up high then dove"
+   * reads in the top-down view. Pure visual offset — never touches simulation.
+   */
+  diveAt: number;
 }
 
 export interface RaceRenderer {
@@ -38,6 +45,12 @@ export interface RaceRenderer {
   buildScene(config: RaceConfig): void;
   renderFrame(frame: EngineFrame): void;
   showResult(result: RaceResult): void;
+  /**
+   * Advance only the FX particles (no engine step, no new events) by `seconds`,
+   * in small sub-steps, so grow/motion effects develop into a readable state for
+   * a deterministic still after a `seek`. Display-only; never touches simulation.
+   */
+  pumpFx(seconds: number): void;
   setReducedMotion(on: boolean): void;
   resize(width: number, height: number): void;
   destroy(): void;
@@ -48,6 +61,36 @@ type Pos = { x: number; y: number; heading: number };
 
 /** Base character scale (multiplied by per-point perspective). */
 const CHAR_SCALE = 0.52;
+
+// Eagle divebomb screen-space action timing (seconds from dive start).
+const DIVE_RISE = 0.34; // rise to the apex (eased out)
+const DIVE_HANG = 0.12; // pause at the top (the menacing hover)
+const DIVE_PLUNGE = 0.26; // fast plunge back down (eased in)
+const DIVE_TOTAL = DIVE_RISE + DIVE_HANG + DIVE_PLUNGE;
+const DIVE_LIFT = 150; // peak screen-Y rise (px) — "way up high"
+const DIVE_POP = 0.42; // extra scale at the apex (looks higher/closer to camera)
+// When the divebomb impact FX should land: near the bottom of the plunge.
+const IMPACT_DELAY = DIVE_RISE + DIVE_HANG + DIVE_PLUNGE * 0.82;
+
+/**
+ * Screen-space dive offset at `age` seconds into the dive: how far up the screen
+ * the eagle sits (`lift`, px upward) and a scale bump (`pop`). Rises to an apex,
+ * hangs, then plunges fast to 0. Returns null once the dive is over.
+ */
+function diveOffset(age: number): { lift: number; pop: number } | null {
+  if (age < 0 || age > DIVE_TOTAL) return null;
+  if (age < DIVE_RISE) {
+    const k = age / DIVE_RISE;
+    const e = 1 - (1 - k) * (1 - k); // ease-out: quick lift, settling at the top
+    return { lift: DIVE_LIFT * e, pop: DIVE_POP * e };
+  }
+  if (age < DIVE_RISE + DIVE_HANG) {
+    return { lift: DIVE_LIFT, pop: DIVE_POP }; // hang at the apex
+  }
+  const k = (age - DIVE_RISE - DIVE_HANG) / DIVE_PLUNGE;
+  const e = k * k; // ease-in: accelerating plunge
+  return { lift: DIVE_LIFT * (1 - e), pop: DIVE_POP * (1 - e) };
+}
 
 /**
  * Field-size auto-scaling. The "field" is how many racers share the track AT
@@ -95,12 +138,62 @@ function hexNum(hex: string): number {
   return parseInt(hex.replace('#', ''), 16);
 }
 
+/**
+ * True if a racer's one-lap position lies inside an active ice zone (mirrors the
+ * engine's `inZone`, wrap-aware). Display-only: it picks the penguin's belly-slide
+ * pose; it never changes the simulation (the engine already applied the boost).
+ */
+function lapPosInZones(progress: number, trackLength: number, zones: EngineFrame['iceZones']): boolean {
+  const lapPos = ((progress % trackLength) + trackLength) % trackLength;
+  for (const z of zones) {
+    const end = z.startProgress + z.length;
+    if (end <= trackLength) {
+      if (lapPos >= z.startProgress && lapPos < end) return true;
+    } else if (lapPos >= z.startProgress || lapPos < end - trackLength) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Bottom-left margin + assumed full (3-row) height of the live TOP-3 HUD. */
 const TOP_HUD_MARGIN = 16;
 const TOP_HUD_H = 120; // title + 3 rows; pins the card's top so it sits in the corner
 
 function isTeamId(id: string | undefined): id is TeamId {
   return id !== undefined && id in teamPalette;
+}
+
+/**
+ * Deterministic hash of a racer id → a stable [0,1) value. Used for the
+ * post-finish free-scatter offsets so the layout is reproducible (no
+ * Math.random) — same (config+seed) yields the same celebration tableau.
+ */
+function hash01(id: string, salt: number): number {
+  let h = 2166136261 ^ salt;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  // Mix and fold to [0,1).
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  h ^= h >>> 15;
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+// --- Post-finish "coast → free scatter → emote" tuning (display-only, #33) ---
+// A finished racer keeps gliding past the line, decelerating, then settles into
+// a deterministically-scattered spot in the open infield by the finish and
+// celebrates/slumps by placement. All driven off (frame - finishedAt), so it is
+// reproducible and never touches the simulation.
+const COAST_SECS = 0.7; // ease-out glide from the line to the settle spot
+const SCATTER_RX = 46; // per-racer horizontal jitter around its rank slot (px)
+const SCATTER_RY = 64; // vertical jitter — fans them off the lane line (px)
+
+function easeOutCubic(t: number): number {
+  const c = Math.max(0, Math.min(1, t));
+  return 1 - (1 - c) * (1 - c) * (1 - c);
 }
 
 export function createRaceRenderer(): RaceRenderer {
@@ -114,6 +207,9 @@ export function createRaceRenderer(): RaceRenderer {
   const boxLayer = new Container();
   const boxSprites = new Map<string, Container>();
   const boxBorn = new Map<string, number>();
+  // Penguin icefield: a slick patch drawn on the track from EngineFrame.iceZones.
+  // Redrawn each frame (zones are few and short-lived). Sits under the racers.
+  const iceLayer = new Container();
   const commentary = new CommentaryBar();
   let namesById: Record<string, string> = {};
   // Character id per racer — lets the renderer recognise a cat shrugging off a
@@ -121,9 +217,18 @@ export function createRaceRenderer(): RaceRenderer {
   const charIdById = new Map<string, string>();
   let leaderPrev: string | null = null;
   let lastLeadSay = -100;
+  // Star-invincibility window per racer (engine frame index until). Refreshed each
+  // frame from RacerState.skill.starUntil so playEvent can branch a deflected hit
+  // into a "star shield" and renderFrame can draw the ongoing rainbow shimmer.
+  const starUntilById = new Map<string, number>();
+  let curFrameIdx = 0;
   let scoreboard: Scoreboard | null = null;
   let topHud: TopRankHud | null = null;
   const views = new Map<string, RacerView>();
+  // Deferred FX scheduled to fire at a future clock — used to land the eagle's
+  // divebomb impact (feathers/stars/dizzy) at the BOTTOM of its screen-space dive
+  // rather than at the instant of the event. Drained by renderFrame + pumpFx.
+  const pendingFx: { at: number; fn: () => void }[] = [];
   let reducedMotion = false;
   let clock = 0;
   let lastTime = 0;
@@ -217,11 +322,109 @@ export function createRaceRenderer(): RaceRenderer {
     return c;
   }
 
+  /**
+   * Draw the penguin's active ice zones onto the track (under the racers, above
+   * the red track so it stands out). Each zone is a vivid cyan slick spanning the
+   * full lane width — a chilly fill, a bright white rim, a glossy shine streak,
+   * and ❄️ glints — so the "slippery patch" reads instantly against the red track.
+   * Fades out smoothly in its final frames. Purely visual; never feeds back.
+   *
+   * A zone may wrap past the start/finish line (start + length > trackLength); we
+   * split it into ≤2 lap-space segments so it never smears across the whole oval.
+   */
+  function drawIce(zones: EngineFrame['iceZones'], trackLength: number, frameIdx: number): void {
+    iceLayer.removeChildren();
+    if (!zones.length) return;
+    const span = track.geo.laneSpan;
+    const innerOff = track.laneOffset(0) - span * 0.28; // bleed a touch past lane 0
+    const outerOff = track.laneOffset(1) + span * 0.28; // …and past the outer lane
+    const FADE_FRAMES = 18; // smooth fade-out over the last ~0.3s
+    const ICE = 0x5bc8e8; // penguin palette `water` — chilly cyan
+
+    const drawSeg = (startU: number, lenU: number, alpha: number): void => {
+      const g = new Graphics();
+      const steps = 16;
+      const inner: { x: number; y: number }[] = [];
+      const outer: { x: number; y: number }[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const u = (startU + (lenU * i) / steps) % 1;
+        inner.push(track.pointAt(u, innerOff));
+        outer.push(track.pointAt(u, outerOff));
+      }
+      g.moveTo(inner[0].x, inner[0].y);
+      for (const pt of inner) g.lineTo(pt.x, pt.y);
+      for (let i = outer.length - 1; i >= 0; i--) g.lineTo(outer[i].x, outer[i].y);
+      g.closePath();
+      // Solid-ish chilly fill + a thick bright rim so it pops off the red track.
+      g.fill({ color: ICE, alpha: 0.72 * alpha });
+      g.stroke({ color: 0xffffff, width: 4, alpha: 0.95 * alpha });
+      iceLayer.addChild(g);
+
+      // Glossy shine: a paler ribbon hugging the inner half of the band.
+      const shine = new Graphics();
+      const sOuter = (innerOff + outerOff) / 2;
+      const si: { x: number; y: number }[] = [];
+      const so: { x: number; y: number }[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const u = (startU + (lenU * i) / steps) % 1;
+        si.push(track.pointAt(u, innerOff + span * 0.08));
+        so.push(track.pointAt(u, sOuter));
+      }
+      shine.moveTo(si[0].x, si[0].y);
+      for (const pt of si) shine.lineTo(pt.x, pt.y);
+      for (let i = so.length - 1; i >= 0; i--) shine.lineTo(so[i].x, so[i].y);
+      shine.closePath();
+      shine.fill({ color: 0xeafaff, alpha: 0.45 * alpha });
+      iceLayer.addChild(shine);
+
+      // ❄️ glints down the centre.
+      for (let i = 2; i < steps; i += 4) {
+        const u = (startU + (lenU * i) / steps) % 1;
+        const c = track.pointAt(u, (innerOff + outerOff) / 2);
+        const flake = new Text({ text: '❄️', style: { fontSize: 20 } });
+        flake.anchor.set(0.5);
+        flake.position.set(c.x, c.y);
+        flake.scale.set(c.scale * 0.9);
+        flake.alpha = alpha;
+        iceLayer.addChild(flake);
+      }
+    };
+
+    for (const z of zones) {
+      const remain = z.activeUntil - frameIdx;
+      const alpha = remain >= FADE_FRAMES ? 1 : Math.max(0, remain / FADE_FRAMES);
+      if (alpha <= 0) continue;
+      const start = ((z.startProgress % trackLength) + trackLength) % trackLength;
+      const end = start + z.length;
+      if (end <= trackLength) {
+        drawSeg(start / trackLength, z.length / trackLength, alpha);
+      } else {
+        // Wraps the line: split into [start, trackLength) and [0, overflow).
+        drawSeg(start / trackLength, (trackLength - start) / trackLength, alpha);
+        drawSeg(0, (end - trackLength) / trackLength, alpha);
+      }
+    }
+  }
+
   function rebuildTrack(): void {
     track = new OvalTrack(ovalForCanvas(width, height, fieldBand));
     trackLayer.removeFromParent();
-    trackLayer = buildTrackScene(track, width, height);
+    trackLayer = buildTrackScene(track, width, height, config?.relay ?? false);
     app.stage.addChildAt(trackLayer, 0);
+  }
+
+  /** Queue an FX callback to fire once `clock` reaches `at` (drained each frame). */
+  function scheduleFx(at: number, fn: () => void): void {
+    pendingFx.push({ at, fn });
+  }
+
+  /** Fire any scheduled FX whose time has arrived (in chronological order). */
+  function drainPendingFx(): void {
+    if (!pendingFx.length) return;
+    pendingFx.sort((a, b) => a.at - b.at);
+    while (pendingFx.length && pendingFx[0].at <= clock) {
+      pendingFx.shift()!.fn();
+    }
   }
 
   function playEvent(e: SkillEvent, posById: Map<string, Pos>): void {
@@ -244,6 +447,9 @@ export function createRaceRenderer(): RaceRenderer {
     if (reducedMotion) return;
 
     const dir = self.heading >= 0 ? 1 : -1;
+    // A dodge where the TARGET is currently star-invincible is a "star deflect"
+    // (the star no-sold the hit), not a cat catwalk slip. Branch the FX/glow.
+    const targetStarred = e.variant === 'dodge' && !!e.targetId && (starUntilById.get(e.targetId) ?? -1) > curFrameIdx;
     switch (`${e.type}:${e.variant}`) {
       case 'zoomies:activate':
         fx.dust(self.x, self.y + 14, clock);
@@ -259,22 +465,48 @@ export function createRaceRenderer(): RaceRenderer {
         fx.sparkle(self.x, self.y, clock);
         fx.whiff(self.x, self.y, clock);
         break;
-      case 'snatch:activate':
-        // Eagle dives — a swoop streak from above the actor toward the target
-        // (or straight ahead if the strike point isn't known yet).
-        fx.swoop(self.x, self.y - 60, (at ?? self).x, (at ?? self).y, clock);
+      case 'divebomb:activate':
+        // Eagle soars UP the screen then plunges (screen-space action — sets the
+        // dive on the actor's view). The streak + speed-lines fly as it leaves.
+        v.diveAt = clock;
         fx.speedLines(self.x, self.y - 6, dir, clock);
         break;
-      case 'snatch:hit':
-        // Target is yanked up and dragged back: feathers scatter + stars on it.
-        if (at) {
-          fx.feathers(at.x, at.y, clock);
-          fx.stars(at.x, at.y, clock);
+      case 'divebomb:dodge':
+        // Cat slipped the dive — talons close on empty air over the (escaped) cat.
+        // Delay to the bottom of the plunge so the whiff lands as the eagle arrives.
+        // If a star racer deflected it, flash a shield there instead of a whiff.
+        if (targetStarred && at) {
+          scheduleFx(clock + IMPACT_DELAY, () => {
+            const a = (e.targetId ? posById.get(e.targetId) : undefined) ?? at;
+            fx.starShield(a.x, a.y, clock + IMPACT_DELAY);
+          });
+        } else {
+          scheduleFx(clock + IMPACT_DELAY, () => fx.whiff((at ?? self).x, (at ?? self).y, clock + IMPACT_DELAY));
         }
         break;
-      case 'snatch:dodge':
-        // Whiffed grab — talons close on empty air over the (escaped) target.
-        fx.whiff((at ?? self).x, (at ?? self).y, clock);
+      case 'divebomb:hit':
+        if (e.targetId === e.racerId) {
+          // Gamble lost — the eagle face-plants ITSELF at the bottom of its dive:
+          // a hard dust burst, an impact pop, and dizzy swirl as it crashes.
+          scheduleFx(clock + IMPACT_DELAY, () => {
+            const p = posById.get(e.racerId) ?? self;
+            fx.swoop(p.x, p.y - 70, p.x, p.y, clock + IMPACT_DELAY);
+            fx.dust(p.x, p.y + 12, clock + IMPACT_DELAY);
+            fx.pop(p.x, p.y, v.tint, clock + IMPACT_DELAY);
+            fx.dizzy(p.x, p.y, clock + IMPACT_DELAY);
+          });
+        } else if (at) {
+          // Strike connects at the bottom of the dive — the target is slammed:
+          // a swoop streak in, feathers scatter, stars, and a dizzy stun (so the
+          // victim reads as "stunned" like a bear-roar hit).
+          scheduleFx(clock + IMPACT_DELAY, () => {
+            const a = (e.targetId ? posById.get(e.targetId) : undefined) ?? at;
+            fx.swoop(a.x, a.y - 70, a.x, a.y, clock + IMPACT_DELAY);
+            fx.feathers(a.x, a.y, clock + IMPACT_DELAY);
+            fx.stars(a.x, a.y, clock + IMPACT_DELAY);
+            fx.dizzy(a.x, a.y, clock + IMPACT_DELAY);
+          });
+        }
         break;
       case 'banana:hit':
         if (at) {
@@ -285,19 +517,48 @@ export function createRaceRenderer(): RaceRenderer {
       case 'banana:dodge':
         if (at) {
           fx.bananaThrow(self.x, self.y - 6, at.x + 30, at.y - 20, clock);
-          fx.whiff(at.x, at.y, clock);
+          if (targetStarred) fx.starShield(at.x, at.y, clock);
+          else fx.whiff(at.x, at.y, clock);
         }
         break;
-      case 'item:boost':
-        fx.dust(self.x, self.y + 14, clock);
-        fx.speedLines(self.x, self.y - 6, dir, clock);
+      case 'item:star':
+        // ⭐ Star: a loud rainbow burst on the eater the instant it goes invincible.
+        // The ongoing "I'm invincible NOW" shimmer is drawn in renderFrame while the
+        // star window stays live (starUntilById).
+        fx.starBurst(self.x, self.y, clock);
         break;
-      case 'item:slip':
-        fx.stars(self.x, self.y, clock);
+      case 'item:lightning':
+        // ⚡ Lightning: full-screen flash + a bolt onto the eater. Everyone else
+        // is slowed by the engine; visually they simply sag back.
+        fx.lightning(self.x, self.y, width, height, clock);
+        break;
+      case 'item:fart':
+        // 💨 Fart cloud trailing behind the eater (those behind get slowed).
+        fx.fart(self.x, self.y, dir, clock);
+        break;
+      case 'item:shell':
+        // 🐢 Shell launch toss out in front of the eater (the bonk lands on
+        // the shellhit event against the current leader).
+        fx.shellThrow(self.x, self.y - 6, self.x + dir * 60, self.y - 30, clock);
+        break;
+      case 'item:shellhit':
+        // 🐢 Shell connects on the current leader (targetId) — bonk + dizzy stun,
+        // reusing the roar/divebomb stun read. If the leader ate its own shell,
+        // targetId === racerId and it lands on the eater itself.
+        if (at) {
+          fx.shellThrow(self.x, self.y - 6, at.x, at.y - 6, clock);
+          fx.stars(at.x, at.y, clock);
+          fx.dizzy(at.x, at.y, clock);
+        }
         break;
       case 'roar:activate':
         fx.shockwave(self.x, self.y, clock);
         fx.dust(self.x, self.y + 12, clock);
+        break;
+      case 'roar:hit':
+        // Per-victim stagger from the roar's shockwave: dizzy swirl + impact ring
+        // on the struck racer (distinct from a banana's slip). Many fire at once.
+        if (at) fx.dizzy(at.x, at.y, clock);
         break;
       case 'relay:handoff': {
         // Baton from the finisher to the outgoing teammate, near the line.
@@ -314,14 +575,104 @@ export function createRaceRenderer(): RaceRenderer {
       }
     }
 
-    // Catwalk immunity "냐옹" flash: any disruption (banana/roar/snatch) that is
-    // shrugged off surfaces as a `<attacker>:dodge` whose target is the cat. Flash
-    // a shimmer + brief glow on the cat itself so it's clear who No-Sold the hit.
+    // A shrugged-off disruption surfaces as a `<attacker>:dodge` (targetId = the
+    // racer who No-Sold it). Two reasons it can be dodged:
+    //  • Star invincibility → flash a ⭐ shield + glow on the (any) star racer.
+    //  • Cat catwalk immunity → the cat's "냐옹" shimmer + brief glow.
     // (Commentary is left to the attacker's dodge line so the bar doesn't double up.)
-    if (e.variant === 'dodge' && e.targetId && at && v2 && charIdById.get(e.targetId) === 'cat') {
-      fx.sparkle(at.x, at.y, clock);
-      v2.glowUntil = Math.max(v2.glowUntil, clock + 0.8);
+    // The roar dodge has no switch case above, so its shield/shimmer is raised here.
+    if (e.variant === 'dodge' && e.targetId && at && v2) {
+      if (targetStarred) {
+        if (e.type === 'roar') fx.starShield(at.x, at.y, clock); // roar has no case above
+        v2.glowUntil = Math.max(v2.glowUntil, clock + 1.0);
+      } else if (charIdById.get(e.targetId) === 'cat') {
+        fx.sparkle(at.x, at.y, clock);
+        v2.glowUntil = Math.max(v2.glowUntil, clock + 0.8);
+      }
     }
+  }
+
+  /**
+   * Place a racer that has already crossed the line (#33). It coasts a short way
+   * past the finish (ease-out glide), settles into a deterministically-scattered
+   * spot in the open area by the bottom-right finish (NOT a tidy lane line), and
+   * then emotes by placement: leaders bounce/cheer with ✨💗, the back-marker
+   * slumps with a 💧, the middle just idles. Everything keys off (frame -
+   * finishedAt) + an id-hash so the still is reproducible. Display-only.
+   */
+  function placeFinished(
+    r: RacerState,
+    v: RacerView,
+    fieldCount: number,
+    frameIdx: number,
+    posById: Map<string, Pos>,
+  ): void {
+    const rank = r.rank ?? fieldCount;
+    // Where it crossed: the live track point at the finish corner.
+    const cross = track.place(r.progress, config!.trackLength, r.lane);
+
+    // Scatter target: a loose cloud strewn down the open RIGHT HALF of the
+    // bottom straight — the empty space the field coasts into past the centre
+    // finish line. Each racer's slot fans out by PLACEMENT (1st furthest right,
+    // having coasted on; trailing places nearer the centre line), then a
+    // deterministic id-hash jitter so it's a free huddle — never a tidy lane
+    // line. Anchored clear of the right curve and the corner HUDs.
+    const geo = track.geo;
+    // Rank lays the racers out along the straight's right half, 1st furthest
+    // right (coasted on), the field trailing back toward the centre finish.
+    const rankFrac = fieldCount > 1 ? (rank - 1) / (fieldCount - 1) : 0; // 0=1st .. 1=last
+    const anchorX = geo.cx + geo.straightHalf * 0.82 - rankFrac * geo.straightHalf * 0.7;
+    const anchorY = geo.cy + geo.radius + geo.laneSpan * 0.12;
+    const hx = hash01(r.id, 1) * 2 - 1; // [-1,1)
+    const hy = hash01(r.id, 2) * 2 - 1;
+    const targetX = anchorX + hx * SCATTER_RX;
+    const targetY = anchorY + hy * SCATTER_RY;
+
+    // Coast: ease-out glide from the crossing point to the settle spot.
+    const secs = Math.max(0, (frameIdx - r.finishedAt!)) / 60;
+    const k = easeOutCubic(secs / COAST_SECS);
+    const x = cross.x + (targetX - cross.x) * k;
+    const y = cross.y + (targetY - cross.y) * k;
+
+    // Perspective scale tracks the screen-Y of the settle spot (nearer = bigger).
+    const depthScale = 0.82 + ((y - (geo.cy - geo.radius)) / (2 * geo.radius)) * 0.36;
+    const baseScale = CHAR_SCALE * depthScale * v.size * fieldScale;
+    v.character.root.scale.set(baseScale);
+    v.character.root.position.set(x, y);
+    v.character.root.zIndex = 80000 + y; // celebrating crowd sits above the track
+
+    // Emote tier by placement (only once settled, so the coast reads as a glide,
+    // not an instant jig). Top 3 cheer; the very back slumps; the rest idle.
+    const settled = k > 0.85;
+    let phase: string = 'finished'; // win pose, standing tall while gliding in
+    const top3 = rank <= 3;
+    const lastish = rank >= fieldCount; // dead last
+    if (settled) phase = top3 ? 'celebrate' : lastish ? 'dejected' : 'finished';
+    v.character.update({
+      phase,
+      speedNorm: top3 ? 1 : 0.4,
+      clock,
+      facing: 0,
+      heading: 1,
+      reducedMotion,
+    });
+    v.tag.setPosition(x, y - 66 * depthScale * fieldScale);
+    v.tag.root.zIndex = 100000 + y;
+    v.glow.visible = false;
+
+    // Celebration sparkle/heart shower for the podium-bound; a sad sweat-drop for
+    // the back-marker. Throttled + deterministic-ish via clock phase; suppressed
+    // under reduced motion.
+    if (settled && !reducedMotion) {
+      if (top3) {
+        if (Math.sin(clock * 9 + rank) > 0.7) fx.sparkle(x + hx * 18, y - 70 + hy * 8, clock);
+        if (Math.sin(clock * 5 + rank * 1.7) > 0.85) fx.heart(x, y - 78, clock);
+      } else if (lastish && Math.sin(clock * 3) > 0.9) {
+        fx.sweat(x + 14, y - 52, clock);
+      }
+    }
+
+    posById.set(r.id, { x, y, heading: 1 });
   }
 
   const renderer: RaceRenderer = {
@@ -341,7 +692,7 @@ export function createRaceRenderer(): RaceRenderer {
         autoDensity: true,
       });
       parent.appendChild(app.canvas);
-      app.stage.addChild(boxLayer, charLayer, bubbles.root, fx.root, commentary.root);
+      app.stage.addChild(iceLayer, boxLayer, charLayer, bubbles.root, fx.root, commentary.root);
       commentary.root.position.set(width / 2, height - 40);
     },
 
@@ -350,6 +701,7 @@ export function createRaceRenderer(): RaceRenderer {
       clearPodium();
       for (const v of views.values()) v.character.destroy();
       views.clear();
+      pendingFx.length = 0;
       charLayer.removeChildren();
       bubbles.clear();
       fx.clear();
@@ -359,6 +711,8 @@ export function createRaceRenderer(): RaceRenderer {
       boxSprites.clear();
       boxBorn.clear();
       boxLayer.visible = true;
+      iceLayer.removeChildren();
+      iceLayer.visible = true;
       commentary.hide();
       leaderPrev = null;
       lastLeadSay = -100;
@@ -394,7 +748,7 @@ export function createRaceRenderer(): RaceRenderer {
         character.root.addChildAt(glow, 0); // behind the body
         const tag = new NameTag(p.name, tint);
         charLayer.addChild(character.root, tag.root);
-        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0 });
+        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0, diveAt: -1 });
         names[p.id] = p.name;
       }
       namesById = names;
@@ -436,11 +790,20 @@ export function createRaceRenderer(): RaceRenderer {
       const dt = lastTime ? (frame.time - lastTime) / 1000 : 1 / 60;
       lastTime = frame.time;
       clock += dt;
+      curFrameIdx = frame.frame;
+      // Refresh star-invincibility windows so playEvent can branch deflected hits
+      // into a "star shield" and the loop below can shimmer active star racers.
+      starUntilById.clear();
+      for (const r of frame.racers) {
+        const su = r.skill.starUntil;
+        if (su !== undefined) starUntilById.set(r.id, su);
+      }
 
       const posById = new Map<string, Pos>();
       // Relay: collect waiting teammates so they queue off-track instead of
       // standing on the racing line. Drawn after the main loop, by team.
       const waiting: RacerState[] = [];
+      const fieldCount = frame.racers.length;
       for (const r of frame.racers) {
         const v = views.get(r.id);
         if (!v) continue;
@@ -448,31 +811,82 @@ export function createRaceRenderer(): RaceRenderer {
           waiting.push(r);
           continue;
         }
+        // ── Post-finish: coast past the line → free-scatter → emote by rank (#33).
+        // Display-only: positions are interpolated by (frame - finishedAt) and a
+        // deterministic id-hash, so the tableau is reproducible and never feeds
+        // back into the simulation (relay finals still queue via `waiting` above).
+        if (r.phase === 'finished' && r.finishedAt !== undefined && !config.relay) {
+          placeFinished(r, v, fieldCount, frame.frame, posById);
+          continue;
+        }
         const tp = track.place(r.progress, config.trackLength, r.lane);
-        v.character.root.position.set(tp.x, tp.y);
-        v.character.root.zIndex = tp.z;
-        v.character.root.scale.set(CHAR_SCALE * tp.scale * v.size * fieldScale);
+        // Screen-space travel direction (finite-difference, geometry-exact): its
+        // x-sign tells a side-profile character which way to face on the curves.
+        const heading = track.travelDir(r.progress, config.trackLength, r.lane).x;
+        const baseScale = CHAR_SCALE * tp.scale * v.size * fieldScale;
+        // Eagle divebomb (screen-space): lift it up the screen to an apex then
+        // plunge. Layered on top of the normal hover so it reads as "soared up,
+        // then dove" in the top-down view. Ends → diveAt reset.
+        let lift = 0;
+        if (v.diveAt >= 0) {
+          const d = diveOffset(clock - v.diveAt);
+          if (d) {
+            lift = d.lift;
+            v.character.root.scale.set(baseScale * (1 + d.pop));
+          } else {
+            v.diveAt = -1;
+            v.character.root.scale.set(baseScale);
+          }
+        } else {
+          v.character.root.scale.set(baseScale);
+        }
+        v.character.root.position.set(tp.x, tp.y - lift);
+        v.character.root.zIndex = lift > 0 ? 90000 + tp.z : tp.z; // dive sits above the field
+        // Penguin belly-slide: it goes prone while inside an active icefield zone
+        // (matches the engine's species boost). Display-only pose selection.
+        const onIce =
+          charIdById.get(r.id) === 'penguin' &&
+          frame.iceZones.length > 0 &&
+          lapPosInZones(r.progress, config.trackLength, frame.iceZones);
+        // Cat ice-hop: the engine flags when the nimble cat is bounding clear over
+        // an icefield zone (vs. slipping). Renderer plays the jump pose + a sparkle
+        // trail so the graceful leap reads at a glance. Display-only.
+        const iceJumping = charIdById.get(r.id) === 'cat' && r.skill.iceJumping === true;
+        if (iceJumping && !reducedMotion && Math.sin(clock * 11) > 0.6) {
+          fx.sparkle(tp.x, tp.y - lift - 18 * tp.scale * fieldScale, clock);
+        }
         v.character.update({
           phase: r.phase,
           speedNorm: Math.min(1, r.speed / 3),
           clock,
           facing: r.facing,
-          heading: Math.cos(tp.angle),
+          heading,
           reducedMotion,
+          onIce,
+          iceJumping,
         });
         v.tag.setPosition(tp.x, tp.y - 66 * tp.scale * fieldScale);
         v.tag.root.zIndex = 100000 + tp.z;
+
+        // ⭐ Star invincibility: while the window is live, force the glow on (it
+        // reads as "this racer is invincible RIGHT NOW") and rain a steady ⭐/✨
+        // shimmer around them, throttled so it stays sparse and deterministic.
+        const starred = (starUntilById.get(r.id) ?? -1) > frame.frame && !reducedMotion;
+        if (starred) v.glowUntil = Math.max(v.glowUntil, clock + dt + 0.05);
 
         // Pulse the skill-use glow.
         const glowing = clock < v.glowUntil && !reducedMotion;
         v.glow.visible = glowing;
         if (glowing) {
           v.glow.alpha = 0.45 + 0.3 * Math.sin(clock * 16);
-          const s = 1 + 0.12 * Math.sin(clock * 16);
+          const s = (starred ? 1.18 : 1) + 0.12 * Math.sin(clock * 16);
           v.glow.scale.set(s);
         }
+        if (starred && Math.sin(clock * 18) > 0.4) {
+          fx.starGlint(tp.x, tp.y - lift, clock);
+        }
 
-        posById.set(r.id, { x: tp.x, y: tp.y, heading: Math.cos(tp.angle) });
+        posById.set(r.id, { x: tp.x, y: tp.y, heading });
       }
 
       // Relay waiting queue: park each team's not-yet-running members in the
@@ -539,14 +953,22 @@ export function createRaceRenderer(): RaceRenderer {
         sprite.scale.set(tp.scale * (0.3 + pop * 0.7));
       });
 
+      drawIce(frame.iceZones, config.trackLength, frame.frame);
+
       for (const e of frame.events) playEvent(e, posById);
+      drainPendingFx();
 
       // Live commentary from skill/item events.
       let saidThisFrame = false;
       for (const e of frame.events) {
         const n = namesById[e.racerId];
         if (!n) continue;
-        const line = eventLine(e.type, e.variant, n, frame.frame + (e.targetId ? 7 : 0));
+        // Eagle self-botch (lost the divebomb gamble, crashed itself): same
+        // event shape as a hit but targetId === racerId, so route it to its own
+        // "어이쿠 자폭ㅋㅋ" line pool via a synthetic variant.
+        const selfBotch = e.type === 'divebomb' && e.variant === 'hit' && e.targetId === e.racerId;
+        const variant = selfBotch ? 'self' : e.variant;
+        const line = eventLine(e.type, variant, n, frame.frame + (e.targetId ? 7 : 0));
         if (line) {
           commentary.say(line, clock);
           saidThisFrame = true;
@@ -639,6 +1061,7 @@ export function createRaceRenderer(): RaceRenderer {
         banner = null;
       }
       boxLayer.visible = false;
+      iceLayer.visible = false;
       commentary.hide();
       fx.root.visible = false;
       bubbles.root.visible = false;
@@ -699,6 +1122,18 @@ export function createRaceRenderer(): RaceRenderer {
         }
       };
       app.ticker.add(podiumTick);
+    },
+
+    pumpFx(seconds) {
+      const step = 1 / 60;
+      let t = 0;
+      while (t < seconds) {
+        clock += step;
+        drainPendingFx();
+        fx.update(clock, step);
+        bubbles.update(clock);
+        t += step;
+      }
     },
 
     setReducedMotion(on) {

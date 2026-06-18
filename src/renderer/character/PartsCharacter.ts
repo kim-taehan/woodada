@@ -50,6 +50,10 @@ interface UpdateOpts {
   /** +1 = travelling right, -1 = travelling left (used to face/lean). */
   heading: number;
   reducedMotion: boolean;
+  /** Penguin only: it is currently inside an active icefield zone → belly-slide. */
+  onIce?: boolean;
+  /** Cat only: engine says it is hopping clear over an icefield zone → jump pose. */
+  iceJumping?: boolean;
 }
 
 interface PartView {
@@ -106,6 +110,9 @@ export class PartsCharacter {
         return 'skill';
       case 'celebrate':
         return 'win';
+      case 'dejected':
+        // Post-finish slump for the back-markers: a droopy idle (no win pose).
+        return 'idle';
       default:
         return 'run';
     }
@@ -116,7 +123,18 @@ export class PartsCharacter {
     const delta = this.model.poses[poseName] ?? {};
     const moving = o.phase === 'running' || o.phase === 'blocked' || o.phase === 'straying';
     const celebrating = o.phase === 'celebrate';
+    // Post-finish back-marker slump: head down, droopy, a slow dejected sway.
+    const dejected = o.phase === 'dejected';
     const amp = o.reducedMotion ? 0 : Math.max(0.4, o.speedNorm);
+    // Penguin belly-slide: while inside an active icefield it drops prone and
+    // glides on its tummy (flippers swept back), instead of the upright waddle.
+    // Only while actually moving on the track (not on the podium / waiting).
+    const penguin = this.model.id === 'penguin';
+    const sliding = penguin && !o.reducedMotion && !!o.onIce && moving;
+    // Cat ice-hop: while the engine says the cat is jumping clear of an icefield
+    // zone, it springs into a graceful airborne bound (vs. everyone else slipping).
+    // `hop01` arcs 0→1→0 over the cycle for the parabolic jump height.
+    const catJumping = this.model.id === 'cat' && !o.reducedMotion && !!o.iceJumping && moving;
     const style = o.reducedMotion ? 'biped' : this.runStyle;
 
     // Cycle clock; rate per locomotion style. Rabbit hops with a longer term.
@@ -134,18 +152,25 @@ export class PartsCharacter {
 
     // How airborne the rabbit is this frame (1 at the top of the hop).
     const air = style === 'hop' && moving ? Math.abs(Math.sin(t)) : 0;
+    // Cat ice-hop arc: a slow, smooth |sin| bound (own rate so it reads as a
+    // deliberate leap, not a leg twitch). 1 at the apex of the jump.
+    const catAir = catJumping ? Math.abs(Math.sin(o.clock * 5.5)) : 0;
     // Whole-body vertical lift: a big rabbit hop, the dog's gallop bound, or a
     // cocky victory jump on the podium.
     let lift = air * 30 * amp;
     if (style === 'gallop' && moving) lift = Math.abs(Math.sin(t)) * 7 * amp;
     if (celebrating) lift = Math.abs(Math.sin(t)) * 24 * amp;
+    // Cat ice-hop: a big graceful bound floats well above the gallop bob.
+    if (catJumping) lift = Math.max(lift, 14 + catAir * 46);
     // Flyer (eagle): floats above the track line — a constant hover offset plus a
     // gentle vertical bob. No ground contact, so the lift applies whenever it's
     // airborne (idle hover too), not just while "moving".
-    if (style === 'fly' && !celebrating) {
+    if (style === 'fly' && !celebrating && !dejected) {
       const bob = Math.sin(o.clock * 3.4) * 6; // slow, smooth bob (clock, not cycle t)
       lift = 26 + bob; // hover height above the line
     }
+    // Defeated slump sits a touch low — no bounce, head dropped.
+    if (dejected) lift = -4;
     this.inner.y = -55 - lift;
 
     for (const [name, view] of this.parts) {
@@ -163,16 +188,55 @@ export class PartsCharacter {
       // are tens of degrees, not radians.
       const isFrontLeg = name === 'frontLegL' || name === 'frontLegR';
 
-      // Ears + tail stream for everyone.
-      if (name === 'earL' || name === 'tail') rot += Math.sin(t - 0.6) * 22 * amp;
-      else if (name === 'earR') rot -= Math.sin(t - 0.6) * 22 * amp;
+      // Ears + tail stream for everyone (but a defeated slump keeps them limp).
+      const earAmp = dejected ? 0 : amp;
+      if (name === 'earL' || name === 'tail') rot += Math.sin(t - 0.6) * 22 * earAmp;
+      else if (name === 'earR') rot -= Math.sin(t - 0.6) * 22 * earAmp;
 
-      if (celebrating) {
+      if (dejected) {
+        // Defeated slump: head + body droop forward, arms hang limp, a slow,
+        // small dejected sway (no leg cycle — it has stopped). (rot is DEGREES.)
+        const sway = Math.sin(o.clock * 1.6);
+        if (isFrontLeg) scaleX = scaleY = 0;
+        else if (name === 'head') {
+          dy += 9; // chin sinks toward the chest
+          rot += 8 + sway * 3; // hung head, gently nodding
+        } else if (name === 'body') {
+          dy += 4;
+          scaleY *= 0.94; // shoulders sag
+          rot += sway * 3;
+        } else if (name === 'armL') rot += 6 + sway * 4; // limp, dangling arms
+        else if (name === 'armR') rot -= 6 + sway * 4;
+        else if (name === 'wingL') rot += 34 + sway * 5; // wings droop, sagging shut
+        else if (name === 'wingR') rot -= 34 + sway * 5;
+        else if (name === 'legL' || name === 'legR') {
+          rot += name === 'legL' ? 4 : -4; // feet planted, slightly splayed
+        }
+      } else if (celebrating) {
         // Cocky victory dance: kick legs, throw arms up, wag/wiggle.
         if (name === 'legL' || name === 'frontLegL') rot += Math.sin(t) * 16 * amp;
         else if (name === 'legR' || name === 'frontLegR') rot -= Math.sin(t) * 16 * amp;
         else if (name === 'armL') rot += 24 + Math.sin(t) * 22 * amp;
         else if (name === 'armR') rot -= 24 + Math.sin(t) * 22 * amp;
+      } else if (catJumping) {
+        // Cat ice-hop: a graceful leaping bound. Front legs reach forward, rear
+        // legs extend back at the apex and gather under on the way down; the body
+        // arcs and stretches into the leap. (rot is DEGREES.)
+        if (isFrontLeg) {
+          rot += (30 - catAir * 50) * amp; // reach out front, tuck on landing
+          dy -= catAir * 5 * amp;
+        } else if (name === 'legL' || name === 'legR') {
+          rot += (-26 - catAir * 26) * amp; // hind legs sweep back as it springs
+          dy -= catAir * 5 * amp;
+        } else if (name === 'body') {
+          scaleX *= (1 + 0.12 * catAir) * stretch; // stretch long mid-leap
+          scaleY *= 1 - 0.06 * catAir;
+          dy -= catAir * 2;
+        } else if (name === 'head') {
+          dy -= catAir * 3 * amp; // chin up, looking over the ice
+        } else if (name === 'tail') {
+          rot += 18 + catAir * 24; // tail lofts up for balance in the air
+        }
       } else if (style === 'gallop') {
         // Dog side-profile gallop: front pair reaches forward while the rear pair
         // pushes back, then both gather under the body. Far legs lag slightly.
@@ -240,6 +304,43 @@ export class PartsCharacter {
         } else if (name === 'head') {
           dy += Math.sin(o.clock * 3.4 + 0.4) * 1.5; // tiny head bob in sync with hover
         }
+      } else if (penguin) {
+        // Penguin: cute *gliding* waddle — small alternating feet, a slidey
+        // side-to-side body sway (the root tilt below carries the waddle), and
+        // flippers that paddle a touch. On ice it goes prone and belly-slides:
+        // feet tuck back, flippers sweep flat behind, the body whooshes flat.
+        if (sliding) {
+          if (isFrontLeg) scaleX = scaleY = 0;
+          else if (name === 'legL' || name === 'legR') {
+            // feet swept straight back behind the sliding belly, tucked up
+            rot += name === 'legL' ? 30 : -30;
+            dy -= 6;
+          } else if (name === 'armL') {
+            rot += 70 + Math.sin(t) * 6 * amp; // flipper raked back, paddling
+          } else if (name === 'armR') {
+            rot -= 70 + Math.sin(t) * 6 * amp;
+          } else if (name === 'body') {
+            scaleX *= 1.18 * stretch; // belly stretched flat along the glide
+            scaleY *= 0.9;
+            dy += 8; // body drops toward the ice
+          } else if (name === 'head') {
+            dy += 4; // chin tucked low, looking ahead over the ice
+          }
+        } else {
+          // Gliding waddle: gentle, low-amplitude feet + a slidey paddle so it
+          // reads as a smooth penguin shuffle rather than a marching biped.
+          if (isFrontLeg) scaleX = scaleY = 0;
+          else if (name === 'legL') rot += Math.sin(t) * 18 * amp;
+          else if (name === 'legR') rot -= Math.sin(t) * 18 * amp;
+          else if (name === 'armL') rot += 8 + Math.sin(t) * 14 * amp; // flippers paddle
+          else if (name === 'armR') rot -= 8 + Math.sin(t) * 14 * amp;
+          else if (name === 'body' || name === 'head') {
+            dy += moving ? -Math.abs(Math.sin(t)) * 5 * amp : 0; // small bob (glidey)
+            const sq = moving ? 1 - 0.05 * Math.sin(t * 2) * amp : 1;
+            scaleY *= sq;
+            scaleX *= (2 - sq) * stretch;
+          }
+        }
       } else {
         // Biped / swing (monkey, fallback): alternating legs + arm swing.
         if (isFrontLeg) scaleX = scaleY = 0;
@@ -262,18 +363,26 @@ export class PartsCharacter {
 
     // Whole-body pose: face the running direction, lean, tumble when knocked.
     const dir = o.heading >= 0 ? 1 : -1;
-    this.inner.scale.x = dir;
+    // Side-profile characters (gallop: dog/cat) are drawn looking +x, so mirror
+    // them to face the direction of travel — left on the top straight & curves.
+    // Front-facing chibis (biped/scamper) and the flyer always face the viewer,
+    // so they must NOT mirror (it would flip their face on the far side).
+    this.inner.scale.x = this.runStyle === 'gallop' ? dir : 1;
     if (o.reducedMotion) this.root.rotation = 0;
+    else if (dejected) this.root.rotation = Math.sin(o.clock * 1.6) * 0.05; // small defeated sway, slumped
     else if (celebrating) this.root.rotation = Math.sin(t * 0.7) * 0.16 * amp; // cocky sway
     // Skill thrust: a quick forward crouch-and-shove so the activation reads as a
     // deliberate "action" (root.rotation is RADIANS — ~0.22rad ≈ 13° lean).
     else if (skilling && style !== 'fly') this.root.rotation = dir * (0.2 + Math.abs(Math.sin(t * 0.5)) * 0.1);
+    else if (catJumping) this.root.rotation = dir * (0.05 - catAir * 0.16); // nose lifts into the leap (root.rotation is RADIANS)
     else if (o.phase === 'stunned') this.root.rotation = dir * 0.7; // tipped over
     else if (o.phase === 'napping') this.root.rotation = -dir * 0.18; // dozing lean-back
     else if (style === 'gallop') this.root.rotation = dir * (0.05 + o.speedNorm * 0.06); // body already horizontal; slight pitch
     else if (style === 'hop') this.root.rotation = dir * (0.03 + air * 0.18 * amp); // lean into the leap
     else if (style === 'fly') this.root.rotation = dir * 0.04 + Math.sin(o.clock * 3.4) * 0.03; // float level, slight bank with the bob
     else if (style === 'scamper') this.root.rotation = dir * (0.1 + o.speedNorm * 0.1); // eager forward lean
+    else if (sliding) this.root.rotation = dir * (0.42 + o.speedNorm * 0.12); // pitched prone onto the belly, whooshing along the ice
+    else if (penguin) this.root.rotation = dir * 0.06 + Math.sin(t) * 0.16 * amp; // gliding waddle: side-to-side sway
     else this.root.rotation = dir * (0.06 + o.speedNorm * 0.12);
   }
 

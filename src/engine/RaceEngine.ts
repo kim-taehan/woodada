@@ -8,6 +8,7 @@ import { createRng, type Rng } from './prng.ts';
 import { applyOvertake } from './overtake.ts';
 import {
   DT_MS,
+  FINISH_OFFSET_FRAC,
   type EngineFrame,
   type RaceConfig,
   type RaceResult,
@@ -16,7 +17,7 @@ import {
   type SkillEvent,
 } from './types.ts';
 import type { SkillRegistry } from './skills/types.ts';
-import { resolveDodge, isInDodgeWindow } from './skills/dodge.ts';
+import { resolveDodge } from './skills/dodge.ts';
 import type { ScoringRegistry } from './scoring/types.ts';
 
 const SPEED_JITTER = 0.08; // ±8% per-frame speed noise
@@ -31,10 +32,11 @@ const ITEM = {
   firstSpawnMs: [1500, 3000] as [number, number],
   spawnGapMs: [1800, 4000] as [number, number],
   lifeMs: [5000, 8000] as [number, number],
-  boostChance: 0.65,
-  boost: 1.6, // extra speed for a boost
-  boostMs: 650,
-  slipMs: 600,
+  // Effect tunables for the gamble-box item pool (lightning / fart / shell / star).
+  lightningSlowMs: 850, lightningMul: 0.5, // ⚡ slows everyone else
+  fartRange: 90, fartSlowMs: 1000, fartMul: 0.55, // 💨 slows racers behind
+  shellStunMs: 750, // 🐢 stuns the current leader (even the picker)
+  starBoost: 1.4, starMs: 2400, // 🌟 self speed + full immunity
 } as const;
 
 interface ItemBox {
@@ -108,8 +110,14 @@ export function createRaceEngine(
 ): RaceEngine {
   const rng = createRng(config.seed);
   const participantsById = Object.fromEntries(config.participants.map((p) => [p.id, p]));
-  // Relay: each runner does exactly one lap; non-relay: laps × trackLength.
-  const goal = config.relay ? config.trackLength : config.trackLength * config.laps;
+  // Relay: each runner does exactly one full lap (finish line = start line per
+  // leg). Non-relay: laps full loops, then the final lap continues past the
+  // start line by FINISH_OFFSET_FRAC of a lap to the real finish (start ≠
+  // finish). Lap-count boundaries stay at integer trackLength multiples; only
+  // this total finish *distance* shifts back.
+  const goal = config.relay
+    ? config.trackLength
+    : config.trackLength * (config.laps + FINISH_OFFSET_FRAC);
 
   // Relay member queues: teamId → member racerIds in participation order.
   // Leg count per team = config.laps; leg i is run by members[i % size] (cyclic),
@@ -237,6 +245,10 @@ export function createRaceEngine(
       frame,
       params: character.skill.params,
       lines: character.lines,
+      skillTypeOf: (id) => {
+        const cid = participantsById[id]?.characterId;
+        return cid ? config.characters[cid]?.skill.type : undefined;
+      },
       emit: (e) =>
         events.push({ frame, racerId: self.id, type: character.skill.type, ...e }),
       tryDodge: (target) => resolveDodge(target, frame, internal.skillRng.get(target.id)!),
@@ -276,6 +288,7 @@ export function createRaceEngine(
     applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame);
 
     applyIce(self);
+    if ((self.skill.slowUntil ?? 0) > frame) self.speed *= Number(self.skill.slowMul ?? 1);
 
     self.progress += self.speed;
 
@@ -369,28 +382,79 @@ export function createRaceEngine(
    * several zones; deterministic.
    */
   function applyIce(self: RacerState): void {
-    if (internal.iceZones.length === 0) return;
+    if (internal.iceZones.length === 0) { self.skill.iceJumping = false; return; }
     const lapPos = self.progress % config.trackLength;
-    const isPenguin = self.characterId === 'penguin';
-    // Cat probabilistically jumps over the ice (its catwalk dodgeChance), once per frame.
-    const catJumped =
-      self.characterId === 'cat' &&
-      internal.skillRng
-        .get(self.id)!
-        .fork(`icejump:${frame}`)
-        .bool(Number(config.characters.cat.skill.params.dodgeChance ?? 0));
-    for (const zone of internal.iceZones) {
-      if (frame >= zone.expire) continue;
-      if (!inZone(lapPos, zone)) continue;
-      if (catJumped) continue;
-      self.speed *= isPenguin ? zone.boostFactor : zone.slowFactor;
+    const zone = internal.iceZones.find((z) => frame < z.expire && inZone(lapPos, z));
+    if (!zone) { self.skill.iceJumping = false; self.skill.iceZoneId = undefined; return; }
+    if ((self.skill.starUntil ?? 0) > frame) return; // ⭐ star: immune to ice
+
+    if (self.characterId === 'cat') {
+      // Decide ONCE per zone entry: jump clear over the ice (no slow) with the cat's
+      // dodgeChance. `iceJumping` is exposed for the renderer to play the hop.
+      if (self.skill.iceZoneId !== zone.id) {
+        self.skill.iceZoneId = zone.id;
+        self.skill.iceJumping = internal.skillRng
+          .get(self.id)!
+          .fork(`icejump:${zone.id}`)
+          .bool(Number(config.characters.cat.skill.params.dodgeChance ?? 0));
+      }
+      if (self.skill.iceJumping) return; // jumped clear — no slow
+      self.speed *= zone.slowFactor;
+      return;
+    }
+    self.speed *= self.characterId === 'penguin' ? zone.boostFactor : zone.slowFactor;
+  }
+
+  /** A gamble box, on pickup, rolls one of four effects (weighted). */
+  function applyItemPickup(self: RacerState, order: RacerState[], events: SkillEvent[]): void {
+    const irng = internal.itemRng.get(self.id)!;
+    const active = (r: RacerState) => r.phase !== 'finished' && r.phase !== 'waiting' && r.phase !== 'stunned';
+    const starred = (r: RacerState) => (r.skill.starUntil ?? 0) > frame;
+    const x = irng.range(0, 8); // weights: star 1 / lightning 2 / shell 2 / fart 3
+
+    if (x < 1) {
+      // 🌟 star: self speed boost + full immunity for a while.
+      const until = frame + Math.round(ITEM.starMs / DT_MS);
+      self.skill.burst = ITEM.starBoost;
+      self.skill.effectUntil = until;
+      self.skill.starUntil = until;
+      self.phase = 'straying';
+      events.push({ frame, racerId: self.id, type: 'item', variant: 'star', line: '무적! ⭐' });
+    } else if (x < 3) {
+      // ⚡ lightning: every other racer slows briefly.
+      const until = frame + Math.round(ITEM.lightningSlowMs / DT_MS);
+      for (const r of order) {
+        if (r.id === self.id || !active(r) || starred(r)) continue;
+        r.skill.slowUntil = until;
+        r.skill.slowMul = ITEM.lightningMul;
+      }
+      events.push({ frame, racerId: self.id, type: 'item', variant: 'lightning', line: '⚡ 번개!' });
+    } else if (x < 5) {
+      // 🐢 shell: stuns the current leader — even if the picker IS the leader.
+      let leader: RacerState | undefined;
+      for (const r of order) if (active(r) && (!leader || r.progress > leader.progress)) leader = r;
+      events.push({ frame, racerId: self.id, type: 'item', variant: 'shell', line: '🐢 등껍질!' });
+      if (leader && !starred(leader)) {
+        leader.phase = 'stunned';
+        leader.speed = 0;
+        leader.skill.burst = 0;
+        leader.skill.effectUntil = frame + Math.round(ITEM.shellStunMs / DT_MS);
+        events.push({ frame, racerId: self.id, type: 'item', variant: 'shellhit', targetId: leader.id });
+      }
+    } else {
+      // 💨 fart: racers behind the picker (within range) slow briefly.
+      const until = frame + Math.round(ITEM.fartSlowMs / DT_MS);
+      for (const r of order) {
+        if (r.id === self.id || !active(r) || starred(r)) continue;
+        if (r.progress >= self.progress || self.progress - r.progress > ITEM.fartRange) continue;
+        r.skill.slowUntil = until;
+        r.skill.slowMul = ITEM.fartMul;
+      }
+      events.push({ frame, racerId: self.id, type: 'item', variant: 'fart', line: '뿌웅~ 💨' });
     }
   }
 
   function updateBoxes(order: RacerState[], events: SkillEvent[]): void {
-    const boostFrames = Math.round(ITEM.boostMs / DT_MS);
-    const slipFrames = Math.round(ITEM.slipMs / DT_MS);
-
     // Drop expired boxes.
     internal.boxes = internal.boxes.filter((b) => frame <= b.expire);
 
@@ -405,23 +469,7 @@ export function createRaceEngine(
         if (Math.abs(self.lane - box.lane) > ITEM.collectLane) continue;
 
         collected.add(box.id);
-        const irng = internal.itemRng.get(self.id)!;
-        if (irng.bool(ITEM.boostChance)) {
-          self.skill.burst = ITEM.boost;
-          self.skill.effectUntil = frame + boostFrames;
-          self.phase = 'straying';
-          events.push({ frame, racerId: self.id, type: 'item', variant: 'boost', line: '아이템!' });
-        } else if (isInDodgeWindow(self, frame) && resolveDodge(self, frame, internal.skillRng.get(self.id)!)) {
-          // catwalk dodge: the cat slips the banana-peel item harmlessly. Uses the
-          // same probabilistic, per-(cat, frame) roll as direct disruption.
-          events.push({ frame, racerId: self.id, type: 'item', variant: 'dodge', line: '냐옹, 안 맞지롱' });
-        } else {
-          self.phase = 'stunned';
-          self.speed = 0;
-          self.skill.burst = 0;
-          self.skill.effectUntil = frame + slipFrames;
-          events.push({ frame, racerId: self.id, type: 'item', variant: 'slip' });
-        }
+        applyItemPickup(self, order, events);
       }
     }
     if (collected.size) internal.boxes = internal.boxes.filter((b) => !collected.has(b.id));

@@ -41,17 +41,36 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 .participants { list-style: none; padding: 0; margin: 14px 0; display: flex; flex-direction: column; gap: 8px; }
 .participant {
-  display: flex; flex-direction: column; align-items: stretch; gap: 6px; background: var(--card);
-  border: 2px solid var(--line); border-radius: 12px; padding: 8px 10px;
+  display: flex; align-items: center; gap: 8px; background: var(--card);
+  border: 2px solid var(--line); border-radius: 12px; padding: 6px 10px;
 }
 .participant .pname {
-  font: inherit; font-weight: 600; color: inherit; width: 100%; box-sizing: border-box;
-  border: none; border-bottom: 2px solid transparent; background: transparent; border-radius: 0;
-  padding: 2px 2px; cursor: text;
+  flex: 1; min-width: 0; font: inherit; font-weight: 600; color: inherit;
+  border: none; border-bottom: 2px solid transparent; background: transparent; padding: 2px; cursor: text;
 }
 .participant .pname:hover { border-bottom-color: var(--line); }
 .participant .pname:focus { outline: none; border-bottom-color: var(--accent); }
-.participant-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.char-select { max-width: 120px; }
+/* mode-first setup */
+.mode-row { display: flex; gap: 10px; margin: 8px 0; }
+.mode-btn { flex: 1; padding: 14px; border: 2px solid var(--line); border-radius: 14px; background: #fff; font-weight: 800; font-size: 16px; color: var(--muted); cursor: pointer; }
+.mode-btn.active { border-color: var(--accent); color: var(--accent); background: #fff7e6; }
+.opts-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin: 8px 0 12px; }
+.opt-group { display: inline-flex; align-items: center; gap: 8px; }
+.setup select {
+  width: auto; font: inherit; padding: 7px 30px 7px 11px; border: 2px solid var(--line); border-radius: 10px;
+  background-color: #fff; color: var(--ink); cursor: pointer; appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 2 L6 6 L11 2' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+.setup select:hover, .setup select:focus { outline: none; border-color: var(--accent); }
+.name-row { margin: 8px 0; }
+.add-btn { width: 100%; padding: 11px; border: 2px dashed var(--line); border-radius: 12px; background: #fff; color: var(--muted); font-weight: 700; font-size: 15px; cursor: pointer; }
+.add-btn:hover { border-color: var(--accent); color: var(--accent); }
+.team-boxes { display: flex; flex-direction: column; gap: 12px; }
+.team-box { background: #fafafa; border: 2px solid var(--line); border-radius: 16px; padding: 10px; }
+.team-box-head { display: flex; align-items: center; gap: 6px; font-weight: 800; margin-bottom: 8px; }
+.team-swatch { width: 16px; height: 16px; border-radius: 50%; border: 2px solid; display: inline-block; }
 .chips { display: flex; gap: 4px; }
 .chip {
   border: 2px solid var(--line); background: #fff; border-radius: 999px;
@@ -101,14 +120,31 @@ details.options summary { color: var(--muted); cursor: pointer; font-size: 14px;
   border-radius: 999px; background: rgba(0,0,0,.4); color: #fff; font-weight: 700;
 }
 
+/* ---- Finish gate ("시상식 보러가기") ---- */
+.finish-gate {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  pointer-events: none; z-index: 5;
+}
+.podium-gate {
+  pointer-events: auto; border: none; cursor: pointer;
+  padding: 18px 34px; border-radius: 999px; font-size: 22px; font-weight: 900;
+  color: #4a2e00; background: linear-gradient(180deg, #ffe08a, #ffc23a);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 2px 0 rgba(255,255,255,.6);
+  animation: gate-pop .35s ease-out, gate-bob 1.4s ease-in-out .35s infinite;
+}
+.podium-gate:hover { filter: brightness(1.05); }
+.podium-gate:active { transform: scale(.96); }
+@keyframes gate-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes gate-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
 /* ---- Result ---- */
 .result-overlay {
-  position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center;
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end;
   padding: 16px; pointer-events: none;
 }
 .result-card {
-  background: var(--card); border-radius: 20px; padding: 16px 20px; width: 100%; max-width: 440px;
-  max-height: 56%; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,.35); pointer-events: auto;
+  background: var(--card); border-radius: 20px; padding: 16px 20px; width: 100%; max-width: 380px;
+  max-height: 88%; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,.35); pointer-events: auto;
 }
 .result-card h2 { margin: 0 0 4px; text-align: center; }
 .winner { text-align: center; font-size: 20px; font-weight: 800; color: var(--accent); margin-bottom: 12px; }
@@ -122,3 +158,42 @@ details.options summary { color: var(--muted); cursor: pointer; font-size: 14px;
 .result-actions button { flex: 1; padding: 14px; border: none; border-radius: 12px; font-weight: 700; font-size: 16px; }
 .again { background: var(--green); color: #1f3a18; }
 .newgame { background: var(--line); color: var(--ink); }
+
+/* ---- Records (Feature B) ---- */
+.records {
+  display: flex; flex-direction: column; gap: 4px;
+  background: #f4f7f2; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px;
+}
+.records.record-new {
+  background: linear-gradient(180deg, #fff6d6, #ffeaa0);
+  box-shadow: 0 0 0 2px #ffca3a inset;
+}
+.record-row { display: flex; justify-content: space-between; align-items: baseline; }
+.record-label { color: var(--muted); font-weight: 600; font-size: 14px; }
+.record-time { font-weight: 800; font-variant-numeric: tabular-nums; }
+.record-time.best { color: var(--accent); }
+.record-banner {
+  text-align: center; font-size: 18px; font-weight: 900; color: #b8350a; margin-bottom: 10px;
+  animation: banner-pop .5s ease-out;
+}
+@keyframes banner-pop {
+  0% { transform: scale(.5) rotate(-6deg); opacity: 0; }
+  60% { transform: scale(1.15) rotate(2deg); }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+/* World-record confetti — pure DOM/CSS, layered behind the card. */
+.confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.confetti-piece {
+  position: absolute; top: -16px; width: 10px; height: 14px; border-radius: 2px;
+  opacity: 0; animation-name: confetti-fall; animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes confetti-fall {
+  0% { transform: translateY(-16px) rotate(0); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(105vh) rotate(720deg); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confetti, .podium-gate { animation: none; }
+}

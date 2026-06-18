@@ -72,6 +72,15 @@ export interface SkillRuntime {
    */
   dodgeFrame?: number;
   dodgeRoll?: boolean;
+  /** 🌟 star item: frame index until which the racer is fully immune + boosted. */
+  starUntil?: number;
+  /** ⚡/💨 item slow: speed is multiplied by `slowMul` until `slowUntil`. */
+  slowUntil?: number;
+  slowMul?: number;
+  /** catwalk: the cat is currently hopping clear over an ice zone (renderer cue). */
+  iceJumping?: boolean;
+  /** id of the ice zone the cat last decided on (one jump roll per zone entry). */
+  iceZoneId?: string;
   /** Generic flag bag for handlers. */
   [k: string]: number | string | boolean | undefined;
 }
@@ -112,7 +121,9 @@ export interface SkillEvent {
   frame: number;
   racerId: RacerId;
   type: string;
-  variant: 'activate' | 'hit' | 'dodge' | 'wake' | 'boost' | 'slip' | 'handoff';
+  variant:
+    | 'activate' | 'hit' | 'dodge' | 'wake' | 'boost' | 'slip' | 'handoff'
+    | 'star' | 'lightning' | 'shell' | 'shellhit' | 'fart';
   targetId?: RacerId;
   /** Speech-bubble text (from character.lines). */
   line?: string;
@@ -178,3 +189,17 @@ export interface RaceResult {
 
 /** Fixed simulation timestep. The engine never reads wall-clock. */
 export const DT_MS = 1000 / 60;
+
+/**
+ * Finish line offset (start line ≠ finish line). Laps 1..(N-1) complete a full
+ * loop back to the start line; only the *final* lap runs past the start line by
+ * `FINISH_OFFSET_FRAC` of one lap length before the finish (e.g. mid-straight).
+ *
+ * Total finish distance = laps × trackLength + FINISH_OFFSET_FRAC × trackLength.
+ *
+ * Lap boundaries (lap-count increments, "마지막 바퀴!" banner) stay at the integer
+ * multiples of trackLength — only the final finish *distance* is pushed back.
+ * Shared with the renderer (imported from this module) so the drawn finish line
+ * matches the simulated one.
+ */
+export const FINISH_OFFSET_FRAC = 0.12;

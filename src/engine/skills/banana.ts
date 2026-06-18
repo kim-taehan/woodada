@@ -32,6 +32,10 @@ export const bananaHandler: SkillHandler = (ctx) => {
   ctx.emit({ variant: 'activate', line: ctx.lines.skill });
   if (!target) return; // nobody to throw at — silent whiff
 
+  if ((target.skill.starUntil ?? 0) > frame) { // ⭐ star deflects the banana
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
   if (ctx.tryDodge(target)) {
     // catwalk slips the banana — dodge gag (renderer shows the target's line).
     ctx.emit({ variant: 'dodge', targetId: target.id });

@@ -42,6 +42,10 @@ export const divebombHandler: SkillHandler = (ctx) => {
   const target = candidates[0];
   if (!target) return; // nobody ahead in range — empty whiff
 
+  if ((target.skill.starUntil ?? 0) > frame) { // ⭐ star deflects the dive
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
   // Catwalk target may slip the dive entirely (probabilistic).
   if (ctx.tryDodge(target)) {
     ctx.emit({ variant: 'dodge', targetId: target.id });

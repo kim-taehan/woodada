@@ -11,8 +11,21 @@ import { DT_MS } from '../types.ts';
  * slip (`slipBoost`) — a still-running, blockable burst, so it never plows ahead
  * like the dog's zoomies.
  */
+/** Disruptors catwalk is worth dodging — banana(monkey)/roar(bear)/divebomb(eagle). */
+const DISRUPTORS = new Set(['banana', 'roar', 'divebomb']);
+
 export const catwalkHandler: SkillHandler = (ctx) => {
-  const { self, params, frame } = ctx;
+  const { self, all, params, frame } = ctx;
+  // Situational: only go nimble if a non-teammate disruptor is in the race —
+  // no point catwalking when nobody can stun you (e.g. a cats-only race).
+  const threatened = all.some((r) => {
+    if (r.id === self.id || r.phase === 'finished') return false;
+    if (self.teamId !== undefined && r.teamId === self.teamId) return false;
+    const type = ctx.skillTypeOf(r.id);
+    return type !== undefined && DISRUPTORS.has(type);
+  });
+  if (!threatened) return; // no emit ⇒ skill stays on retry-cooldown, never fires
+
   const frames = Math.round(Number(params.windowMs) / DT_MS);
   self.skill.dodgeUntil = frame + frames;
   self.skill.dodgeChance = Number(params.dodgeChance);

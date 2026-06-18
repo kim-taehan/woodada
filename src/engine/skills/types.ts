@@ -23,6 +23,8 @@ export interface SkillContext {
   emit(e: Pick<SkillEvent, 'variant'> & Partial<Omit<SkillEvent, 'variant'>>): void;
   /** Character lines for speech bubbles. */
   lines: { skill: string; win: string; lose: string; dodge?: string };
+  /** The skill type of another racer's character — for situational activation. */
+  skillTypeOf(id: RacerId): string | undefined;
   /**
    * Resolve catwalk's probabilistic dodge for `target` against an incoming
    * *direct* disruption (banana/roar/divebomb). Returns true if the target
