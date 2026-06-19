@@ -45,4 +45,30 @@ describe('engine fairness (loose sanity — balance tuned later)', () => {
       expect(slotWins[i]).toBeLessThan(expected * 2.2);
     }
   });
+
+  // Anti-runaway guard (catch-up / rubberbanding in RaceEngine#catchupFactor):
+  // nobody should pull away wire-to-wire. Loose bounds — they verify the pack
+  // stays bunched and the lead changes hands, not a precise gap target.
+  it('no runaway — pack stays bunched and the lead changes hands', () => {
+    const M = 400;
+    let sumPeakGapLaps = 0;
+    let sumLeadChanges = 0;
+    for (let s = 0; s < M; s++) {
+      const cfg = makeConfig({ characterIds: ids, seed: s });
+      const { frames } = simulateRace(cfg, skills, scoring);
+      let leader = '';
+      let peakGap = 0;
+      for (const f of frames) {
+        const byProg = [...f.racers].sort((a, b) => b.progress - a.progress);
+        if (byProg[0].id !== leader) { sumLeadChanges++; leader = byProg[0].id; }
+        const gap = (byProg[0].progress - byProg[1].progress) / cfg.trackLength;
+        if (gap > peakGap) peakGap = gap;
+      }
+      sumPeakGapLaps += peakGap;
+    }
+    // The leader's peak lead over 2nd averages well under a quarter-lap.
+    expect(sumPeakGapLaps / M).toBeLessThan(0.2);
+    // The lead changes hands several times per race on average.
+    expect(sumLeadChanges / M).toBeGreaterThan(3);
+  });
 });

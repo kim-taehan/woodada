@@ -23,6 +23,26 @@ import type { ScoringRegistry } from './scoring/types.ts';
 const SPEED_JITTER = 0.08; // ±8% per-frame speed noise
 const RETRY_COOLDOWN_MS = 200; // re-check a skill that declined to fire soon
 
+/**
+ * Catch-up / rubberbanding (anti-runaway). Deterministic, lane- and
+ * character-agnostic: each frame a racer's speed is scaled purely by how far it
+ * is from the field's mean progress. Trailers get a gentle tailwind, runaway
+ * leaders a gentle drag — so the pack stays bunched and lead changes happen
+ * without overriding skills (the band is small, a boosted leader still leads).
+ * Gap is measured in laps (gap / trackLength) so it scales with track size.
+ */
+const CATCHUP = {
+  /** Speed gain per lap of deficit behind the mean (trailers speed up). */
+  behindGain: 2.6,
+  /** Speed drag per lap of surplus ahead of the mean (leaders slow). */
+  aheadDrag: 2.2,
+  /** Clamp on the multiplier so nobody teleports or stalls. */
+  maxBoost: 1.2,
+  minBoost: 0.8,
+  /** Dead-zone (laps) around the mean where no correction applies. */
+  deadZone: 0.008,
+} as const;
+
 // Item boxes spawn at random times + positions during the race (never at the
 // start), live briefly, and vanish when collected or after their lifetime.
 const ITEM = {
@@ -101,6 +121,8 @@ interface Internals {
   teamLeg: Map<string, number>;
   /** Relay only: number of teams whose anchor (final) leg has finished. */
   teamsFinished: number;
+  /** Mean progress of active racers this frame (catch-up reference). */
+  meanProgress: number;
 }
 
 export function createRaceEngine(
@@ -186,6 +208,7 @@ export function createRaceEngine(
     legQueues,
     teamLeg: new Map([...legQueues.keys()].map((t) => [t, 0])),
     teamsFinished: 0,
+    meanProgress: 0,
   };
   internal.nextBoxFrame = Math.round(internal.boxRng.range(...ITEM.firstSpawnMs) / DT_MS);
 
@@ -275,6 +298,35 @@ export function createRaceEngine(
     }
   }
 
+  /**
+   * Anti-runaway multiplier (see CATCHUP). Pure function of this racer's gap to
+   * the field mean (in laps) — no RNG, no character/lane term, so it is
+   * deterministic and unbiased. Trailers are nudged up, runaway leaders down,
+   * within a small clamped band that never overrides a skill burst outright.
+   */
+  function catchupFactor(self: RacerState): number {
+    const gapLaps = (internal.meanProgress - self.progress) / config.trackLength;
+    if (gapLaps > CATCHUP.deadZone) {
+      return Math.min(CATCHUP.maxBoost, 1 + (gapLaps - CATCHUP.deadZone) * CATCHUP.behindGain);
+    }
+    if (gapLaps < -CATCHUP.deadZone) {
+      return Math.max(CATCHUP.minBoost, 1 + (gapLaps + CATCHUP.deadZone) * CATCHUP.aheadDrag);
+    }
+    return 1;
+  }
+
+  /** Mean progress over racers currently on track (catch-up reference point). */
+  function activeMeanProgress(): number {
+    let sum = 0;
+    let n = 0;
+    for (const r of internal.racers) {
+      if (r.phase === 'finished' || r.phase === 'waiting') continue;
+      sum += r.progress;
+      n++;
+    }
+    return n > 0 ? sum / n : 0;
+  }
+
   function advance(self: RacerState, events: SkillEvent[]): void {
     if (self.phase === 'finished' || self.phase === 'waiting') return;
     if (self.phase === 'stunned') {
@@ -284,6 +336,8 @@ export function createRaceEngine(
 
     const jitter = 1 + internal.racerRng.get(self.id)!.range(-SPEED_JITTER, SPEED_JITTER);
     self.speed = self.baseSpeed * jitter + (self.skill.burst ?? 0);
+
+    self.speed *= catchupFactor(self);
 
     applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame);
 
@@ -554,6 +608,7 @@ export function createRaceEngine(
       internal.iceZones = internal.iceZones.filter((z) => frame < z.expire);
       for (const self of order) resolveTimer(self);
       for (const self of order) tryActivateSkill(self, events);
+      internal.meanProgress = activeMeanProgress();
       for (const self of order) advance(self, events);
       updateBoxes(order, events);
 

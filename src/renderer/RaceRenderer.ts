@@ -38,6 +38,13 @@ interface RacerView {
    * reads in the top-down view. Pure visual offset — never touches simulation.
    */
   diveAt: number;
+  /**
+   * Who this dive is swooping onto. During the plunge the eagle's body slides
+   * from its own track spot to the target's CURRENT spot so it lands ON the
+   * front racer (not in place). `null` = a self-botch crash (stays put, the
+   * point of the gamble) or no target. Display-only.
+   */
+  diveTargetId: string | null;
 }
 
 export interface RaceRenderer {
@@ -74,22 +81,24 @@ const IMPACT_DELAY = DIVE_RISE + DIVE_HANG + DIVE_PLUNGE * 0.82;
 
 /**
  * Screen-space dive offset at `age` seconds into the dive: how far up the screen
- * the eagle sits (`lift`, px upward) and a scale bump (`pop`). Rises to an apex,
- * hangs, then plunges fast to 0. Returns null once the dive is over.
+ * the eagle sits (`lift`, px upward), a scale bump (`pop`), and `glide` (0→1) —
+ * the plunge progress used to slide the body horizontally onto the target. Rises
+ * to an apex (glide 0, hovers over its own spot), hangs, then plunges fast to 0
+ * while gliding to 1. Returns null once the dive is over.
  */
-function diveOffset(age: number): { lift: number; pop: number } | null {
+function diveOffset(age: number): { lift: number; pop: number; glide: number } | null {
   if (age < 0 || age > DIVE_TOTAL) return null;
   if (age < DIVE_RISE) {
     const k = age / DIVE_RISE;
     const e = 1 - (1 - k) * (1 - k); // ease-out: quick lift, settling at the top
-    return { lift: DIVE_LIFT * e, pop: DIVE_POP * e };
+    return { lift: DIVE_LIFT * e, pop: DIVE_POP * e, glide: 0 };
   }
   if (age < DIVE_RISE + DIVE_HANG) {
-    return { lift: DIVE_LIFT, pop: DIVE_POP }; // hang at the apex
+    return { lift: DIVE_LIFT, pop: DIVE_POP, glide: 0 }; // hang at the apex
   }
   const k = (age - DIVE_RISE - DIVE_HANG) / DIVE_PLUNGE;
   const e = k * k; // ease-in: accelerating plunge
-  return { lift: DIVE_LIFT * (1 - e), pop: DIVE_POP * (1 - e) };
+  return { lift: DIVE_LIFT * (1 - e), pop: DIVE_POP * (1 - e), glide: e };
 }
 
 /**
@@ -409,7 +418,20 @@ export function createRaceRenderer(): RaceRenderer {
   function rebuildTrack(): void {
     track = new OvalTrack(ovalForCanvas(width, height, fieldBand));
     trackLayer.removeFromParent();
-    trackLayer = buildTrackScene(track, width, height, config?.relay ?? false);
+    // Team (non-relay) races flank the finish tape with the participating teams'
+    // vest colors (first-appearance order, de-duped). Relay keeps its plain
+    // lap-boundary checker (its identity comes from the leg-counter banner).
+    const teamColors: number[] = [];
+    if (config?.teamMode && !config.relay) {
+      const seen = new Set<TeamId>();
+      for (const p of config.participants) {
+        if (isTeamId(p.teamId) && !seen.has(p.teamId)) {
+          seen.add(p.teamId);
+          teamColors.push(hexNum(teamPalette[p.teamId].fill));
+        }
+      }
+    }
+    trackLayer = buildTrackScene(track, width, height, config?.relay ?? false, teamColors);
     app.stage.addChildAt(trackLayer, 0);
   }
 
@@ -468,11 +490,17 @@ export function createRaceRenderer(): RaceRenderer {
       case 'divebomb:activate':
         // Eagle soars UP the screen then plunges (screen-space action — sets the
         // dive on the actor's view). The streak + speed-lines fly as it leaves.
+        // Target is unknown until the paired hit/dodge event (same frame); reset
+        // here so a fresh dive defaults to a self-spot plunge until set below.
         v.diveAt = clock;
+        v.diveTargetId = null;
         fx.speedLines(self.x, self.y - 6, dir, clock);
         break;
       case 'divebomb:dodge':
         // Cat slipped the dive — talons close on empty air over the (escaped) cat.
+        // Swoop the body onto the target's spot anyway so the dive reads as aimed
+        // (the cat just isn't there when it lands).
+        v.diveTargetId = e.targetId ?? null;
         // Delay to the bottom of the plunge so the whiff lands as the eagle arrives.
         // If a star racer deflected it, flash a shield there instead of a whiff.
         if (targetStarred && at) {
@@ -488,6 +516,8 @@ export function createRaceRenderer(): RaceRenderer {
         if (e.targetId === e.racerId) {
           // Gamble lost — the eagle face-plants ITSELF at the bottom of its dive:
           // a hard dust burst, an impact pop, and dizzy swirl as it crashes.
+          // No glide: the body stays over its own spot (the point of the gamble).
+          v.diveTargetId = null;
           scheduleFx(clock + IMPACT_DELAY, () => {
             const p = posById.get(e.racerId) ?? self;
             fx.swoop(p.x, p.y - 70, p.x, p.y, clock + IMPACT_DELAY);
@@ -498,7 +528,9 @@ export function createRaceRenderer(): RaceRenderer {
         } else if (at) {
           // Strike connects at the bottom of the dive — the target is slammed:
           // a swoop streak in, feathers scatter, stars, and a dizzy stun (so the
-          // victim reads as "stunned" like a bear-roar hit).
+          // victim reads as "stunned" like a bear-roar hit). Glide the body onto
+          // the target's CURRENT spot so the eagle lands ON it, not in place.
+          v.diveTargetId = e.targetId ?? null;
           scheduleFx(clock + IMPACT_DELAY, () => {
             const a = (e.targetId ? posById.get(e.targetId) : undefined) ?? at;
             fx.swoop(a.x, a.y - 70, a.x, a.y, clock + IMPACT_DELAY);
@@ -748,7 +780,7 @@ export function createRaceRenderer(): RaceRenderer {
         character.root.addChildAt(glow, 0); // behind the body
         const tag = new NameTag(p.name, tint);
         charLayer.addChild(character.root, tag.root);
-        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0, diveAt: -1 });
+        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0, diveAt: -1, diveTargetId: null });
         names[p.id] = p.name;
       }
       namesById = names;
@@ -800,6 +832,10 @@ export function createRaceRenderer(): RaceRenderer {
       }
 
       const posById = new Map<string, Pos>();
+      // Live racer states by id so a diving eagle can read its target's CURRENT
+      // track spot each frame (the target keeps moving during the plunge).
+      const stateById = new Map<string, RacerState>();
+      for (const r of frame.racers) stateById.set(r.id, r);
       // Relay: collect waiting teammates so they queue off-track instead of
       // standing on the racing line. Drawn after the main loop, by team.
       const waiting: RacerState[] = [];
@@ -826,12 +862,31 @@ export function createRaceRenderer(): RaceRenderer {
         const baseScale = CHAR_SCALE * tp.scale * v.size * fieldScale;
         // Eagle divebomb (screen-space): lift it up the screen to an apex then
         // plunge. Layered on top of the normal hover so it reads as "soared up,
-        // then dove" in the top-down view. Ends → diveAt reset.
+        // then dove" in the top-down view. During the plunge the body also
+        // GLIDES onto the target's current spot so it lands ON the front racer
+        // (self-botch / no target → glide 0, plunges in place). Ends → diveAt reset.
         let lift = 0;
+        let bodyX = tp.x;
+        let bodyY = tp.y;
+        let diving = false;
+        let diveTilt = 0; // forward-lean applied AFTER update() (which sets root.rotation)
         if (v.diveAt >= 0) {
           const d = diveOffset(clock - v.diveAt);
           if (d) {
             lift = d.lift;
+            diving = true;
+            // Glide toward the target's live track spot during the plunge. If the
+            // target vanished (finished/relay-swapped), fall back to a self-spot
+            // plunge so the dive still resolves cleanly.
+            const tgt = v.diveTargetId ? stateById.get(v.diveTargetId) : undefined;
+            if (tgt && d.glide > 0) {
+              const ttp = track.place(tgt.progress, config.trackLength, tgt.lane);
+              bodyX = tp.x + (ttp.x - tp.x) * d.glide;
+              bodyY = tp.y + (ttp.y - tp.y) * d.glide;
+            }
+            // Lean into the swoop, tipping toward the glide direction (root.rotation
+            // is RADIANS). Applied after update() so it isn't overwritten.
+            diveTilt = (bodyX >= tp.x ? 1 : -1) * 0.5 * d.glide;
             v.character.root.scale.set(baseScale * (1 + d.pop));
           } else {
             v.diveAt = -1;
@@ -840,8 +895,8 @@ export function createRaceRenderer(): RaceRenderer {
         } else {
           v.character.root.scale.set(baseScale);
         }
-        v.character.root.position.set(tp.x, tp.y - lift);
-        v.character.root.zIndex = lift > 0 ? 90000 + tp.z : tp.z; // dive sits above the field
+        v.character.root.position.set(bodyX, bodyY - lift);
+        v.character.root.zIndex = diving ? 90000 + tp.z : tp.z; // dive sits above the field
         // Penguin belly-slide: it goes prone while inside an active icefield zone
         // (matches the engine's species boost). Display-only pose selection.
         const onIce =
@@ -865,6 +920,7 @@ export function createRaceRenderer(): RaceRenderer {
           onIce,
           iceJumping,
         });
+        if (diveTilt !== 0) v.character.root.rotation = diveTilt; // swoop lean (overrides update's pose)
         v.tag.setPosition(tp.x, tp.y - 66 * tp.scale * fieldScale);
         v.tag.root.zIndex = 100000 + tp.z;
 

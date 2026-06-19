@@ -22,6 +22,13 @@ export function buildTrackScene(
   width: number,
   height: number,
   relay = false,
+  /**
+   * Distinct team vest colors (hex 0xRRGGBB) when this is a team race. When
+   * present, the finish tape is flanked by team-colored edge stripes so a team
+   * race's finish line reads differently from a plain individual race. Empty /
+   * undefined for individual races → classic black/white checker only.
+   */
+  teamColors: number[] = [],
 ): Container {
   const scene = new Container();
   const { laneSpan } = track.geo;
@@ -118,6 +125,38 @@ export function buildTrackScene(
         .fill(dark ? 0x222222 : 0xffffff);
     }
   }
+
+  // Team race: flank the checker tape with team-colored stripes (one per team,
+  // split evenly across the width) on both the leading and trailing edge. Gives
+  // the team finish line its own identity vs. the plain individual checker.
+  if (teamColors.length) {
+    const stripeDepth = bandDepth * 0.42;
+    for (const edge of [-1, 1] as const) {
+      for (let c = 0; c < teamColors.length; c++) {
+        const t0 = c / teamColors.length;
+        const t1 = (c + 1) / teamColors.length;
+        // Outer face of the band on this edge → outward by stripeDepth.
+        const r0 = edge < 0 ? -0.5 : 0.5;
+        const r1 = edge < 0 ? -0.5 - stripeDepth / bandDepth : 0.5 + stripeDepth / bandDepth;
+        const corner = (tx: number, ry: number) => {
+          const baseX = fa.x + (fb.x - fa.x) * tx;
+          const baseY = fa.y + (fb.y - fa.y) * tx;
+          return {
+            x: baseX + along.x * ry * bandDepth,
+            y: baseY + along.y * ry * bandDepth,
+          };
+        };
+        const p0 = corner(t0, r0);
+        const p1 = corner(t1, r0);
+        const p2 = corner(t1, r1);
+        const p3 = corner(t0, r1);
+        finish
+          .poly([p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y])
+          .fill(teamColors[c]);
+      }
+    }
+  }
+
   scene.addChild(finish);
 
   return scene;
