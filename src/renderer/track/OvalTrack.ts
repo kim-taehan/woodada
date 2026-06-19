@@ -79,12 +79,12 @@ export class OvalTrack {
    * start / lap line) and runs anticlockwise. From the start it heads RIGHT
    * along the whole bottom straight (left→right), up the right curve, across the
    * top straight (right→left), down the left curve, back to the bottom-left
-   * start (u→1). The finish *tape* (FINISH_OFFSET_FRAC≈u=0.12) lands partway
-   * along the bottom straight (mid-straight). So laps 1..(N-1) close on the
+   * start (u→1). The finish *tape* (FINISH_OFFSET_FRAC≈u=0.21) lands ≈3/4 along
+   * the bottom straight, near the right corner. So laps 1..(N-1) close on the
    * bottom-left start line; the final lap rounds the left curve, crosses the
-   * start line, then runs the bottom straight into the mid-straight finish tape
+   * start line, then runs almost the whole bottom straight into the finish tape
    * — the dramatic "마지막 직선" approach — and finishers coast on past into the
-   * straight's empty right half + right curve apron.
+   * straight's short right tail + right curve apron.
    */
   pointAt(u: number, off: number): TrackPoint {
     const { cx, cy, straightHalf: s, radius: r } = this.geo;

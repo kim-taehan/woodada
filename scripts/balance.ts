@@ -46,21 +46,38 @@ function individual() {
   const wins: Record<string, number> = Object.fromEntries(ROSTER.map((c) => [c, 0]));
   const slot = new Array(ids.length).fill(0);
   let leadChanges = 0;
+  let sumWinnerLeadFrac = 0; // fraction of race the eventual winner spent in front
+  let sumMaxGapLaps = 0;     // peak (leader − 2nd) gap, in laps
+  let sumFinishGap = 0;      // 1st vs 2nd finish-frame gap (frames)
   for (let s = 0; s < N; s++) {
     const cfg = baseCfg({ participants: participants(ids), seed: s });
     const { frames, result } = simulateRace(cfg, skills, scoring);
-    wins[ids[Number(result.order[0].slice(1))]]++;
-    slot[Number(result.order[0].slice(1))]++;
+    const winnerId = result.order[0];
+    wins[ids[Number(winnerId.slice(1))]]++;
+    slot[Number(winnerId.slice(1))]++;
     let leader = '';
+    let winnerLeadFrames = 0;
+    let maxGap = 0;
     for (const f of frames) {
-      const front = [...f.racers].sort((a, b) => b.progress - a.progress)[0].id;
+      const byProg = [...f.racers].sort((a, b) => b.progress - a.progress);
+      const front = byProg[0].id;
       if (front !== leader) { leadChanges++; leader = front; }
+      if (front === winnerId) winnerLeadFrames++;
+      const gap = (byProg[0].progress - byProg[1].progress) / cfg.trackLength;
+      if (gap > maxGap) maxGap = gap;
     }
+    sumWinnerLeadFrac += winnerLeadFrames / frames.length;
+    sumMaxGapLaps += maxGap;
+    sumFinishGap += (result.finishFrame[result.order[1]] ?? 0) - (result.finishFrame[winnerId] ?? 0);
   }
   console.log('=== INDIVIDUAL (6 chars ×2, N=' + N + ') ===');
   console.log('  win rate:', rateRow(wins, ROSTER));
   console.log('  slot wins:', slot.map((v) => pct(v)).join(' '));
   console.log('  avg lead changes/race:', (leadChanges / N).toFixed(1));
+  console.log('  -- runaway metrics --');
+  console.log('  winner led for (frac of race):', (sumWinnerLeadFrac / N).toFixed(3), '(lower = less wire-to-wire runaway)');
+  console.log('  peak lead gap (laps):         ', (sumMaxGapLaps / N).toFixed(3), '(lower = tighter pack)');
+  console.log('  1st→2nd finish gap (frames):  ', (sumFinishGap / N).toFixed(1), '(lower = closer finish)');
 }
 
 // ---------------------------------------------------------------------------

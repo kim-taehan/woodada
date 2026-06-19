@@ -4,69 +4,73 @@ const EYE = '#2E2620';
 const HI = '#FFFFFF';
 
 /**
- * Cute chibi eagle (front-facing), AIRBORNE. The idle cell is a *hovering* pose:
- * the body floats and the two spread wings are the main silhouette; the legs are
- * tiny and tucked up (not standing on the ground). The renderer's 'fly' runStyle
- * adds a vertical hover bob (around the body pivot) and flaps the wings.
+ * Cute chibi eagle (front-facing), GROUND RUNNER. Stands on two scaly talon feet
+ * and runs like the penguin/monkey bipeds: the renderer's 'biped' runStyle cycles
+ * `legL`/`legR` and swings the short folded wings `armL`/`armR` (held close to the
+ * body, like the penguin's flippers). A round brown body with a cream breast, a
+ * round head with a darker feather cap + brow for a fierce-but-cute look, big eyes
+ * and a hooked yellow beak. A short tail fan pokes out behind.
  *
- * Hover reference point = body pivot {x:0,y:56}: the renderer should bob the root
- * around this center. Wing parts are `wingL` / `wingR`, pivoted at the shoulders
- * so a rot delta swings them up (skill/flap-up) or down. Poses include an
- * up-swept wing key (negative rot raises the left, positive raises the right).
+ * Fierce-but-cute identity kept (brow cap, hooked beak, sharp talons) while it now
+ * shares the same standing chibi schema as the other animals — no airborne hover.
+ * The skill is a "jump headbutt": it springs forward and rams head-first.
  */
 export const eagleModel: PartModel = {
   id: 'eagle',
   parts: [
     {
-      name: 'wingL',
-      // shoulder pivot (left), so rot swings the whole wing up/down
-      pivot: { x: -22, y: 52 },
-      z: 1,
-      shapes: [{ kind: 'path', d: 'M-22,52 Q-58,40 -78,54 Q-70,58 -58,57 Q-66,64 -60,70 Q-44,62 -22,64 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
-    },
-    {
-      name: 'wingR',
-      pivot: { x: 22, y: 52 },
-      z: 1,
-      shapes: [{ kind: 'path', d: 'M22,52 Q58,40 78,54 Q70,58 58,57 Q66,64 60,70 Q44,62 22,64 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
-    },
-    {
       name: 'tail',
-      pivot: { x: 0, y: 84 },
+      pivot: { x: 0, y: 96 },
       z: 0,
-      // short tail fan beneath the body
-      shapes: [{ kind: 'path', d: 'M-12,78 L0,98 L12,78 Q0,84 -12,78 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
-    },
-    {
-      name: 'body',
-      pivot: { x: 0, y: 56 },
-      z: 2,
-      shapes: [
-        { kind: 'ellipse', cx: 0, cy: 60, rx: 26, ry: 28, fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        // cream breast feathers
-        { kind: 'ellipse', cx: 0, cy: 64, rx: 16, ry: 20, fill: 'point' },
-      ],
+      // short tail fan poking out below/behind the body
+      shapes: [{ kind: 'path', d: 'M-11,90 L0,104 L11,90 Q0,94 -11,90 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
     },
     {
       name: 'legL',
-      // tiny tucked-up talon
-      pivot: { x: -9, y: 84 },
-      z: 3,
+      // scaly yellow talon foot, planted on the ground
+      pivot: { x: -11, y: 92 },
+      z: 1,
       shapes: [
-        { kind: 'line', x1: -9, y1: 84, x2: -9, y2: 92, stroke: 'beak', strokeW: 3 },
-        { kind: 'line', x1: -9, y1: 92, x2: -13, y2: 95, stroke: 'beak', strokeW: 2.4 },
-        { kind: 'line', x1: -9, y1: 92, x2: -5, y2: 95, stroke: 'beak', strokeW: 2.4 },
+        { kind: 'line', x1: -11, y1: 92, x2: -11, y2: 100, stroke: 'beak', strokeW: 3.2 },
+        { kind: 'line', x1: -11, y1: 100, x2: -17, y2: 104, stroke: 'beak', strokeW: 2.6 },
+        { kind: 'line', x1: -11, y1: 100, x2: -5, y2: 104, stroke: 'beak', strokeW: 2.6 },
+        { kind: 'line', x1: -11, y1: 100, x2: -11, y2: 105, stroke: 'beak', strokeW: 2.6 },
       ],
     },
     {
       name: 'legR',
-      pivot: { x: 9, y: 84 },
-      z: 3,
+      pivot: { x: 11, y: 92 },
+      z: 1,
       shapes: [
-        { kind: 'line', x1: 9, y1: 84, x2: 9, y2: 92, stroke: 'beak', strokeW: 3 },
-        { kind: 'line', x1: 9, y1: 92, x2: 5, y2: 95, stroke: 'beak', strokeW: 2.4 },
-        { kind: 'line', x1: 9, y1: 92, x2: 13, y2: 95, stroke: 'beak', strokeW: 2.4 },
+        { kind: 'line', x1: 11, y1: 92, x2: 11, y2: 100, stroke: 'beak', strokeW: 3.2 },
+        { kind: 'line', x1: 11, y1: 100, x2: 17, y2: 104, stroke: 'beak', strokeW: 2.6 },
+        { kind: 'line', x1: 11, y1: 100, x2: 5, y2: 104, stroke: 'beak', strokeW: 2.6 },
+        { kind: 'line', x1: 11, y1: 100, x2: 11, y2: 105, stroke: 'beak', strokeW: 2.6 },
       ],
+    },
+    {
+      name: 'body',
+      pivot: { x: 0, y: 64 },
+      z: 2,
+      shapes: [
+        { kind: 'ellipse', cx: 0, cy: 64, rx: 28, ry: 30, fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        // cream breast feathers
+        { kind: 'ellipse', cx: 0, cy: 68, rx: 18, ry: 22, fill: 'point' },
+      ],
+    },
+    {
+      name: 'armL',
+      // short folded wing held close to the body, pivoted at the shoulder so the
+      // 'biped' run swings it like a flipper
+      pivot: { x: -26, y: 54 },
+      z: 3,
+      shapes: [{ kind: 'path', d: 'M-26,50 Q-44,60 -36,82 Q-26,72 -25,56 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
+    },
+    {
+      name: 'armR',
+      pivot: { x: 26, y: 54 },
+      z: 3,
+      shapes: [{ kind: 'path', d: 'M26,50 Q44,60 36,82 Q26,72 25,56 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
     },
     {
       name: 'head',
@@ -90,12 +94,14 @@ export const eagleModel: PartModel = {
   ],
   poses: {
     idle: {},
-    // 'fly' run is procedural (hover + flap) in the renderer; keep a gentle base.
+    // 'biped' run is procedural in the renderer (alternating legs + wing swing).
     run: {},
-    // diving snatch: wings sweep up & back, head thrusts forward
-    skill: { wingL: { rot: -34, dy: -6 }, wingR: { rot: 34, dy: -6 }, head: { dy: 4 } },
-    // victory: wings thrown wide up
-    win: { wingL: { rot: -28 }, wingR: { rot: 28 }, head: { dy: -4 } },
-    fall: { head: { rot: 16 }, wingL: { rot: 20 }, wingR: { rot: -20 } },
+    // jump headbutt: springs forward — head & body thrust ahead, folded wings
+    // sweep back for the lunge, a little airborne (dy up). (rot is DEGREES.)
+    skill: { head: { dy: 6, rot: 10 }, body: { dy: -4 }, armL: { rot: 40 }, armR: { rot: -40 } },
+    // victory: wings thrown wide, head up
+    win: { armL: { rot: -34 }, armR: { rot: 34 }, head: { dy: -4 } },
+    // crash / tumble: head snaps over, wings flail
+    fall: { head: { rot: 16 }, armL: { rot: 22 }, armR: { rot: -22 } },
   },
 };

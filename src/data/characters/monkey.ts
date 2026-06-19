@@ -18,9 +18,9 @@ export const monkey: CharacterData = {
   renderScale: 0.82,
   skill: {
     type: 'banana',
-    cooldownMs: [2600, 4600],
+    cooldownMs: [2100, 3800],
     // Targets front or back neighbour by progress; hitStun freezes them; dodgeChance misses.
-    params: { target: 'front', hitStunMs: 1100, dodgeChance: 0.08, range: 0.32 },
+    params: { target: 'front', hitStunMs: 1350, dodgeChance: 0.06, range: 0.32 },
   },
   lines: { skill: '받아라! (까득)', win: '우끼끼!', lose: '끼…', dodge: '어… 빗나갔네' },
 };

@@ -2,12 +2,14 @@ import type { SkillHandler } from './types.ts';
 import { DT_MS } from '../types.ts';
 
 /**
- * 독수리 급강하 (도박 급강하): the eagle plunges at the nearest racer *just ahead*
- * (larger progress, within `range`), excluding teammates / finished / waiting.
+ * 독수리 박치기 (도박 박치기, type 이름은 'divebomb' 유지): the eagle hops up and
+ * headbutts the nearest racer *just ahead* (larger progress, within `range`),
+ * excluding teammates / finished / waiting. (Mechanic unchanged from the old
+ * sky-dive flavor; only the narrative is now a ground hop + headbutt.)
  *
  * - No target ahead in range → empty whiff ('activate' only, no effect).
  * - Target found → 'activate', then a 50/50 gamble (`selfRiskChance`):
- *     win  → the target is stunned (`stunMs`) AND the dive's momentum carries the
+ *     win  → the target is stunned (`stunMs`) AND the hop's momentum carries the
  *            eagle forward with a short burst (`diveBurst` for `diveBurstMs`) —
  *            the gamble's payoff, which lets the eagle actually win races; emit
  *            'hit' (targetId = target).
@@ -38,15 +40,20 @@ export const divebombHandler: SkillHandler = (ctx) => {
     )
     .sort((a, b) => a.progress - b.progress || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
   const target = candidates[0];
-  if (!target) return; // nobody ahead in range — empty whiff
+  // No target ahead in range (e.g. the eagle is leading, or the next racer is
+  // too far) → hold: emit NOTHING so the engine reads this as 'declined to fire'
+  // (RaceEngine retries on RETRY_COOLDOWN_MS instead of the full cooldown). No
+  // FX/bubble, no wasted cooldown — and no rng.bool roll either, so the substream
+  // draw order is unchanged from the old whiff.
+  if (!target) return;
+  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
 
-  if ((target.skill.starUntil ?? 0) > frame) { // ⭐ star deflects the dive
+  if ((target.skill.starUntil ?? 0) > frame) { // ⭐ star deflects the headbutt
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;
   }
-  // Catwalk target may slip the dive entirely (probabilistic).
+  // Catwalk target may slip the headbutt entirely (probabilistic).
   if (ctx.tryDodge(target)) {
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;
@@ -62,7 +69,7 @@ export const divebombHandler: SkillHandler = (ctx) => {
   victim.skill.effectUntil = frame + stunFrames;
 
   if (success) {
-    // Dive momentum: a short forward burst (in 'straying', blockable) — the
+    // Hop momentum: a short forward burst (in 'straying', blockable) — the
     // gamble's upside that gives the eagle a real shot at winning.
     self.skill.burst = Number(params.diveBurst);
     self.skill.effectUntil = frame + Math.round(Number(params.diveBurstMs) / DT_MS);

@@ -117,8 +117,9 @@ describe('skill behaviour', () => {
   it('divebomb gambles: hits the target, botches onto self, or whiffs', () => {
     // 50/50: success stuns the nearest racer ahead (variant 'hit', targetId=that
     // racer); failure stuns the eagle itself (variant 'hit', targetId=self). No
-    // target ahead in range → 'activate' only (whiff). Across seeds we must see
-    // both branches, and a hit's victim must end up stunned that frame.
+    // target ahead in range (e.g. leading) → holds, emits nothing (engine retries
+    // soon). Across seeds we must see both hit branches, and a hit's victim must
+    // end up stunned that frame.
     let sawTargetHit = false;
     let sawSelfBotch = false;
     for (let s = 0; s < 60; s++) {

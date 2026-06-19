@@ -193,7 +193,8 @@ export const DT_MS = 1000 / 60;
 /**
  * Finish line offset (start line ≠ finish line). Laps 1..(N-1) complete a full
  * loop back to the start line; only the *final* lap runs past the start line by
- * `FINISH_OFFSET_FRAC` of one lap length before the finish (e.g. mid-straight).
+ * `FINISH_OFFSET_FRAC` of one lap length before the finish (≈3/4 along the
+ * bottom straight, near the right corner).
  *
  * Total finish distance = laps × trackLength + FINISH_OFFSET_FRAC × trackLength.
  *
@@ -202,4 +203,4 @@ export const DT_MS = 1000 / 60;
  * Shared with the renderer (imported from this module) so the drawn finish line
  * matches the simulated one.
  */
-export const FINISH_OFFSET_FRAC = 0.12;
+export const FINISH_OFFSET_FRAC = 0.21;

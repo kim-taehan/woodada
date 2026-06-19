@@ -20,7 +20,7 @@ export const dog: CharacterData = {
     type: 'zoomies',
     cooldownMs: [3000, 6000],
     // burst = extra forward speed (units/frame) for burstMs; strayChance pushes lane outward.
-    params: { burstMin: 0.5, burstMax: 1.1, burstMs: 520, strayChance: 0.32, strayLane: 0.45 },
+    params: { burstMin: 0.42, burstMax: 0.92, burstMs: 470, strayChance: 0.32, strayLane: 0.45 },
   },
   lines: { skill: '우다다다다!!!', win: '왈왈!', lose: '깨갱…' },
 };
