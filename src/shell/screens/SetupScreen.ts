@@ -13,7 +13,7 @@ import { teamOrder, teamPalette, type TeamId } from '../../data/teams.ts';
 import { randomName } from '../../data/names.ts';
 import { openGuide } from './GuideOverlay.ts';
 
-const CHAR_LABEL: Record<string, string> = { dog: '🐶', cat: '🐱', monkey: '🐒', eagle: '🦅', bear: '🐻', penguin: '🐧' };
+const CHAR_LABEL: Record<string, string> = { dog: '🐶', cat: '🐱', monkey: '🐒', eagle: '🦅', bear: '🐻', penguin: '🐧', hedgehog: '🦔' };
 const TEAM_EMOJI: Record<TeamId, string> = { red: '🔴', blue: '🔵', white: '⚪', black: '⚫' };
 
 export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLElement {

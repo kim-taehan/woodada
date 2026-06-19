@@ -108,6 +108,13 @@ export interface RacerState {
   phase: RacerPhase;
   /** Lateral heading hint for renderer (-1 inward .. +1 outward). */
   facing: number;
+  /**
+   * Overtake hysteresis: the lane side this racer has committed to weave toward
+   * (-1 inner, +1 outer) while passing a blocker, or 0 / undefined when not
+   * committed. Held until the pass clears or that side gets blocked, so the weave
+   * target doesn't flip every frame (no per-frame side re-roll → no lane wobble).
+   */
+  weaveSide?: -1 | 0 | 1;
   /** Frame index when the finish line was crossed. */
   finishedAt?: number;
   /** Final placement, 1 = first. Assigned at finish. */

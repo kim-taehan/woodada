@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { characterCatalog } from '../../src/data/characters/index.ts';
 
-const KNOWN_SKILL_TYPES = ['zoomies', 'catwalk', 'banana', 'divebomb', 'roar', 'icefield'];
+const KNOWN_SKILL_TYPES = ['zoomies', 'catwalk', 'banana', 'divebomb', 'roar', 'icefield', 'bristle'];
 
 describe('character catalog schema', () => {
   it('each character has required fields and a known skill type', () => {
@@ -17,6 +17,6 @@ describe('character catalog schema', () => {
   });
 
   it('ships the active characters', () => {
-    expect(Object.keys(characterCatalog).sort()).toEqual(['bear', 'cat', 'dog', 'eagle', 'monkey', 'penguin']);
+    expect(Object.keys(characterCatalog).sort()).toEqual(['bear', 'cat', 'dog', 'eagle', 'hedgehog', 'monkey', 'penguin']);
   });
 });

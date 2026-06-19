@@ -4,9 +4,11 @@
  *
  * Each racer cruises in its own `homeLane` (the field stays spread across the
  * track) with a gentle wander. When blocked by someone directly ahead it weaves
- * into an open neighbouring lane to pass, then drifts back home; if both sides
- * are blocked it decelerates until a gap opens. Lane no longer affects speed, so
- * nobody has a reason to crowd the inside.
+ * into an open neighbouring lane to pass and *commits to that side* (hysteresis)
+ * until the pass clears or the side gets blocked — it does not flip sides every
+ * frame. Then it drifts back home; if both sides are blocked it decelerates until
+ * a gap opens. Lane no longer affects speed, so nobody has a reason to crowd the
+ * inside.
  */
 
 import type { Rng } from './prng.ts';
@@ -22,11 +24,11 @@ export const OVERTAKE = {
   /** Per-frame lane drift speed. */
   laneDrift: 0.05,
   /** Chance to commit to a pass when a side is open. */
-  switchChance: 0.7,
+  switchChance: 0.78,
   /** Speed multiplier while boxed in. */
   blockDecel: 0.5,
   /** Gentle lane wander amplitude + frequency. */
-  wanderAmp: 0.07,
+  wanderAmp: 0.1,
   wanderFreq: 0.05,
 } as const;
 
@@ -58,23 +60,41 @@ export function applyOvertake(self: RacerState, all: RacerState[], rng: Rng, fra
 
   const blocker = nearestAhead(all, self, self.lane, OVERTAKE.laneNear);
   if (blocker) {
-    const outer = self.lane + OVERTAKE.laneStep;
-    const inner = self.lane - OVERTAKE.laneStep;
-    const outerClear = outer <= 0.97 && !nearestAhead(all, self, outer, OVERTAKE.laneNear);
-    const innerClear = inner >= 0.03 && !nearestAhead(all, self, inner, OVERTAKE.laneNear);
+    const clearOn = (side: -1 | 1): boolean => {
+      const lane = self.lane + side * OVERTAKE.laneStep;
+      const inBounds = side === 1 ? lane <= 0.97 : lane >= 0.03;
+      return inBounds && !nearestAhead(all, self, lane, OVERTAKE.laneNear);
+    };
 
-    if ((outerClear || innerClear) && rng.bool(OVERTAKE.switchChance)) {
-      const side = outerClear && innerClear ? (rng.bool(0.5) ? 1 : -1) : outerClear ? 1 : -1;
+    // Hysteresis: if already committed to a weave side that is still open, KEEP
+    // weaving that way — don't re-roll or re-randomise the side each frame (that
+    // was the lane wobble). Only pick a side when starting a fresh weave, and
+    // draw rng exactly once then (stable per-racer substream).
+    let side: -1 | 1 | 0 = 0;
+    const committed = self.weaveSide ?? 0;
+    if (committed !== 0 && clearOn(committed)) {
+      side = committed; // stay the course — no rng draw
+    } else if (rng.bool(OVERTAKE.switchChance)) {
+      const outerClear = clearOn(1);
+      const innerClear = clearOn(-1);
+      side = outerClear && innerClear ? (rng.bool(0.5) ? 1 : -1) : outerClear ? 1 : innerClear ? -1 : 0;
+    }
+
+    if (side !== 0) {
       target = clamp(self.lane + side * OVERTAKE.laneStep, 0.05, 0.95);
       self.phase = 'running';
       self.facing = side;
+      self.weaveSide = side;
     } else {
-      // Boxed in — decelerate behind the blocker.
+      // Boxed in — decelerate behind the blocker. Drop any stale commitment.
       self.speed = Math.min(self.speed, blocker.speed) * OVERTAKE.blockDecel;
       self.phase = 'blocked';
       self.facing = 0;
+      self.weaveSide = 0;
     }
   } else {
+    // Clear of traffic — release any weave commitment and drift home.
+    self.weaveSide = 0;
     self.phase = 'running';
     self.facing = target > self.lane ? 1 : target < self.lane ? -1 : 0;
   }

@@ -6,6 +6,7 @@ import { bananaHandler } from './banana.ts';
 import { divebombHandler } from './divebomb.ts';
 import { roarHandler } from './roar.ts';
 import { icefieldHandler } from './icefield.ts';
+import { bristleHandler } from './bristle.ts';
 
 /** Register skill handlers (spec §2.4 pool). */
 export function registerDefaultSkills(r: SkillRegistry): void {
@@ -15,6 +16,7 @@ export function registerDefaultSkills(r: SkillRegistry): void {
   r.register('divebomb', divebombHandler);
   r.register('roar', roarHandler);
   r.register('icefield', icefieldHandler);
+  r.register('bristle', bristleHandler);
 }
 
 export function createDefaultSkillRegistry(): SkillRegistry {
