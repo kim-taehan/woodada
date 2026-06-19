@@ -10,9 +10,9 @@ const HI = '#FFFFFF';
  * the renderer's 'biped' runStyle swings them as it waddles; two stubby orange
  * feet are `legL`/`legR` for the alternating step. A short tail pokes out behind.
  *
- * Distinct from the eagle (spread wings, airborne hover, fierce brow cap) and the
- * other birds-of-the-roster: the penguin stands & waddles, flippers stay short and
- * close to the body, belly is the dominant cream silhouette.
+ * Distinct from the eagle (fierce brow cap, hooked beak, sharp talons) and the
+ * other birds-of-the-roster: the penguin's flippers stay short and close to the
+ * body, belly is the dominant cream silhouette, beak is a small orange triangle.
  */
 export const penguinModel: PartModel = {
   id: 'penguin',

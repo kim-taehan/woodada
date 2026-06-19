@@ -164,7 +164,7 @@ export class FxLayer {
     this.push(inner, { bornAt: now, ttl: 0.5, grow: 9 });
   }
 
-  /** Feathers scattering when the eagle's divebomb connects — drift down + sideways. */
+  /** Feathers scattering when the eagle's headbutt connects — drift down + sideways. */
   feathers(x: number, y: number, now: number): void {
     for (let i = 0; i < 8; i++) {
       const g = new Text({ text: '🪶', style: { fontSize: 15 + (i % 3) * 3 } });
@@ -175,18 +175,23 @@ export class FxLayer {
     }
   }
 
-  /** Eagle dive streak: a diagonal swoop line from above toward the strike point. */
+  /**
+   * Eagle headbutt impact: a 💥 burst at the strike point plus a few short shock
+   * lines flung outward from it, reading as a head-first "쿵". `from→to` carries
+   * the lunge direction so the lines flare along the way the eagle rammed in.
+   */
   swoop(fromX: number, fromY: number, toX: number, toY: number, now: number): void {
-    const g = new Text({ text: '💨', style: { fontSize: 22 } });
+    const g = new Text({ text: '💥', style: { fontSize: 30 } });
     g.anchor.set(0.5);
-    g.position.set(fromX, fromY);
-    this.push(g, { bornAt: now, ttl: 0.35, fade: true, arc: { fromX, fromY, toX, toY, lift: 18 } });
+    g.position.set(toX, toY - 16);
+    this.push(g, { bornAt: now, ttl: 0.35, fade: true, grow: 0.6 });
+    const dx = toX - fromX, dy = toY - fromY;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
     for (let i = 0; i < 3; i++) {
-      const line = new Graphics().roundRect(0, 0, 30, 3, 1.5).fill({ color: 0xffffff, alpha: 0.6 });
-      line.position.set(fromX + i * 6, fromY + i * 6);
-      const dx = toX - fromX, dy = toY - fromY;
-      const len = Math.hypot(dx, dy) || 1;
-      this.push(line, { bornAt: now, ttl: 0.3, vx: (dx / len) * 260, vy: (dy / len) * 260 });
+      const line = new Graphics().roundRect(0, 0, 26, 3, 1.5).fill({ color: 0xffffff, alpha: 0.7 });
+      line.position.set(toX, toY - 16 + (i - 1) * 8);
+      this.push(line, { bornAt: now, ttl: 0.28, vx: ux * 240, vy: uy * 240 });
     }
   }
 

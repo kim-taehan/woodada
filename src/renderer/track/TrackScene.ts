@@ -66,7 +66,7 @@ export function buildTrackScene(
 
   // Finish position: relay finishes on the lap boundary (u=0, same as the start
   // line), so we only draw the checker tape there. Individual/team races finish
-  // FINISH_OFFSET_FRAC into the lap (mid bottom-straight) — drawn separately from
+  // FINISH_OFFSET_FRAC into the lap (≈3/4 along the bottom straight) — drawn separately from
   // the plain start/lap line at u=0.
   const finishU = relay ? 0 : FINISH_OFFSET_FRAC;
 

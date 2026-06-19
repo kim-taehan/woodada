@@ -162,13 +162,6 @@ export class PartsCharacter {
     if (celebrating) lift = Math.abs(Math.sin(t)) * 24 * amp;
     // Cat ice-hop: a big graceful bound floats well above the gallop bob.
     if (catJumping) lift = Math.max(lift, 14 + catAir * 46);
-    // Flyer (eagle): floats above the track line — a constant hover offset plus a
-    // gentle vertical bob. No ground contact, so the lift applies whenever it's
-    // airborne (idle hover too), not just while "moving".
-    if (style === 'fly' && !celebrating && !dejected) {
-      const bob = Math.sin(o.clock * 3.4) * 6; // slow, smooth bob (clock, not cycle t)
-      lift = 26 + bob; // hover height above the line
-    }
     // Defeated slump sits a touch low — no bounce, head dropped.
     if (dejected) lift = -4;
     this.inner.y = -55 - lift;
@@ -207,8 +200,6 @@ export class PartsCharacter {
           rot += sway * 3;
         } else if (name === 'armL') rot += 6 + sway * 4; // limp, dangling arms
         else if (name === 'armR') rot -= 6 + sway * 4;
-        else if (name === 'wingL') rot += 34 + sway * 5; // wings droop, sagging shut
-        else if (name === 'wingR') rot -= 34 + sway * 5;
         else if (name === 'legL' || name === 'legR') {
           rot += name === 'legL' ? 4 : -4; // feet planted, slightly splayed
         }
@@ -283,27 +274,6 @@ export class PartsCharacter {
           scaleY *= 1 - 0.16 * land * amp; // squash on landing
           scaleX *= (1 + 0.1 * land * amp + 0.08 * air * amp) * stretch; // stretch forward mid-leap
         }
-      } else if (style === 'fly') {
-        // Eagle: airborne hover — wings flap up/down (the main silhouette), the
-        // little talons stay tucked (no stepping), the body breathes gently.
-        // `rot` is DEGREES; a strong flap is tens of degrees.
-        const flap = Math.sin(t * 0.5); // slower than a leg cycle so wings read
-        if (name === 'wingL') {
-          rot += -flap * 30 * (0.6 + amp * 0.4); // negative raises the left wing
-          dy += -Math.abs(flap) * 3;
-        } else if (name === 'wingR') {
-          rot += flap * 30 * (0.6 + amp * 0.4); // positive raises the right wing
-          dy += -Math.abs(flap) * 3;
-        } else if (name === 'legL' || name === 'legR') {
-          // tucked talons sway a touch with the bob; never step
-          rot += Math.sin(t * 0.5) * 4;
-        } else if (name === 'body') {
-          const breathe = Math.sin(t * 0.5);
-          scaleY *= 1 + 0.04 * breathe;
-          scaleX *= (1 - 0.03 * breathe) * stretch;
-        } else if (name === 'head') {
-          dy += Math.sin(o.clock * 3.4 + 0.4) * 1.5; // tiny head bob in sync with hover
-        }
       } else if (penguin) {
         // Penguin: cute *gliding* waddle — small alternating feet, a slidey
         // side-to-side body sway (the root tilt below carries the waddle), and
@@ -365,21 +335,20 @@ export class PartsCharacter {
     const dir = o.heading >= 0 ? 1 : -1;
     // Side-profile characters (gallop: dog/cat) are drawn looking +x, so mirror
     // them to face the direction of travel — left on the top straight & curves.
-    // Front-facing chibis (biped/scamper) and the flyer always face the viewer,
-    // so they must NOT mirror (it would flip their face on the far side).
+    // Front-facing chibis (biped/scamper) always face the viewer, so they must
+    // NOT mirror (it would flip their face on the far side).
     this.inner.scale.x = this.runStyle === 'gallop' ? dir : 1;
     if (o.reducedMotion) this.root.rotation = 0;
     else if (dejected) this.root.rotation = Math.sin(o.clock * 1.6) * 0.05; // small defeated sway, slumped
     else if (celebrating) this.root.rotation = Math.sin(t * 0.7) * 0.16 * amp; // cocky sway
     // Skill thrust: a quick forward crouch-and-shove so the activation reads as a
     // deliberate "action" (root.rotation is RADIANS — ~0.22rad ≈ 13° lean).
-    else if (skilling && style !== 'fly') this.root.rotation = dir * (0.2 + Math.abs(Math.sin(t * 0.5)) * 0.1);
+    else if (skilling) this.root.rotation = dir * (0.2 + Math.abs(Math.sin(t * 0.5)) * 0.1);
     else if (catJumping) this.root.rotation = dir * (0.05 - catAir * 0.16); // nose lifts into the leap (root.rotation is RADIANS)
     else if (o.phase === 'stunned') this.root.rotation = dir * 0.7; // tipped over
     else if (o.phase === 'napping') this.root.rotation = -dir * 0.18; // dozing lean-back
     else if (style === 'gallop') this.root.rotation = dir * (0.05 + o.speedNorm * 0.06); // body already horizontal; slight pitch
     else if (style === 'hop') this.root.rotation = dir * (0.03 + air * 0.18 * amp); // lean into the leap
-    else if (style === 'fly') this.root.rotation = dir * 0.04 + Math.sin(o.clock * 3.4) * 0.03; // float level, slight bank with the bob
     else if (style === 'scamper') this.root.rotation = dir * (0.1 + o.speedNorm * 0.1); // eager forward lean
     else if (sliding) this.root.rotation = dir * (0.42 + o.speedNorm * 0.12); // pitched prone onto the belly, whooshing along the ice
     else if (penguin) this.root.rotation = dir * 0.06 + Math.sin(t) * 0.16 * amp; // gliding waddle: side-to-side sway

@@ -15,16 +15,19 @@ export const eagle: CharacterData = {
     beak: '#F2B33A',
     wing: '#5A4129',
   },
-  // Airborne racer: renderer applies a hover bob + wing flap for 'fly'.
-  runStyle: 'fly',
+  // Ground runner: front-facing biped (talon feet, folded wings swing like the
+  // penguin's flippers). renderer 'biped' runStyle drives the leg/wing cycle.
+  runStyle: 'biped',
   renderScale: 0.95,
   skill: {
+    // type stays 'divebomb' — mechanic unchanged, only the flavor is now a
+    // ground hop + headbutt (see src/engine/skills/divebomb.ts).
     type: 'divebomb',
     cooldownMs: [4500, 7000],
-    // Plunges at the nearest racer just ahead within `range`. A 50/50 gamble
-    // (`selfRiskChance`): win → stun the target + the eagle keeps the dive's
-    // momentum (diveBurst for diveBurstMs); lose → the eagle crashes itself.
-    params: { range: 70, stunMs: 700, selfRiskChance: 0.5, diveBurst: 0.9, diveBurstMs: 800 },
+    // Hops up and headbutts the nearest racer just ahead within `range`. A 50/50
+    // gamble (`selfRiskChance`): win → stun the target + the eagle keeps the
+    // hop's momentum (diveBurst for diveBurstMs); lose → the eagle crashes itself.
+    params: { range: 70, stunMs: 720, selfRiskChance: 0.47, diveBurst: 0.92, diveBurstMs: 850 },
   },
-  lines: { skill: '급강하!! 🦅', win: '하늘은 내 거다!', lose: '끼…욱…', dodge: '바람을 타고 휘익~' },
+  lines: { skill: '받아랏! 🦅', win: '1등은 내 거다!', lose: '끼…욱…', dodge: '휘릭, 안 맞지롱~' },
 };
