@@ -135,6 +135,10 @@ export class PartsCharacter {
     // zone, it springs into a graceful airborne bound (vs. everyone else slipping).
     // `hop01` arcs 0→1→0 over the cycle for the parabolic jump height.
     const catJumping = this.model.id === 'cat' && !o.reducedMotion && !!o.iceJumping && moving;
+    // Eagle glide: a LIGHT airborne feel on top of the biped flow — a small steady
+    // lift + gentle bob + a forward tilt (set below). Deliberately not the old
+    // vertical hover / wing-flap; just "leaning into a glide". Display-only.
+    const eagleGlide = this.model.id === 'eagle' && !o.reducedMotion && moving;
     const style = o.reducedMotion ? 'biped' : this.runStyle;
 
     // Cycle clock; rate per locomotion style. Rabbit hops with a longer term.
@@ -162,6 +166,10 @@ export class PartsCharacter {
     if (celebrating) lift = Math.abs(Math.sin(t)) * 24 * amp;
     // Cat ice-hop: a big graceful bound floats well above the gallop bob.
     if (catJumping) lift = Math.max(lift, 14 + catAir * 46);
+    // Eagle glide: float a little off the ground with a slow, gentle bob. Small on
+    // purpose (≈10px + ±4) so it reads as a light glide, not a hover. Uses the
+    // smooth `clock` (not the leg-cycle `t`) so the bob is calm.
+    if (eagleGlide) lift = 10 + Math.sin(o.clock * 3.2) * 4;
     // Defeated slump sits a touch low — no bounce, head dropped.
     if (dejected) lift = -4;
     this.inner.y = -55 - lift;
@@ -352,6 +360,10 @@ export class PartsCharacter {
     else if (style === 'scamper') this.root.rotation = dir * (0.1 + o.speedNorm * 0.1); // eager forward lean
     else if (sliding) this.root.rotation = dir * (0.42 + o.speedNorm * 0.12); // pitched prone onto the belly, whooshing along the ice
     else if (penguin) this.root.rotation = dir * 0.06 + Math.sin(t) * 0.16 * amp; // gliding waddle: side-to-side sway
+    // Eagle glide: tip forward into the glide (a touch more than a plain biped
+    // lean) with a gentle bob-synced sway. Light — root.rotation is RADIANS, so
+    // ~0.2rad ≈ 11° tilt. No banking/flap. (Falls through to default at rest.)
+    else if (eagleGlide) this.root.rotation = dir * (0.18 + o.speedNorm * 0.08) + Math.sin(o.clock * 3.2) * 0.03;
     else this.root.rotation = dir * (0.06 + o.speedNorm * 0.12);
   }
 
