@@ -27,7 +27,6 @@ import { powerEffectScale } from '../stats.ts';
 export const divebombHandler: SkillHandler = (ctx) => {
   const { self, all, rng, params, frame } = ctx;
   const range = Number(params.range);
-  const stunFrames = Math.round(Number(params.stunMs) / DT_MS);
 
   const candidates = all
     .filter(
@@ -64,6 +63,12 @@ export const divebombHandler: SkillHandler = (ctx) => {
   // failure stuns the eagle itself.
   const success = rng.bool(1 - Number(params.selfRiskChance));
   const victim = success ? target : self;
+  // Self-botch recovers faster than a landed hit: a successful headbutt freezes the
+  // target for the full `stunMs`, but a self-crash only stuns the eagle for
+  // `selfStunMs` (shorter) so multi-lap self-botch buildup doesn't doom it to last.
+  // `selfStunMs` falls back to `stunMs` when unset (back-compat / neutral).
+  const baseStunMs = success ? Number(params.stunMs) : Number(params.selfStunMs ?? params.stunMs);
+  const stunFrames = Math.round(baseStunMs / DT_MS);
   victim.phase = 'stunned';
   victim.speed = 0;
   victim.skill.burst = 0;

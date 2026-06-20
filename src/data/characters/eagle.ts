@@ -35,7 +35,9 @@ export const eagle: CharacterData = {
     // Hops up and headbutts the nearest racer just ahead within `range`. A 50/50
     // gamble (`selfRiskChance`): win → stun the target + the eagle keeps the
     // hop's momentum (diveBurst for diveBurstMs); lose → the eagle crashes itself.
-    params: { range: 70, stunMs: 720, selfRiskChance: 0.47, diveBurst: 0.92, diveBurstMs: 850 },
+    // selfStunMs: shorter self-botch stun than stunMs, so multi-lap self-crashes
+    // recover faster and the eagle isn't polarized to last place over many laps.
+    params: { range: 70, stunMs: 720, selfStunMs: 400, selfRiskChance: 0.42, diveBurst: 0.92, diveBurstMs: 850 },
   },
   lines: { skill: '받아랏! 🦅', win: '1등은 내 거다!', lose: '끼…욱…', dodge: '휘릭, 안 맞지롱~' },
 };
