@@ -39,8 +39,10 @@
 - 지금 스킬은 쿨다운 자발동뿐(고슴도치 "추월당하면 반격"을 근사로 구현해야 했음). `onOvertaken`/`onHit` 등 이벤트 훅 → 진짜 반응형 스킬·콤보.
 - 영역: engine 계약 확장 · 리스크 큼
 
-### 8. 튜닝 상수 중앙화/프리셋 ⬜
-- CATCHUP·OVERTAKE·SPEED_JITTER·stats 계수가 흩어져 있음 → 한 곳(또는 "느슨/타이트" 프리셋)으로 모아 데이터 주도 밸런스/연출.
+### 8. 튜닝 상수 중앙화 ✅
+- **문제**: CATCHUP·OVERTAKE·SPEED_JITTER·BASE_SPEED·HOME_LANE·stats 계수가 RaceEngine/overtake/stats에 흩어져 있어 밸런스 조정 시 여러 파일을 뒤져야 했음.
+- **한 일**: `src/engine/tuning.ts` 신설 — 모든 게임플레이 "느낌 노브"를 단일 순수 데이터 모듈로 모음. 사용처(RaceEngine·overtake·stats)는 import만. **값 전부 비트 동일**(동작 보존). DT_MS/FINISH_OFFSET_FRAC는 렌더러도 쓰는 계약상수라 types.ts 유지, ITEM 블록은 자족적이라 미이동(스코프 최소). 프리셋은 오버엔지니어링이라 생략.
+- 검증: typecheck · vitest 48/48 · balance.ts(N=3000) 출력 리팩토링 전==후 diff 0.
 - 영역: 유지보수 · 리스크 낮음
 
 ### 9. 성능·확장 ⬜
