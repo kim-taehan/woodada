@@ -35,8 +35,10 @@
 - 앞 주자 바로 뒤에 붙으면 가속 → 추월에 전략성. `overtake.ts`와 결합.
 - 영역: engine · 리스크 중
 
-### 7. 반응형 스킬 훅 ⬜
-- 지금 스킬은 쿨다운 자발동뿐(고슴도치 "추월당하면 반격"을 근사로 구현해야 했음). `onOvertaken`/`onHit` 등 이벤트 훅 → 진짜 반응형 스킬·콤보.
+### 7. 반응형 스킬 훅 ✅
+- **문제**: 스킬이 쿨다운 자발동뿐 → 고슴도치 "추월당하면 반격(bristle)"을 매 틱 스캔하는 근사로 구현해야 했음.
+- **한 일**: `onOvertaken` 단일 훅만 추가(YAGNI — onHit/onPassed 등 실수요 0이라 생략). `SkillDef{tick?, onOvertaken?}` 객체형 핸들러 + `registry.getReaction`. 기존 7스킬은 함수 그대로 완전 무변경. bristle을 쿨다운 스캔 → **실제 추월 순간 발동**으로 이관(ctx.passer=추월자, 팀 제외 보존). `tryActivateSkill`→`fireSkill` 단일 진입점으로 쿨다운·서브스트림 공유(이중발동·RNG 더블드로 0). step()에서 advance 직전 progress 스냅 + 역전 검출, 동시 추월은 progress 내림차순+procKey tie-break 안정정렬(신규 RNG draw 0), 프레임당 1회 검출(무한연쇄 차단).
+- 검증: typecheck · unit 49/49 · engine-bias 1/3/10랩 green · e2e race-visual 5/5(회귀 0, bristle이 실제 추월 순간 발동 확인). bristle 발동 빈도 하락 보정으로 hedgehog params 2회 조정(triggerChance 0.30→0.75 등, floor 복구).
 - 영역: engine 계약 확장 · 리스크 큼
 
 ### 8. 튜닝 상수 중앙화 ✅

@@ -27,12 +27,13 @@ export const hedgehog: CharacterData = {
     // shove that chaser back (progress -= pushBack) and slow them (speed *= slowMul
     // for slowMs). A spiky recoil also nudges the hedgehog itself forward
     // (recoilBurst for recoilMs) so it isn't purely defensive (keeps it off the
-    // win-rate floor). The mechanic is periodic self-activation that reads as a
-    // reactive counter (engine has no overtake-event input). Values are
-    // provisional — balance-tuner does the final tuning.
+    // win-rate floor). The mechanic is the engine `onOvertaken` hook (TODO #7):
+    // it fires the exact frame a non-teammate crosses ahead of the hedgehog, so
+    // triggerChance is the per-overtake counter odds. Values are provisional —
+    // balance-tuner does the final tuning.
     type: 'bristle',
     cooldownMs: [1500, 2500],
-    params: { range: 40, triggerChance: 0.30, pushBack: 10, slowMs: 600, slowMul: 0.6, recoilBurst: 0.18, recoilMs: 500 },
+    params: { range: 40, triggerChance: 0.75, pushBack: 10, slowMs: 600, slowMul: 0.6, recoilBurst: 0.42, recoilMs: 700 },
   },
   lines: {
     skill: '따끔! 붙지 마! 🦔',

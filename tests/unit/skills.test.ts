@@ -212,6 +212,46 @@ describe('skill behaviour', () => {
     expect(traj(run(0, 0.85))).not.toEqual(traj(run(0, 0.4)));
   });
 
+  it('bristle (onOvertaken hook) fires on real overtakes, deterministically, never on a teammate', () => {
+    // TODO #7: bristle is now driven by the engine onOvertaken hook (fires the
+    // frame a non-teammate crosses ahead). Same (config, seed) must replay the
+    // hook's event stream identically (order-stable across simultaneous overtakes),
+    // and a hedgehog must never counter (shove/slow) a teammate that passes it.
+    const roster = ['hedgehog', 'hedgehog', 'dog', 'monkey', 'eagle', 'bear'];
+    const cfg = () =>
+      makeConfig({
+        characterIds: roster,
+        seed: 13,
+        teamMode: true,
+        scoringId: 'teamRankSum',
+        teamIds: ['A', 'A', 'B', 'B', 'C', 'C'],
+      });
+    const a = simulateRace(cfg(), skills, scoring);
+    const b = simulateRace(cfg(), skills, scoring);
+    const ev = (r: ReturnType<typeof simulateRace>) =>
+      r.frames.flatMap((f) =>
+        f.events
+          .filter((e) => e.type === 'bristle')
+          .map((e) => `${f.frame}:${e.variant}:${e.racerId}:${e.targetId ?? ''}`),
+      );
+    const evA = ev(a);
+    expect(evA).toEqual(ev(b)); // hook order is deterministic
+
+    // Bristle must have actually engaged via the hook (real overtake counters).
+    expect(evA.some((s) => s.includes(':hit:'))).toBe(true);
+
+    // Team-exclusion: a bristle 'hit' target must never be the hedgehog's teammate.
+    const part = cfg().participants;
+    for (const f of a.frames) {
+      for (const e of f.events) {
+        if (e.type !== 'bristle' || e.variant !== 'hit' || !e.targetId) continue;
+        const owner = part.find((p) => p.id === e.racerId)!;
+        const victim = part.find((p) => p.id === e.targetId)!;
+        expect(victim.teamId).not.toBe(owner.teamId);
+      }
+    }
+  });
+
   it('is deterministic for the same (config, seed) on the new roster', () => {
     const cfg = () => makeConfig({ characterIds: ['dog', 'cat', 'monkey', 'eagle', 'bear'], seed: 7 });
     const a = simulateRace(cfg(), skills, scoring);
