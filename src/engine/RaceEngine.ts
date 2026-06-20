@@ -644,12 +644,33 @@ export function createRaceEngine(
   return engine;
 }
 
-/** Run a whole race headless (tests, replay, golden screenshots). */
+/**
+ * A safe upper bound on frames for a race to finish, derived from the course.
+ *
+ * Total finish distance is laps + FINISH_OFFSET_FRAC of a lap (relay: the anchor
+ * runs the same offset past its last baton line, and legs are run in series, so
+ * the team distance is still laps × trackLength + offset). We divide by a very
+ * conservative *sustained* speed floor (well under the 1.3 cruise floor, to absorb
+ * prolonged blocking / slows / catch-up dips) and add a multiplicative buffer.
+ * This is only a runaway guard — real races finish far sooner.
+ */
+function autoMaxFrames(config: RaceConfig): number {
+  const MIN_SUSTAINED_SPEED = 0.4; // units/frame, conservative worst case
+  const BUFFER = 1.5;
+  const distance = config.trackLength * (config.laps + FINISH_OFFSET_FRAC);
+  return Math.ceil((distance / MIN_SUSTAINED_SPEED) * BUFFER);
+}
+
+/**
+ * Run a whole race headless (tests, replay, golden screenshots). `maxFrames`
+ * defaults to a course-scaled bound (autoMaxFrames) so any lap count finishes;
+ * pass an explicit value to override (back-compat).
+ */
 export function simulateRace(
   config: RaceConfig,
   skills: SkillRegistry,
   scoring: ScoringRegistry,
-  maxFrames = 60 * 120,
+  maxFrames = autoMaxFrames(config),
 ): { frames: EngineFrame[]; result: RaceResult } {
   const engine = createRaceEngine(config, skills, scoring);
   const frames: EngineFrame[] = [];
