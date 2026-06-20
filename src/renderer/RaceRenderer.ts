@@ -970,6 +970,13 @@ export function createRaceRenderer(): RaceRenderer {
         if (starred && Math.sin(clock * 18) > 0.4) {
           fx.starGlint(tp.x, tp.y - lift, clock);
         }
+        // 💫 Stun read: while a racer is STUNNED, keep dizzy stars spinning over its
+        // head for the WHOLE stun window (not just the impact instant), so "기절 중"
+        // is obvious. Throttled (like the star shimmer) so it stays sparse + cheap;
+        // the impact-instant fx.dizzy from playEvent still fires and overlaps fine.
+        if (r.phase === 'stunned' && !reducedMotion && Math.sin(clock * 14) > 0.3) {
+          fx.dizzyGlint(tp.x, tp.y - lift, clock);
+        }
 
         posById.set(r.id, { x: tp.x, y: tp.y, heading });
       }

@@ -330,6 +330,20 @@ export class FxLayer {
     this.push(g, { bornAt: now, ttl: 0.45, vx: 0, vy: -20, spin: 4 });
   }
 
+  /**
+   * 💫 Per-frame stun glint: a single dizzy star orbiting tightly over a STUNNED
+   * racer's head. Called each frame (throttled by the caller) so "기절 중" reads for
+   * the whole stun window, not just the impact instant. Lighter than `dizzy` (which
+   * is the one-shot impact burst). Orbits in place + spins; barely drifts.
+   */
+  dizzyGlint(x: number, y: number, now: number): void {
+    const g = new Text({ text: Math.sin(now * 20) > 0 ? '💫' : '⭐', style: { fontSize: 18 } });
+    g.anchor.set(0.5);
+    const a = now * 9; // tight, quick orbit over the head
+    g.position.set(x + Math.cos(a) * 16, y - 34 + Math.sin(a) * 7);
+    this.push(g, { bornAt: now, ttl: 0.5, vx: 0, vy: -6, spin: 6 });
+  }
+
   /** Star-shield deflect: a bright ring + ⭐ flash when a star racer no-sells a hit. */
   starShield(x: number, y: number, now: number): void {
     const ring = new Graphics().circle(0, -16, 30).stroke({ color: 0xffe24d, width: 8, alpha: 1 });
