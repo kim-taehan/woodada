@@ -432,7 +432,7 @@ export function createRaceRenderer(): RaceRenderer {
         }
       }
     }
-    trackLayer = buildTrackScene(track, width, height, config?.relay ?? false, teamColors);
+    trackLayer = buildTrackScene(track, width, height, teamColors);
     app.stage.addChildAt(trackLayer, 0);
   }
 
@@ -470,6 +470,13 @@ export function createRaceRenderer(): RaceRenderer {
     if (reducedMotion) return;
 
     const dir = self.heading >= 0 ? 1 : -1;
+    // Spike colour for an actor (hedgehog bristle quills use palette `base`, the
+    // dominant spike brown — not the pale face `point` tint stored on the view).
+    const spikeTintOf = (id: string): number => {
+      const cid = charIdById.get(id);
+      const pal = cid ? characterCatalog[cid]?.palette : undefined;
+      return hexNum(pal?.base ?? pal?.point ?? '#9C6B3F');
+    };
     // A dodge where the TARGET is currently star-invincible is a "star deflect"
     // (the star no-sold the hit), not a cat catwalk slip. Branch the FX/glow.
     const targetStarred = e.variant === 'dodge' && !!e.targetId && (starUntilById.get(e.targetId) ?? -1) > curFrameIdx;
@@ -592,6 +599,27 @@ export function createRaceRenderer(): RaceRenderer {
         // Per-victim stagger from the roar's shockwave: dizzy swirl + impact ring
         // on the struck racer (distinct from a banana's slip). Many fire at once.
         if (at) fx.dizzy(at.x, at.y, clock);
+        break;
+      case 'bristle:activate': {
+        // 🦔 Hedgehog flares its quills: a ring of spikes snapping outward in the
+        // spike colour (palette `base`), not the pale face tint. The actor's glow +
+        // pop are already raised above; this is the "가시 곤두" punch.
+        const spikeTint = spikeTintOf(e.racerId);
+        fx.bristle(self.x, self.y, spikeTint, clock);
+        break;
+      }
+      case 'bristle:hit':
+        // 🦔 The chaser (just behind) gets bounced BACKWARD off the spines: a sharp
+        // impact + quill shards + a dust skid the way it recoils. `at.heading` gives
+        // the chaser's travel sign so spikeShove flings it opposite. It is also
+        // slowed by the engine; visually it simply sags back.
+        if (at) fx.spikeShove(at.x, at.y, spikeTintOf(e.racerId), at.heading >= 0 ? 1 : -1, clock);
+        break;
+      case 'bristle:dodge':
+        // 🦔 The chaser slipped past the spines (catwalk dodge / ⭐ star). The shared
+        // dodge handler below raises the star-shield / cat shimmer; add a "헛가시"
+        // whiff at the chaser unless a star deflected it (which has its own flash).
+        if (at && !targetStarred) fx.whiff(at.x, at.y, clock);
         break;
       case 'relay:handoff': {
         // Baton from the finisher to the outgoing teammate, near the line.
@@ -1025,7 +1053,10 @@ export function createRaceRenderer(): RaceRenderer {
         // "어이쿠 자폭ㅋㅋ" line pool via a synthetic variant.
         const selfBotch = e.type === 'divebomb' && e.variant === 'hit' && e.targetId === e.racerId;
         const variant = selfBotch ? 'self' : e.variant;
-        const line = eventLine(e.type, variant, n, frame.frame + (e.targetId ? 7 : 0));
+        // Pass the target name for "{n} did it to {t}" lines. Self-botch uses {n}
+        // only, so don't feed it the (self) target name; undefined → '상대' fallback.
+        const targetName = !selfBotch && e.targetId ? namesById[e.targetId] : undefined;
+        const line = eventLine(e.type, variant, n, frame.frame + (e.targetId ? 7 : 0), targetName);
         if (line) {
           commentary.say(line, clock);
           saidThisFrame = true;
@@ -1129,7 +1160,24 @@ export function createRaceRenderer(): RaceRenderer {
       podiumScene.addChild(new Graphics().rect(0, baseY, width, height - baseY).fill(0x3f8fd0));
       app.stage.addChildAt(podiumScene, 1); // above track, below characters
 
-      const top = result.order.slice(0, Math.min(3, result.order.length));
+      // Podium occupants: top 3 by finish order. For relay each block is a TEAM,
+      // so dedupe to one representative (the anchor — first/best-ranked finisher)
+      // per team; this also stops a 2-team relay from putting a winning-team member
+      // on the 3rd block. Non-relay keeps the plain top-3 racers.
+      let top: string[];
+      if (config.relay) {
+        const seenTeams = new Set<string>();
+        top = [];
+        for (const id of result.order) {
+          const tid = config.participants.find((p) => p.id === id)?.teamId ?? id;
+          if (seenTeams.has(tid)) continue;
+          seenTeams.add(tid);
+          top.push(id);
+          if (top.length === 3) break;
+        }
+      } else {
+        top = result.order.slice(0, Math.min(3, result.order.length));
+      }
       const slotX = [width / 2, width / 2 - 160, width / 2 + 160]; // 1st centre, 2nd left, 3rd right
       const blockH = [150, 108, 80];
       const blockColor = [0xffd23f, 0xc8cbd0, 0xcd8b53];
@@ -1157,8 +1205,43 @@ export function createRaceRenderer(): RaceRenderer {
         podiumChars.push({ char: v.character, winner: rank === 0 });
       });
 
+      // Relay: the WHOLE winning team celebrates, not just its anchor. The top-3
+      // are one anchor per team (only anchors get a rank), so gather the 1st
+      // team's other members and cluster them on the ground around the 1st block,
+      // all whooping in the celebrate pose. Non-relay races keep the 3-up podium.
+      const winnerExtras: string[] = [];
+      if (config.relay && top.length > 0) {
+        const winId = top[0];
+        const winTeam = config.participants.find((p) => p.id === winId)?.teamId;
+        if (winTeam !== undefined) {
+          for (const p of config.participants) {
+            // Same team, not already on a podium block (avoids double-placing a
+            // member that landed in the top-3 slice, e.g. a 2-team relay).
+            if (p.teamId === winTeam && !top.includes(p.id) && views.has(p.id)) winnerExtras.push(p.id);
+          }
+        }
+        const cx = slotX[0];
+        const groundY = baseY + 30; // just in front of the 1st block, on the field
+        winnerExtras.forEach((id, i) => {
+          const v = views.get(id);
+          if (!v) return;
+          // Fan them left/right of (and slightly below) the anchor in a tidy huddle.
+          const span = winnerExtras.length;
+          const t = span > 1 ? i / (span - 1) - 0.5 : 0; // -0.5..0.5
+          const px = cx + t * Math.min(150, 70 + span * 24);
+          const py = groundY + ((i % 2) * 18);
+          v.character.root.visible = true;
+          v.character.root.position.set(px, py);
+          v.character.root.scale.set(0.6 * v.size);
+          v.character.root.zIndex = 990 + i; // behind/around the raised anchor
+          v.tag.root.visible = false; // keep the huddle uncluttered (anchor tag shows the team)
+          podiumChars.push({ char: v.character, winner: true });
+        });
+      }
+
+      const shown = new Set([...top, ...winnerExtras]);
       for (const [id, v] of views) {
-        if (!top.includes(id)) {
+        if (!shown.has(id)) {
           v.character.root.visible = false;
           v.tag.root.visible = false;
         }

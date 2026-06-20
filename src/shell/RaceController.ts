@@ -14,8 +14,7 @@ import type { RaceRenderer } from '../renderer/RaceRenderer.ts';
 const skills = createDefaultSkillRegistry();
 const scoring = createDefaultScoringRegistry();
 
-const SLOWMO_MS = 650; // wall-clock duration of the skill slow-motion
-const SLOWMO_SCALE = 0.3; // playback speed during a skill
+const PLAYBACK_SPEED = 0.8; // steady playback speed (0.8 = 80% real-time, gently slower)
 
 export class RaceController {
   private engine: RaceEngine;
@@ -30,9 +29,10 @@ export class RaceController {
   }
 
   /**
-   * Run the race to the finish, animating with real-time pacing. Playback drops
-   * to slow-motion for a moment whenever a skill fires, so each skill is easy to
-   * read (this only affects display speed, never the deterministic outcome).
+   * Run the race to the finish, animating at a steady, slightly slower pace (no
+   * per-skill slow-motion — with many characters skills fire too often and made
+   * playback stutter). This only affects display speed, never the deterministic
+   * outcome.
    *
    * On finish it resolves with the result but does NOT switch to the podium —
    * the track keeps showing the post-finish coast/scatter/emote (#33) until the
@@ -43,7 +43,6 @@ export class RaceController {
     return new Promise((resolve) => {
       let acc = 0; // accumulated (scaled) ms toward the next engine step
       let last = 0;
-      let slowUntil = 0;
 
       const tick = (ts: number) => {
         if (!this.running) return;
@@ -51,8 +50,7 @@ export class RaceController {
         const realDt = Math.min(ts - last, 100); // clamp big gaps (tab switches)
         last = ts;
 
-        const scale = ts < slowUntil ? SLOWMO_SCALE : 1;
-        acc += realDt * scale;
+        acc += realDt * PLAYBACK_SPEED;
 
         let frame = this.engine.current();
         let stepped = false;
@@ -60,9 +58,6 @@ export class RaceController {
           frame = this.engine.step();
           acc -= DT_MS;
           stepped = true;
-          if (frame.events.some((e) => e.variant === 'activate' || e.variant === 'hit' || e.variant === 'wake')) {
-            slowUntil = ts + SLOWMO_MS;
-          }
         }
 
         if (stepped) this.renderer.renderFrame(frame);
@@ -90,7 +85,7 @@ export class RaceController {
     let extra = 0;
     const tick = () => {
       extra += 1;
-      this.renderer.renderFrame({ ...last, frame: last.frame + extra, events: [] });
+      this.renderer.renderFrame({ ...last, frame: last.frame + extra, time: last.time + extra * (1000 / 60), events: [] });
       this.coastRaf = requestAnimationFrame(tick);
     };
     this.coastRaf = requestAnimationFrame(tick);

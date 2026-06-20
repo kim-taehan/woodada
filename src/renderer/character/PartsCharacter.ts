@@ -136,6 +136,11 @@ export class PartsCharacter {
     // `hop01` arcs 0→1→0 over the cycle for the parabolic jump height.
     const catJumping = this.model.id === 'cat' && !o.reducedMotion && !!o.iceJumping && moving;
     const style = o.reducedMotion ? 'biped' : this.runStyle;
+    // Glide (eagle): side-profile flyer. Mirrored to travel direction (like the
+    // gallop runners) but with NO leg cycle — it flies. A small steady lift +
+    // gentle bob + a forward tilt (set below) read as "leaning into a glide";
+    // wings/tail get only a faint flutter. Not a vertical hover or wing-flap.
+    const gliding = style === 'glide' && !o.reducedMotion && moving;
 
     // Cycle clock; rate per locomotion style. Rabbit hops with a longer term.
     const rate = celebrating ? 9 : style === 'gallop' ? 14 + o.speedNorm * 8 : style === 'hop' ? 4 + o.speedNorm * 2.5 : 8 + o.speedNorm * 12;
@@ -162,6 +167,10 @@ export class PartsCharacter {
     if (celebrating) lift = Math.abs(Math.sin(t)) * 24 * amp;
     // Cat ice-hop: a big graceful bound floats well above the gallop bob.
     if (catJumping) lift = Math.max(lift, 14 + catAir * 46);
+    // Glide: float a little off the ground with a slow, gentle bob. Small on
+    // purpose (≈10px + ±4) so it reads as a light glide, not a hover. Uses the
+    // smooth `clock` (not the leg-cycle `t`) so the bob is calm.
+    if (gliding) lift = 10 + Math.sin(o.clock * 3.2) * 4;
     // Defeated slump sits a touch low — no bounce, head dropped.
     if (dejected) lift = -4;
     this.inner.y = -55 - lift;
@@ -311,6 +320,29 @@ export class PartsCharacter {
             scaleX *= (2 - sq) * stretch;
           }
         }
+      } else if (style === 'glide') {
+        // Glide (eagle): NO leg cycle — it flies. While airborne (moving) the talon
+        // legs TUCK up under the belly like a real bird; the near wing + tail get a
+        // faint flutter, and the body breathes a touch. The whole-body tilt + lift
+        // below carry the "gliding" read. (rot is DEGREES.)
+        if (name === 'wingL') {
+          rot += Math.sin(o.clock * 4.2) * 5; // soft wing flutter (not a flap)
+        } else if (name === 'tail') {
+          rot += Math.sin(o.clock * 4.2 - 0.5) * 6; // tail feathers trail + sway
+        } else if (name === 'body') {
+          const breathe = Math.sin(o.clock * 3.2);
+          scaleY *= 1 + 0.03 * breathe;
+          scaleX *= (1 - 0.02 * breathe) * stretch;
+        } else if (name === 'head') {
+          dy += Math.sin(o.clock * 3.2 + 0.4) * 1.5; // tiny head bob in sync with the float
+        } else if (name === 'legL' || name === 'legR') {
+          // Tuck the talons up under the body while flying; legs hang normally at
+          // rest (idle/start). Near leg (legL) folds a touch more than the far leg.
+          if (moving) {
+            dy -= 12; // draw the feet up toward the belly
+            rot += name === 'legL' ? -28 : -20; // swing back/up (degrees), folded
+          }
+        }
       } else {
         // Biped / swing (monkey, fallback): alternating legs + arm swing.
         if (isFrontLeg) scaleX = scaleY = 0;
@@ -333,11 +365,11 @@ export class PartsCharacter {
 
     // Whole-body pose: face the running direction, lean, tumble when knocked.
     const dir = o.heading >= 0 ? 1 : -1;
-    // Side-profile characters (gallop: dog/cat) are drawn looking +x, so mirror
-    // them to face the direction of travel — left on the top straight & curves.
-    // Front-facing chibis (biped/scamper) always face the viewer, so they must
-    // NOT mirror (it would flip their face on the far side).
-    this.inner.scale.x = this.runStyle === 'gallop' ? dir : 1;
+    // Side-profile characters (gallop: dog/cat; glide: eagle) are drawn looking
+    // +x, so mirror them to face the direction of travel — left on the top
+    // straight & curves. Front-facing chibis (biped/scamper) always face the
+    // viewer, so they must NOT mirror (it would flip their face on the far side).
+    this.inner.scale.x = this.runStyle === 'gallop' || this.runStyle === 'glide' ? dir : 1;
     if (o.reducedMotion) this.root.rotation = 0;
     else if (dejected) this.root.rotation = Math.sin(o.clock * 1.6) * 0.05; // small defeated sway, slumped
     else if (celebrating) this.root.rotation = Math.sin(t * 0.7) * 0.16 * amp; // cocky sway
@@ -352,6 +384,11 @@ export class PartsCharacter {
     else if (style === 'scamper') this.root.rotation = dir * (0.1 + o.speedNorm * 0.1); // eager forward lean
     else if (sliding) this.root.rotation = dir * (0.42 + o.speedNorm * 0.12); // pitched prone onto the belly, whooshing along the ice
     else if (penguin) this.root.rotation = dir * 0.06 + Math.sin(t) * 0.16 * amp; // gliding waddle: side-to-side sway
+    // Glide (eagle): tip forward into the glide with a gentle bob-synced sway.
+    // Light — root.rotation is RADIANS, so ~0.2rad ≈ 11° tilt. `dir` leans it the
+    // way it travels (matches the inner mirror). No banking/flap. (At rest it
+    // falls through to the default below.)
+    else if (gliding) this.root.rotation = dir * (0.18 + o.speedNorm * 0.08) + Math.sin(o.clock * 3.2) * 0.03;
     else this.root.rotation = dir * (0.06 + o.speedNorm * 0.12);
   }
 

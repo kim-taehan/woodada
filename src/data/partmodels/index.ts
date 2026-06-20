@@ -5,6 +5,7 @@ import { monkeyModel } from './monkey.ts';
 import { eagleModel } from './eagle.ts';
 import { bearModel } from './bear.ts';
 import { penguinModel } from './penguin.ts';
+import { hedgehogModel } from './hedgehog.ts';
 
 export const partModels: Record<string, PartModel> = {
   dog: dogModel,
@@ -13,4 +14,5 @@ export const partModels: Record<string, PartModel> = {
   eagle: eagleModel,
   bear: bearModel,
   penguin: penguinModel,
+  hedgehog: hedgehogModel,
 };

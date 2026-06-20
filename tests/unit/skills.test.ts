@@ -11,11 +11,11 @@ const scoring = createDefaultScoringRegistry();
 describe('skill behaviour', () => {
   it('all character skills activate over the course of races', () => {
     const seen = new Set<string>();
-    for (let s = 0; s < 60 && seen.size < 6; s++) {
+    for (let s = 0; s < 60 && seen.size < 7; s++) {
       const { frames } = simulateRace(makeConfig({ characterIds: [...allThree, ...allThree], seed: s }), skills, scoring);
       for (const f of frames) for (const e of f.events) if (e.variant === 'activate') seen.add(e.type);
     }
-    expect([...seen].sort()).toEqual(['banana', 'catwalk', 'divebomb', 'icefield', 'roar', 'zoomies']);
+    expect([...seen].sort()).toEqual(['banana', 'bristle', 'catwalk', 'divebomb', 'icefield', 'roar', 'zoomies']);
   });
 
   it('zoomies emits its line and pushes a burst (straying phase)', () => {
@@ -75,7 +75,17 @@ describe('skill behaviour', () => {
           sawCatDodge = true;
           const cat = f.racers.find((r) => r.id === e.targetId)!;
           expect((cat.skill.dodgeUntil ?? 0) > f.frame).toBe(true);
-          expect(cat.phase).not.toBe('stunned');
+          // A dodge avoids *this* incoming disruption: no roar/divebomb may also
+          // land a 'hit' on the same cat this frame. (We don't assert phase!=
+          // 'stunned' outright — a residual stun from an EARLIER frame can still
+          // be in effect; the dodge only guarantees no NEW stun lands now.)
+          const stunnedNow = f.events.some(
+            (ev) =>
+              ev.targetId === e.targetId &&
+              ev.variant === 'hit' &&
+              ['roar', 'divebomb'].includes(ev.type),
+          );
+          expect(stunnedNow).toBe(false);
         }
       }
     }

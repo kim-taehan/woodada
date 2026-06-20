@@ -2,106 +2,101 @@ import type { PartModel } from './types.ts';
 
 const EYE = '#2E2620';
 const HI = '#FFFFFF';
+const TALON = '#D9981A'; // deeper gold for the claw detail over the beak yellow
+const FARLEG = '#B07814'; // far-side leg, a step darker than the talon for depth
 
 /**
- * Cute chibi eagle (front-facing), GROUND RUNNER. Stands on two scaly talon feet
- * and runs like the penguin/monkey bipeds: the renderer's 'biped' runStyle cycles
- * `legL`/`legR` and swings the short folded wings `armL`/`armR` (held close to the
- * body, like the penguin's flippers). A round brown body with a cream breast, a
- * round head with a darker feather cap + brow for a fierce-but-cute look, big eyes
- * and a hooked yellow beak. A short tail fan pokes out behind.
+ * Side-profile raptor eagle (a "real bird", faces +x; the renderer flips it via
+ * the 'glide' runStyle to match travel direction). Unlike the other front-facing
+ * chibis, this is an anatomical side silhouette: a sloped head with a long hooked
+ * beak projecting forward, a streamlined body, a fanned tail trailing behind (-x),
+ * one folded wing on the near flank, and taloned legs (the far leg drawn darker
+ * for depth). Raptor browns + a golden beak/talons; a near-black crown + brow ridge
+ * keep it fierce.
  *
- * Fierce-but-cute identity kept (brow cap, hooked beak, sharp talons) while it now
- * shares the same standing chibi schema as the other animals — no airborne hover.
- * The skill is a "jump headbutt": it springs forward and rams head-first.
+ * The 'glide' runStyle mirrors it to face travel + adds a tilt/hover (no leg cycle —
+ * it flies, doesn't step). The skill (divebomb = jump headbutt) lunges head-first
+ * forward (+x = travel direction in local space) at the racer ahead.
  */
 export const eagleModel: PartModel = {
   id: 'eagle',
   parts: [
     {
+      // tail feathers trailing behind (-x)
       name: 'tail',
-      pivot: { x: 0, y: 96 },
+      pivot: { x: -28, y: 50 },
       z: 0,
-      // short tail fan poking out below/behind the body
-      shapes: [{ kind: 'path', d: 'M-11,90 L0,104 L11,90 Q0,94 -11,90 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
+      shapes: [{ kind: 'path', d: 'M-26,44 L-58,40 L-50,50 L-60,52 L-48,58 L-26,56 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
     },
     {
-      name: 'legL',
-      // scaly yellow talon foot, planted on the ground
-      pivot: { x: -11, y: 92 },
-      z: 1,
-      shapes: [
-        { kind: 'line', x1: -11, y1: 92, x2: -11, y2: 100, stroke: 'beak', strokeW: 3.2 },
-        { kind: 'line', x1: -11, y1: 100, x2: -17, y2: 104, stroke: 'beak', strokeW: 2.6 },
-        { kind: 'line', x1: -11, y1: 100, x2: -5, y2: 104, stroke: 'beak', strokeW: 2.6 },
-        { kind: 'line', x1: -11, y1: 100, x2: -11, y2: 105, stroke: 'beak', strokeW: 2.6 },
-      ],
-    },
-    {
+      // far leg (set back + darker for depth), drawn behind the body
       name: 'legR',
-      pivot: { x: 11, y: 92 },
-      z: 1,
+      pivot: { x: 6, y: 70 },
+      z: 0,
       shapes: [
-        { kind: 'line', x1: 11, y1: 92, x2: 11, y2: 100, stroke: 'beak', strokeW: 3.2 },
-        { kind: 'line', x1: 11, y1: 100, x2: 17, y2: 104, stroke: 'beak', strokeW: 2.6 },
-        { kind: 'line', x1: 11, y1: 100, x2: 5, y2: 104, stroke: 'beak', strokeW: 2.6 },
-        { kind: 'line', x1: 11, y1: 100, x2: 11, y2: 105, stroke: 'beak', strokeW: 2.6 },
+        { kind: 'line', x1: 6, y1: 72, x2: 6, y2: 90, stroke: FARLEG, strokeW: 2.6 },
+        { kind: 'path', d: 'M6,90 L12,94 M6,90 L1,94 M6,90 L6,96', fill: 'none', stroke: FARLEG, strokeW: 2 },
       ],
     },
     {
+      // streamlined side body with a pale breast at the front/underside
       name: 'body',
-      pivot: { x: 0, y: 64 },
+      pivot: { x: 0, y: 50 },
       z: 2,
       shapes: [
-        { kind: 'ellipse', cx: 0, cy: 64, rx: 28, ry: 30, fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        // cream breast feathers
-        { kind: 'ellipse', cx: 0, cy: 68, rx: 18, ry: 22, fill: 'point' },
+        { kind: 'path', d: 'M-26,50 Q-14,32 18,36 Q40,40 40,54 Q40,70 14,72 Q-16,72 -26,58 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'path', d: 'M14,54 Q34,52 38,58 Q36,68 16,68 Q2,68 0,60 Q4,55 14,54 Z', fill: 'point' },
       ],
     },
     {
-      name: 'armL',
-      // short folded wing held close to the body, pivoted at the shoulder so the
-      // 'biped' run swings it like a flipper
-      pivot: { x: -26, y: 54 },
-      z: 3,
-      shapes: [{ kind: 'path', d: 'M-26,50 Q-44,60 -36,82 Q-26,72 -25,56 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
+      // near leg + taloned foot reaching the ground
+      name: 'legL',
+      pivot: { x: 16, y: 70 },
+      z: 1,
+      shapes: [
+        { kind: 'path', d: 'M14,66 Q12,74 14,80 L19,80 Q18,73 19,66 Z', fill: 'base', stroke: 'outline', strokeW: 2 },
+        { kind: 'line', x1: 16, y1: 80, x2: 16, y2: 92, stroke: 'beak', strokeW: 3 },
+        { kind: 'path', d: 'M16,92 L24,96 L25,93 M16,92 L9,96 L8,93 M16,92 L16,98', fill: 'none', stroke: TALON, strokeW: 2.4 },
+      ],
     },
     {
-      name: 'armR',
-      pivot: { x: 26, y: 54 },
+      // folded wing on the near flank with notched primary tips
+      name: 'wingL',
+      pivot: { x: 2, y: 46 },
       z: 3,
-      shapes: [{ kind: 'path', d: 'M26,50 Q44,60 36,82 Q26,72 25,56 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
+      shapes: [{ kind: 'path', d: 'M-6,44 Q14,40 30,48 L22,50 L28,54 L18,55 L24,60 L8,58 Q-2,54 -6,50 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
     },
     {
+      // sloped raptor head facing +x: crest, dark crown, heavy brow ridge, eye,
+      // long hooked beak projecting forward to a sharp point
       name: 'head',
-      pivot: { x: 0, y: 30 },
+      pivot: { x: 30, y: 22 },
       z: 5,
       shapes: [
-        { kind: 'circle', cx: 0, cy: 0, r: 36, fill: 'point', stroke: 'outline', strokeW: 2.5 },
-        // brow / cap of darker feathers for a fierce-but-cute look
-        { kind: 'path', d: 'M-36,-4 Q0,-40 36,-4 Q24,-18 0,-18 Q-24,-18 -36,-4 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        { kind: 'ellipse', cx: -22, cy: 8, rx: 6, ry: 4, fill: 'cheek', opacity: 0.7 },
-        { kind: 'ellipse', cx: 22, cy: 8, rx: 6, ry: 4, fill: 'cheek', opacity: 0.7 },
-        // big eyes with an angry-cute brow already implied by the cap
-        { kind: 'circle', cx: -13, cy: -2, r: 8.5, fill: EYE },
-        { kind: 'circle', cx: 13, cy: -2, r: 8.5, fill: EYE },
-        { kind: 'circle', cx: -15, cy: -5, r: 2.8, fill: HI },
-        { kind: 'circle', cx: 11, cy: -5, r: 2.8, fill: HI },
-        // hooked yellow beak
-        { kind: 'path', d: 'M-8,9 L8,9 L2,20 Q0,24 -2,20 Q-3,17 -1,16 Q-5,15 -8,9 Z', fill: 'beak', stroke: 'outline', strokeW: 2 },
+        { kind: 'path', d: 'M18,8 Q6,2 0,12 Q12,12 22,18 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
+        { kind: 'path', d: 'M16,22 Q18,2 34,2 Q50,4 52,16 Q52,26 40,30 Q24,32 16,22 Z', fill: 'point', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'path', d: 'M16,18 Q22,2 36,3 Q30,9 26,18 Z', fill: 'base', stroke: 'outline', strokeW: 2 },
+        // heavy brow ridge over the eye (the fierce raptor cue)
+        { kind: 'path', d: 'M28,12 L44,12 L44,17 L30,18 Z', fill: 'crest' },
+        { kind: 'circle', cx: 36, cy: 16, r: 4, fill: EYE },
+        { kind: 'circle', cx: 35, cy: 15, r: 1.4, fill: HI },
+        // long hooked beak (+x), curling to a sharp point
+        { kind: 'path', d: 'M48,12 Q66,14 66,20 Q64,26 52,25 Q60,21 58,18 Q54,17 48,18 Z', fill: 'beak', stroke: 'outline', strokeW: 2 },
+        // cere nostril dot
+        { kind: 'circle', cx: 52, cy: 16, r: 1.4, fill: 'outline' },
       ],
     },
   ],
   poses: {
     idle: {},
-    // 'biped' run is procedural in the renderer (alternating legs + wing swing).
+    // 'glide' is procedural in the renderer (side mirror + tilt/hover, no leg cycle).
     run: {},
-    // jump headbutt: springs forward — head & body thrust ahead, folded wings
-    // sweep back for the lunge, a little airborne (dy up). (rot is DEGREES.)
-    skill: { head: { dy: 6, rot: 10 }, body: { dy: -4 }, armL: { rot: 40 }, armR: { rot: -40 } },
-    // victory: wings thrown wide, head up
-    win: { armL: { rot: -34 }, armR: { rot: 34 }, head: { dy: -4 } },
-    // crash / tumble: head snaps over, wings flail
-    fall: { head: { rot: 16 }, armL: { rot: 22 }, armR: { rot: -22 } },
+    // jump headbutt (divebomb): lunges head-first forward (+x = travel) with a
+    // little lift, wing swept back for the dive. (rot is DEGREES.)
+    skill: { head: { dx: 8, dy: 2 }, body: { dx: 4, dy: -3 }, wingL: { rot: -16 }, tail: { rot: 10 } },
+    // victory: head lifted, wing flared up
+    win: { head: { dy: -5 }, wingL: { rot: -22 }, tail: { rot: -8 } },
+    // crash / tumble: head pitches over, wing flails
+    fall: { head: { rot: 18 }, wingL: { rot: 24 }, tail: { rot: 16 } },
   },
 };

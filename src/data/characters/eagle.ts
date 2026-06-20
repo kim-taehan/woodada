@@ -8,17 +8,25 @@ export const eagle: CharacterData = {
   partModelId: 'eagle',
   proportions: { headBody: '2.5등신', bigEyes: true },
   palette: {
-    base: '#6B4F36',
-    point: '#F1EEE8',
-    outline: '#3E2D1C',
-    cheek: '#E89AA0',
-    beak: '#F2B33A',
-    wing: '#5A4129',
+    // Raptor tones, contrast pushed vs the penguin's soft black-and-white: a
+    // deep chocolate body, a bright cream face/breast, a sharp golden beak +
+    // talon, and a near-black crest for the angular feather tufts.
+    base: '#5E3F26', // deep chocolate-brown body
+    point: '#F6F2E6', // bright cream face / breast
+    outline: '#2E2013', // dark, crisp outline
+    cheek: '#E08A86', // muted blush (less candy than the penguin's pink)
+    beak: '#F6A81E', // sharp golden-orange beak + talons
+    wing: '#43301D', // darker wing feathers (more contrast against the body)
+    crest: '#2A1D12', // near-black pointed crest tufts + angry brow
   },
-  // Ground runner: front-facing biped (talon feet, folded wings swing like the
-  // penguin's flippers). renderer 'biped' runStyle drives the leg/wing cycle.
-  runStyle: 'biped',
+  // Side-profile raptor: a "real bird" silhouette (head faces +x). The 'glide'
+  // runStyle mirrors it to travel direction + adds a tilt/hover (no leg cycle —
+  // it flies). See src/data/partmodels/eagle.ts.
+  runStyle: 'glide',
   renderScale: 0.95,
+  // Gambling raptor: fast and aggressive on the charge, lighter on defence.
+  speed: 4,
+  power: 2,
   skill: {
     // type stays 'divebomb' — mechanic unchanged, only the flavor is now a
     // ground hop + headbutt (see src/engine/skills/divebomb.ts).

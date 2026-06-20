@@ -54,7 +54,7 @@ interface CaptureOpts {
   settleFrames?: number;
 }
 
-const DEFAULT_IDS = ['penguin', 'dog', 'cat', 'monkey', 'eagle', 'bear'];
+const DEFAULT_IDS = ['penguin', 'dog', 'cat', 'monkey', 'eagle', 'bear', 'hedgehog'];
 
 const hooks = {
   /** Headless: first frame index of each `${type}:${variant}` event + total frames. */

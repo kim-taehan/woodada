@@ -18,6 +18,9 @@ export const penguin: CharacterData = {
   // Front-facing waddler: biped runStyle gives alternating legs + flipper swing.
   runStyle: 'biped',
   renderScale: 0.9,
+  // Roly-poly slider: slow waddle, but heavy and hard to shove around.
+  speed: 2,
+  power: 4,
   skill: {
     type: 'icefield',
     cooldownMs: [5000, 8000],

@@ -77,6 +77,12 @@ export interface SkillRuntime {
   /** ⚡/💨 item slow: speed is multiplied by `slowMul` until `slowUntil`. */
   slowUntil?: number;
   slowMul?: number;
+  /**
+   * banana anti-stack: frame index until which this racer is immune to *further*
+   * banana hits (set to end-of-stun + a buffer on a banana hit). Stops relay teams
+   * from chain-stunning one victim leg after leg.
+   */
+  bananaImmuneUntil?: number;
   /** catwalk: the cat is currently hopping clear over an ice zone (renderer cue). */
   iceJumping?: boolean;
   /** id of the ice zone the cat last decided on (one jump roll per zone entry). */
@@ -100,6 +106,12 @@ export interface RacerState {
   /** Intrinsic cruise speed (jittered per racer, unbiased in expectation). */
   baseSpeed: number;
   /**
+   * Contact/resistance stat (1..5, median 3) copied from CharacterData at init.
+   * Read at effect time to resist incoming slow/pushback/stun and ease block
+   * deceleration (see engine/stats.ts). Undefined → neutral (no effect).
+   */
+  power?: number;
+  /**
    * Relay-only: this racer's leg index within its team (0-based, participation
    * order; anchor = last). The renderer reads this on the team's active
    * (`running`) racer to show "n/total 주자". Undefined in non-relay races.
@@ -108,6 +120,13 @@ export interface RacerState {
   phase: RacerPhase;
   /** Lateral heading hint for renderer (-1 inward .. +1 outward). */
   facing: number;
+  /**
+   * Overtake hysteresis: the lane side this racer has committed to weave toward
+   * (-1 inner, +1 outer) while passing a blocker, or 0 / undefined when not
+   * committed. Held until the pass clears or that side gets blocked, so the weave
+   * target doesn't flip every frame (no per-frame side re-roll → no lane wobble).
+   */
+  weaveSide?: -1 | 0 | 1;
   /** Frame index when the finish line was crossed. */
   finishedAt?: number;
   /** Final placement, 1 = first. Assigned at finish. */

@@ -1,5 +1,6 @@
 import type { SkillHandler } from './types.ts';
 import { DT_MS } from '../types.ts';
+import { powerEffectScale } from '../stats.ts';
 
 /**
  * 원숭이 바나나 던지기 (spec §2.1): targets the nearest racer in front or behind
@@ -8,6 +9,11 @@ import { DT_MS } from '../types.ts';
  * visible whiffed-throw gag. A catwalk cat in its dodge window may also avoid it
  * with its own probability (ctx.tryDodge) → dodge gag. Disruptive → never hits a
  * teammate.
+ *
+ * Anti-stack: a banana hit grants the target brief immunity to *further bananas*
+ * (`bananaImmuneUntil` = end of stun + `immuneMs`). This stops a relay team from
+ * chain-stunning one victim leg after leg (the monkey runaway); individual mode is
+ * barely affected since a lone monkey rarely re-targets the same racer that fast.
  */
 export const bananaHandler: SkillHandler = (ctx) => {
   const { self, all, rng, params, frame } = ctx;
@@ -21,6 +27,7 @@ export const bananaHandler: SkillHandler = (ctx) => {
         r.phase !== 'finished' &&
         r.phase !== 'waiting' &&
         r.phase !== 'stunned' &&
+        frame >= (r.skill.bananaImmuneUntil ?? 0) && // still immune from a recent banana
         (self.teamId === undefined || r.teamId !== self.teamId) &&
         (dir === 1 ? r.progress > self.progress : r.progress < self.progress),
     )
@@ -47,10 +54,15 @@ export const bananaHandler: SkillHandler = (ctx) => {
     return;
   }
 
-  const stunFrames = Math.round(Number(params.hitStunMs) / DT_MS);
+  // High-power targets shrug off some of the freeze (resistance).
+  const stunFrames = Math.round((Number(params.hitStunMs) / DT_MS) * powerEffectScale(target.power));
   target.phase = 'stunned';
   target.speed = 0;
   target.skill.burst = 0;
   target.skill.effectUntil = frame + stunFrames;
+  // Anti-stack immunity: no further banana until the stun lifts + a short buffer,
+  // so a teammate can't re-stun the same victim the instant it recovers.
+  const immuneFrames = Math.round(Number(params.immuneMs ?? 900) / DT_MS);
+  target.skill.bananaImmuneUntil = frame + stunFrames + immuneFrames;
   ctx.emit({ variant: 'hit', targetId: target.id });
 };

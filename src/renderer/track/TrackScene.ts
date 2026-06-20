@@ -21,7 +21,6 @@ export function buildTrackScene(
   track: OvalTrack,
   width: number,
   height: number,
-  relay = false,
   /**
    * Distinct team vest colors (hex 0xRRGGBB) when this is a team race. When
    * present, the finish tape is flanked by team-colored edge stripes so a team
@@ -64,16 +63,16 @@ export function buildTrackScene(
     scene.addChild(line);
   }
 
-  // Finish position: relay finishes on the lap boundary (u=0, same as the start
-  // line), so we only draw the checker tape there. Individual/team races finish
-  // FINISH_OFFSET_FRAC into the lap (≈3/4 along the bottom straight) — drawn separately from
-  // the plain start/lap line at u=0.
-  const finishU = relay ? 0 : FINISH_OFFSET_FRAC;
+  // Finish position: every race (incl. relay) finishes FINISH_OFFSET_FRAC into the
+  // lap (≈3/4 along the bottom straight) — the relay anchor now runs the extra
+  // 0.21 past the baton/lap line too (engine: relayAnchorGoal = trackLength ×
+  // (1 + FINISH_OFFSET_FRAC)). The checker tape is drawn there; the plain start/
+  // lap line stays at u=0, so start ≠ finish for relay as well.
+  const finishU = FINISH_OFFSET_FRAC;
 
   // Start / lap line across the track at u = 0 (bottom straight LEFT end). Plain
-  // dashed white line — visually distinct from the checker finish tape. Skipped
-  // for relay (the finish tape sits on top of it at u=0).
-  if (!relay) {
+  // dashed white line — visually distinct from the checker finish tape.
+  {
     const start = new Graphics();
     const sa = track.pointAt(0, outerOff);
     const sb = track.pointAt(0, innerOff);

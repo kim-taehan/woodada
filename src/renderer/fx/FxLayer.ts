@@ -1,8 +1,9 @@
 /**
  * Transient particle effects for skill activations (spec §2.3): big dust bursts
  * (zoomies), a banana that arcs to its target, stars on a hit, feathers on an
- * eagle divebomb, whiff on a dodge, and speed lines on a burst. Pure visual fluff —
- * spawned from engine events, never feeding back into the simulation.
+ * eagle divebomb, quills flaring on a hedgehog bristle, whiff on a dodge, and speed
+ * lines on a burst. Pure visual fluff — spawned from engine events, never feeding
+ * back into the simulation.
  */
 
 import { Container, Graphics, Text } from 'pixi.js';
@@ -341,6 +342,55 @@ export class FxLayer {
       const a = (i / 6) * Math.PI * 2;
       g.position.set(x + Math.cos(a) * 16, y - 16 + Math.sin(a) * 16);
       this.push(g, { bornAt: now, ttl: 0.6, vx: Math.cos(a) * 50, vy: Math.sin(a) * 50 - 12, spin: 5 });
+    }
+  }
+
+  /**
+   * 🦔 Hedgehog bristle: a ring of sharp triangular quills snapping OUTWARD off the
+   * hedgehog as it flares its spines, plus a quick flash. `tint` is the spike colour
+   * so it reads as the hedgehog's own quills. Decorative; spawned on bristle:activate.
+   */
+  bristle(x: number, y: number, tint: number, now: number): void {
+    const flash = new Graphics().circle(0, 0, 16).fill({ color: 0xffffff, alpha: 0.8 });
+    flash.position.set(x, y - 14);
+    flash.blendMode = 'add';
+    this.push(flash, { bornAt: now, ttl: 0.22, grow: 1.4 });
+    // Triangular quills flung radially outward (drawn pointing along their heading).
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const q = new Graphics().poly([0, -9, 3, 4, -3, 4]).fill({ color: tint }).stroke({ color: 0x4a3320, width: 1.5 });
+      q.position.set(x + Math.cos(a) * 10, y - 14 + Math.sin(a) * 10);
+      q.rotation = a + Math.PI / 2; // tip points outward
+      this.push(q, { bornAt: now, ttl: 0.5, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130 - 8, gravity: 60 });
+    }
+  }
+
+  /**
+   * 🦔 Bristle counter-shove: the chaser gets bounced BACKWARD off the spines. A
+   * sharp impact ring at the contact point + a few quill shards + dust streaking the
+   * way it was flung. `dir` is the chaser's travel sign; it recoils opposite (-dir).
+   */
+  spikeShove(x: number, y: number, tint: number, dir: number, now: number): void {
+    const ring = new Graphics().circle(0, 0, 14).stroke({ color: 0xfff0c0, width: 7, alpha: 1 });
+    ring.position.set(x, y - 14);
+    this.push(ring, { bornAt: now, ttl: 0.32, grow: 2.4 });
+    // Quill shards spraying back off the contact (biased opposite the chaser's travel).
+    for (let i = 0; i < 5; i++) {
+      const spread = (i - 2) * 0.5;
+      const ang = Math.PI + spread; // mostly leftward in local terms; mirrored by -dir
+      const vx = -dir * Math.cos(spread) * 150;
+      const vy = Math.sin(spread) * 90 - 20;
+      const q = new Graphics().poly([0, -8, 3, 4, -3, 4]).fill({ color: tint }).stroke({ color: 0x4a3320, width: 1.4 });
+      q.position.set(x, y - 14);
+      q.rotation = ang;
+      this.push(q, { bornAt: now, ttl: 0.5, vx, vy, gravity: 80, spin: i % 2 ? 4 : -4 });
+    }
+    // A puff of dust kicked up as it skids back.
+    for (let i = 0; i < 5; i++) {
+      const r = 6 + (i % 3) * 3;
+      const g = new Graphics().circle(0, 0, r).fill({ color: 0xe8d3a8, alpha: 0.9 });
+      g.position.set(x - dir * 6, y + 8);
+      this.push(g, { bornAt: now, ttl: 0.55, vx: -dir * (60 + i * 14), vy: -14 - i * 3, gravity: 70 });
     }
   }
 

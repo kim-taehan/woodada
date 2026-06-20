@@ -6,6 +6,7 @@
 
 import { createRng, type Rng } from './prng.ts';
 import { applyOvertake } from './overtake.ts';
+import { speedBias, powerEaseSlow } from './stats.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
@@ -132,14 +133,17 @@ export function createRaceEngine(
 ): RaceEngine {
   const rng = createRng(config.seed);
   const participantsById = Object.fromEntries(config.participants.map((p) => [p.id, p]));
-  // Relay: each runner does exactly one full lap (finish line = start line per
-  // leg). Non-relay: laps full loops, then the final lap continues past the
-  // start line by FINISH_OFFSET_FRAC of a lap to the real finish (start ≠
-  // finish). Lap-count boundaries stay at integer trackLength multiples; only
-  // this total finish *distance* shifts back.
+  // Relay: each runner does exactly one full lap, so a *handoff* fires at the lap
+  // boundary (one trackLength per leg, start line = baton line). The ANCHOR leg
+  // instead runs trackLength*(1 + FINISH_OFFSET_FRAC) — it crosses that last baton
+  // line and keeps going 0.21 of a lap to the real finish, matching individual/
+  // team races (which run laps full loops + FINISH_OFFSET_FRAC). Mid-race handoffs
+  // stay at the integer lap boundary; only the final finish distance shifts back.
   const goal = config.relay
     ? config.trackLength
     : config.trackLength * (config.laps + FINISH_OFFSET_FRAC);
+  // Relay anchor's extended finish (offset past the last baton line).
+  const relayAnchorGoal = config.trackLength * (1 + FINISH_OFFSET_FRAC);
 
   // Relay member queues: teamId → member racerIds in participation order.
   // Leg count per team = config.laps; leg i is run by members[i % size] (cyclic),
@@ -169,9 +173,13 @@ export function createRaceEngine(
   const internal: Internals = {
     racers: config.participants.map((p, i, arr) => {
       const r = rng.fork(`base:${p.id}`);
-      const baseSpeed = r.range(1.3, 1.5); // engine units/frame; tight band keeps it fair
-      // Personal cruising lane, spread across the track + a little jitter.
-      const spread = arr.length > 1 ? 0.1 + (i / (arr.length - 1)) * 0.8 : 0.5;
+      const stats = config.characters[p.characterId];
+      // Small speed-stat bias on top of the fair jitter band (catch-up reins it).
+      const baseSpeed = r.range(1.3, 1.5) + speedBias(stats?.speed);
+      // Personal cruising lane, spread across the track + a little jitter. The
+      // spread is inside-weighted (exponent > 1) so more racers home toward the
+      // inner lanes — purely a positional skew; lane never affects speed.
+      const spread = arr.length > 1 ? 0.1 + Math.pow(i / (arr.length - 1), 1.6) * 0.8 : 0.5;
       const homeLane = Math.max(0.08, Math.min(0.92, spread + r.range(-0.05, 0.05)));
       // Relay: leg = this racer's current (or next-up) leg, 0-based. The member
       // running leg 0 starts active; everyone else (including future legs of the
@@ -187,6 +195,7 @@ export function createRaceEngine(
         homeLane,
         speed: 0,
         baseSpeed,
+        power: stats?.power,
         leg,
         phase,
         facing: 0,
@@ -342,11 +351,17 @@ export function createRaceEngine(
     applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame);
 
     applyIce(self);
-    if ((self.skill.slowUntil ?? 0) > frame) self.speed *= Number(self.skill.slowMul ?? 1);
+    // slowMul (bristle / lightning / fart) — eased toward 1 by the racer's power.
+    if ((self.skill.slowUntil ?? 0) > frame) {
+      self.speed *= powerEaseSlow(Number(self.skill.slowMul ?? 1), self.power);
+    }
 
     self.progress += self.speed;
 
-    if (self.progress < goal) return;
+    // Anchor runs the extended finish; every other leg hands off at the lap line.
+    const effectiveGoal =
+      config.relay && (self.leg ?? 0) >= config.laps - 1 ? relayAnchorGoal : goal;
+    if (self.progress < effectiveGoal) return;
 
     if (config.relay) {
       relayLegComplete(self, events);
@@ -453,10 +468,11 @@ export function createRaceEngine(
           .bool(Number(config.characters.cat.skill.params.dodgeChance ?? 0));
       }
       if (self.skill.iceJumping) return; // jumped clear — no slow
-      self.speed *= zone.slowFactor;
+      self.speed *= powerEaseSlow(zone.slowFactor, self.power);
       return;
     }
-    self.speed *= self.characterId === 'penguin' ? zone.boostFactor : zone.slowFactor;
+    self.speed *=
+      self.characterId === 'penguin' ? zone.boostFactor : powerEaseSlow(zone.slowFactor, self.power);
   }
 
   /** A gamble box, on pickup, rolls one of four effects (weighted). */
