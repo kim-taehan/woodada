@@ -27,7 +27,7 @@ export const penguin: CharacterData = {
     // Lays an ice patch ahead (start = progress + aheadOffset, length zoneLength)
     // for durationMs. Species-based, team-agnostic: penguins glide faster
     // (boostFactor) across it; everyone else slips slower (slowFactor).
-    params: { zoneLength: 80, durationMs: 2800, slowFactor: 0.80, boostFactor: 1.03, aheadOffset: 40 },
+    params: { zoneLength: 80, durationMs: 2800, slowFactor: 0.80, boostFactor: 1.06, aheadOffset: 40 },
   },
   lines: {
     skill: '빙판 깔기! 미끌미끌~ 🧊',

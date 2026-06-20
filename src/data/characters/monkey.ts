@@ -24,7 +24,7 @@ export const monkey: CharacterData = {
     cooldownMs: [2100, 3800],
     // Targets front or back neighbour by progress; hitStun freezes them; dodgeChance misses.
     // immuneMs: anti-stack window after the stun lifts (blocks relay chain-stuns).
-    params: { target: 'front', hitStunMs: 1200, dodgeChance: 0.06, range: 0.32, immuneMs: 900 },
+    params: { target: 'front', hitStunMs: 1050, dodgeChance: 0.10, range: 0.32, immuneMs: 900 },
   },
   lines: { skill: '받아라! (까득)', win: '우끼끼!', lose: '끼…', dodge: '어… 빗나갔네' },
 };
