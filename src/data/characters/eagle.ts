@@ -19,9 +19,10 @@ export const eagle: CharacterData = {
     wing: '#43301D', // darker wing feathers (more contrast against the body)
     crest: '#2A1D12', // near-black pointed crest tufts + angry brow
   },
-  // Ground runner: front-facing biped (talon feet, folded wings swing like the
-  // penguin's flippers). renderer 'biped' runStyle drives the leg/wing cycle.
-  runStyle: 'biped',
+  // Side-profile raptor: a "real bird" silhouette (head faces +x). The 'glide'
+  // runStyle mirrors it to travel direction + adds a tilt/hover (no leg cycle —
+  // it flies). See src/data/partmodels/eagle.ts.
+  runStyle: 'glide',
   renderScale: 0.95,
   // Gambling raptor: fast and aggressive on the charge, lighter on defence.
   speed: 4,

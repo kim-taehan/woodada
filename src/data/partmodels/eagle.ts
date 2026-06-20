@@ -2,119 +2,101 @@ import type { PartModel } from './types.ts';
 
 const EYE = '#2E2620';
 const HI = '#FFFFFF';
+const TALON = '#D9981A'; // deeper gold for the claw detail over the beak yellow
+const FARLEG = '#B07814'; // far-side leg, a step darker than the talon for depth
 
 /**
- * Cute chibi eagle (front-facing), GROUND RUNNER — fierce-but-cute. Stands on two
- * scaly talon feet and runs like the penguin/monkey bipeds: the renderer's 'biped'
- * runStyle cycles `legL`/`legR` and swings the folded wings `armL`/`armR` (held
- * close to the body) like flippers.
+ * Side-profile raptor eagle (a "real bird", faces +x; the renderer flips it via
+ * the 'glide' runStyle to match travel direction). Unlike the other front-facing
+ * chibis, this is an anatomical side silhouette: a sloped head with a long hooked
+ * beak projecting forward, a streamlined body, a fanned tail trailing behind (-x),
+ * one folded wing on the near flank, and taloned legs (the far leg drawn darker
+ * for depth). Raptor browns + a golden beak/talons; a near-black crown + brow ridge
+ * keep it fierce.
  *
- * Deliberately sharpened to read apart from the (round, soft, black-and-white)
- * penguin: a big hooked raptor beak, angular angry brows over the big eyes, a
- * spiky feather crest jutting up/back off the crown, pointed flight-feather wing
- * tips, and clawed talons — all in raptor browns + a sharp golden beak. The
- * baby-schema (oversized head, big eyes) is kept so it stays cute, just fierce.
- * The skill is a "jump headbutt": it springs forward and rams head-first.
+ * The 'glide' runStyle mirrors it to face travel + adds a tilt/hover (no leg cycle —
+ * it flies, doesn't step). The skill (divebomb = jump headbutt) lunges head-first
+ * forward (+x = travel direction in local space) at the racer ahead.
  */
 export const eagleModel: PartModel = {
   id: 'eagle',
   parts: [
     {
+      // tail feathers trailing behind (-x)
       name: 'tail',
-      pivot: { x: 0, y: 96 },
+      pivot: { x: -28, y: 50 },
       z: 0,
-      // pointed tail feathers (notched fan) poking out below/behind the body
-      shapes: [{ kind: 'path', d: 'M-12,90 L-4,106 L0,96 L4,106 L12,90 Q0,94 -12,90 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
+      shapes: [{ kind: 'path', d: 'M-26,44 L-58,40 L-50,50 L-60,52 L-48,58 L-26,56 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
     },
     {
-      name: 'legL',
-      // scaly yellow talon foot with sharp curved claws, planted on the ground
-      pivot: { x: -11, y: 92 },
-      z: 1,
-      shapes: [
-        { kind: 'line', x1: -11, y1: 92, x2: -11, y2: 100, stroke: 'beak', strokeW: 3.4 },
-        { kind: 'path', d: 'M-11,100 L-19,104 L-20,101', fill: 'none', stroke: 'beak', strokeW: 2.6 },
-        { kind: 'path', d: 'M-11,100 L-3,104 L-2,101', fill: 'none', stroke: 'beak', strokeW: 2.6 },
-        { kind: 'path', d: 'M-11,100 L-11,106 L-13,104', fill: 'none', stroke: 'beak', strokeW: 2.6 },
-      ],
-    },
-    {
+      // far leg (set back + darker for depth), drawn behind the body
       name: 'legR',
-      pivot: { x: 11, y: 92 },
-      z: 1,
+      pivot: { x: 6, y: 70 },
+      z: 0,
       shapes: [
-        { kind: 'line', x1: 11, y1: 92, x2: 11, y2: 100, stroke: 'beak', strokeW: 3.4 },
-        { kind: 'path', d: 'M11,100 L19,104 L20,101', fill: 'none', stroke: 'beak', strokeW: 2.6 },
-        { kind: 'path', d: 'M11,100 L3,104 L2,101', fill: 'none', stroke: 'beak', strokeW: 2.6 },
-        { kind: 'path', d: 'M11,100 L11,106 L13,104', fill: 'none', stroke: 'beak', strokeW: 2.6 },
+        { kind: 'line', x1: 6, y1: 72, x2: 6, y2: 90, stroke: FARLEG, strokeW: 2.6 },
+        { kind: 'path', d: 'M6,90 L12,94 M6,90 L1,94 M6,90 L6,96', fill: 'none', stroke: FARLEG, strokeW: 2 },
       ],
     },
     {
+      // streamlined side body with a pale breast at the front/underside
       name: 'body',
-      pivot: { x: 0, y: 64 },
+      pivot: { x: 0, y: 50 },
       z: 2,
       shapes: [
-        { kind: 'ellipse', cx: 0, cy: 64, rx: 28, ry: 30, fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        // cream breast feathers
-        { kind: 'ellipse', cx: 0, cy: 68, rx: 18, ry: 22, fill: 'point' },
+        { kind: 'path', d: 'M-26,50 Q-14,32 18,36 Q40,40 40,54 Q40,70 14,72 Q-16,72 -26,58 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'path', d: 'M14,54 Q34,52 38,58 Q36,68 16,68 Q2,68 0,60 Q4,55 14,54 Z', fill: 'point' },
       ],
     },
     {
-      name: 'armL',
-      // folded wing held close to the body, tapering to a POINTED flight-feather
-      // tip (vs the penguin's rounded flipper). Pivoted at the shoulder so the
-      // 'biped' run swings it.
-      pivot: { x: -26, y: 54 },
-      z: 3,
-      shapes: [{ kind: 'path', d: 'M-26,50 Q-46,58 -42,86 L-34,76 L-30,84 Q-24,70 -25,56 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
+      // near leg + taloned foot reaching the ground
+      name: 'legL',
+      pivot: { x: 16, y: 70 },
+      z: 1,
+      shapes: [
+        { kind: 'path', d: 'M14,66 Q12,74 14,80 L19,80 Q18,73 19,66 Z', fill: 'base', stroke: 'outline', strokeW: 2 },
+        { kind: 'line', x1: 16, y1: 80, x2: 16, y2: 92, stroke: 'beak', strokeW: 3 },
+        { kind: 'path', d: 'M16,92 L24,96 L25,93 M16,92 L9,96 L8,93 M16,92 L16,98', fill: 'none', stroke: TALON, strokeW: 2.4 },
+      ],
     },
     {
-      name: 'armR',
-      pivot: { x: 26, y: 54 },
+      // folded wing on the near flank with notched primary tips
+      name: 'wingL',
+      pivot: { x: 2, y: 46 },
       z: 3,
-      shapes: [{ kind: 'path', d: 'M26,50 Q46,58 42,86 L34,76 L30,84 Q24,70 25,56 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
+      shapes: [{ kind: 'path', d: 'M-6,44 Q14,40 30,48 L22,50 L28,54 L18,55 L24,60 L8,58 Q-2,54 -6,50 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
     },
     {
+      // sloped raptor head facing +x: crest, dark crown, heavy brow ridge, eye,
+      // long hooked beak projecting forward to a sharp point
       name: 'head',
-      pivot: { x: 0, y: 30 },
+      pivot: { x: 30, y: 22 },
       z: 5,
       shapes: [
-        // crest: pointed feather tufts jutting up/back off the crown (drawn first,
-        // so they sit behind the head circle). Angular silhouette the round
-        // penguin cap never has; part of the head so it tracks the run bob.
-        { kind: 'path', d: 'M-6,-30 L-22,-58 L-2,-40 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
-        { kind: 'path', d: 'M2,-34 L4,-64 L16,-42 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
-        { kind: 'path', d: 'M12,-30 L30,-50 L24,-26 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
-        { kind: 'circle', cx: 0, cy: 0, r: 36, fill: 'point', stroke: 'outline', strokeW: 2.5 },
-        // angular dark feather cap framing the face (jagged lower edge, not the
-        // penguin's smooth round cap)
-        { kind: 'path', d: 'M-36,-2 Q0,-42 36,-2 L26,-6 L18,-16 L8,-8 L0,-18 L-8,-8 L-18,-16 L-26,-6 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        // sharp angry brows angled down toward the beak (the key fierce cue)
-        { kind: 'path', d: 'M-30,-6 L-6,2 L-8,8 L-28,4 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
-        { kind: 'path', d: 'M30,-6 L6,2 L8,8 L28,4 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
-        { kind: 'ellipse', cx: -23, cy: 12, rx: 5.5, ry: 3.5, fill: 'cheek', opacity: 0.65 },
-        { kind: 'ellipse', cx: 23, cy: 12, rx: 5.5, ry: 3.5, fill: 'cheek', opacity: 0.65 },
-        // big eyes (kept large for baby-cute) tucked under the angry brows
-        { kind: 'circle', cx: -13, cy: 4, r: 8, fill: EYE },
-        { kind: 'circle', cx: 13, cy: 4, r: 8, fill: EYE },
-        { kind: 'circle', cx: -15, cy: 1, r: 2.6, fill: HI },
-        { kind: 'circle', cx: 11, cy: 1, r: 2.6, fill: HI },
-        // big hooked raptor beak — long, sharp, curling to a point (vs the
-        // penguin's tiny triangle)
-        { kind: 'path', d: 'M-9,12 L9,12 L6,20 Q5,28 -1,30 Q3,24 1,21 Q-4,20 -9,12 Z', fill: 'beak', stroke: 'outline', strokeW: 2 },
+        { kind: 'path', d: 'M18,8 Q6,2 0,12 Q12,12 22,18 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
+        { kind: 'path', d: 'M16,22 Q18,2 34,2 Q50,4 52,16 Q52,26 40,30 Q24,32 16,22 Z', fill: 'point', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'path', d: 'M16,18 Q22,2 36,3 Q30,9 26,18 Z', fill: 'base', stroke: 'outline', strokeW: 2 },
+        // heavy brow ridge over the eye (the fierce raptor cue)
+        { kind: 'path', d: 'M28,12 L44,12 L44,17 L30,18 Z', fill: 'crest' },
+        { kind: 'circle', cx: 36, cy: 16, r: 4, fill: EYE },
+        { kind: 'circle', cx: 35, cy: 15, r: 1.4, fill: HI },
+        // long hooked beak (+x), curling to a sharp point
+        { kind: 'path', d: 'M48,12 Q66,14 66,20 Q64,26 52,25 Q60,21 58,18 Q54,17 48,18 Z', fill: 'beak', stroke: 'outline', strokeW: 2 },
+        // cere nostril dot
+        { kind: 'circle', cx: 52, cy: 16, r: 1.4, fill: 'outline' },
       ],
     },
   ],
   poses: {
     idle: {},
-    // 'biped' run is procedural in the renderer (alternating legs + wing swing).
+    // 'glide' is procedural in the renderer (side mirror + tilt/hover, no leg cycle).
     run: {},
-    // jump headbutt: springs forward — head & body thrust ahead, folded wings
-    // sweep back for the lunge, a little airborne (dy up). (rot is DEGREES.)
-    skill: { head: { dy: 6, rot: 10 }, body: { dy: -4 }, armL: { rot: 40 }, armR: { rot: -40 } },
-    // victory: wings thrown wide, head up
-    win: { armL: { rot: -34 }, armR: { rot: 34 }, head: { dy: -4 } },
-    // crash / tumble: head snaps over, wings flail
-    fall: { head: { rot: 16 }, armL: { rot: 22 }, armR: { rot: -22 } },
+    // jump headbutt (divebomb): lunges head-first forward (+x = travel) with a
+    // little lift, wing swept back for the dive. (rot is DEGREES.)
+    skill: { head: { dx: 8, dy: 2 }, body: { dx: 4, dy: -3 }, wingL: { rot: -16 }, tail: { rot: 10 } },
+    // victory: head lifted, wing flared up
+    win: { head: { dy: -5 }, wingL: { rot: -22 }, tail: { rot: -8 } },
+    // crash / tumble: head pitches over, wing flails
+    fall: { head: { rot: 18 }, wingL: { rot: 24 }, tail: { rot: 16 } },
   },
 };
