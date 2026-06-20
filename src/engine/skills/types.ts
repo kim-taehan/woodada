@@ -49,8 +49,40 @@ export interface SkillContext {
 
 export type SkillHandler = (ctx: SkillContext) => void;
 
+/**
+ * Reactive context for the single event-driven hook `onOvertaken` (TODO #7).
+ * Same mutate/emit powers as a tick `SkillContext`, plus the racer that just
+ * overtook `self` this frame (the representative passer when several pass at
+ * once — see RaceEngine overtake detection). `self` is the racer that was
+ * overtaken (= the skill owner).
+ */
+export interface SkillReactContext extends SkillContext {
+  /** The racer that just overtook `self` this frame (representative, nearest). */
+  passer: RacerState;
+}
+
+export type ReactionHandler = (ctx: SkillReactContext) => void;
+
+/**
+ * A skill is either a plain tick handler (cooldown-gated self-activation, the
+ * existing model) or an object that bundles an optional tick handler with
+ * optional reactive hooks. Both forms are accepted by the registry so the seven
+ * legacy skills keep registering as bare functions (full back-compat).
+ */
+export interface SkillDef {
+  /** Cooldown-gated self-activation, called every frame the cooldown allows. */
+  tick?: SkillHandler;
+  /** Fires the frame `self` is overtaken (event-driven, cooldown-shared). */
+  onOvertaken?: ReactionHandler;
+}
+
+export type SkillEntry = SkillHandler | SkillDef;
+
 export interface SkillRegistry {
-  register(type: string, handler: SkillHandler): void;
+  register(type: string, handler: SkillEntry): void;
+  /** The cooldown-gated self-activation handler, if any. */
   get(type: string): SkillHandler | undefined;
+  /** The `onOvertaken` reaction handler, if any. */
+  getReaction(type: string): ReactionHandler | undefined;
   has(type: string): boolean;
 }

@@ -18,7 +18,7 @@ import {
   type RacerState,
   type SkillEvent,
 } from './types.ts';
-import type { SkillRegistry } from './skills/types.ts';
+import type { SkillContext, SkillRegistry } from './skills/types.ts';
 import { resolveDodge } from './skills/dodge.ts';
 import type { ScoringRegistry } from './scoring/types.ts';
 
@@ -244,25 +244,36 @@ export function createRaceEngine(
     self.skill.effectUntil = undefined;
   }
 
-  function tryActivateSkill(self: RacerState, events: SkillEvent[]): void {
+  /**
+   * Single skill-firing entry point shared by cooldown-gated self-activation
+   * AND the event-driven `onOvertaken` hook (TODO #7). Both paths pass the same
+   * cooldown gate, draw from the same `skill:<id>` sub-stream, and award the same
+   * full/RETRY cooldown by whether the handler emitted — so a racer's skill can
+   * only fire once per frame (whichever path reaches the gate first sets the
+   * cooldown into the future), preventing double-fire / RNG double-draw.
+   *
+   * `passer` is undefined for self-activation (tick) and set for a reaction.
+   */
+  function fireSkill(self: RacerState, events: SkillEvent[], passer?: RacerState): void {
     if (frame < self.skillCooldownUntil) return;
     if (self.phase === 'finished' || self.phase === 'waiting' || self.phase === 'stunned') return;
 
     const character = config.characters[self.characterId];
-    const handler = skills.get(character.skill.type);
-    if (!handler) return;
+    const reaction = passer ? skills.getReaction(character.skill.type) : undefined;
+    const tick = passer ? undefined : skills.get(character.skill.type);
+    if (!reaction && !tick) return;
 
     const before = events.length;
-    handler({
+    const ctx: SkillContext = {
       self,
       all: internal.racers,
-      byId: (id) => internal.racers.find((r) => r.id === id),
+      byId: (id: RacerId) => internal.racers.find((r) => r.id === id),
       participants: participantsById,
       rng: internal.skillRng.get(self.id)!,
       frame,
       params: character.skill.params,
       lines: character.lines,
-      skillTypeOf: (id) => {
+      skillTypeOf: (id: RacerId) => {
         const cid = participantsById[id]?.characterId;
         return cid ? config.characters[cid]?.skill.type : undefined;
       },
@@ -281,7 +292,9 @@ export function createRaceEngine(
           slowFactor: z.slowFactor,
         });
       },
-    });
+    };
+    if (reaction && passer) reaction({ ...ctx, passer });
+    else if (tick) tick(ctx);
 
     const activated = events.length > before;
     if (activated) {
@@ -290,6 +303,62 @@ export function createRaceEngine(
     } else {
       self.skillCooldownUntil = frame + Math.round(RETRY_COOLDOWN_MS / DT_MS);
     }
+  }
+
+  /**
+   * Event-driven overtake hooks (TODO #7). After advance, compare this frame's
+   * progress against the pre-advance snapshot to find real overtakes: A overtook
+   * B iff prev[A] ≤ prev[B] and cur[A] > cur[B]. For each overtaken racer B that
+   * owns an `onOvertaken` reaction, pick the representative passer (the passer
+   * whose post-advance progress is nearest ahead of B; procKey tie-break) and
+   * fire the hook through the shared `fireSkill` gate.
+   *
+   * Determinism: the detection is a single frame-boundary snapshot (a 2nd-order
+   * inversion caused by a shove here is left for next frame, so no in-frame
+   * cascade / infinite loop). Overtaken racers are processed in a stable order
+   * (cur progress desc, then the init-time procKey) and the representative passer
+   * is chosen with the same stable keys — no new RNG draw, no `all`-order or
+   * draw-order dependence.
+   */
+  function fireOvertakeHooks(prevProgress: Map<RacerId, number>, events: SkillEvent[]): void {
+    type Pass = { overtaken: RacerState; passer: RacerState };
+    const passes: Pass[] = [];
+    for (const b of internal.racers) {
+      // Only racers that can react are worth detecting (also skips inert ones via
+      // the fireSkill gate later, but reaction-less skills never react at all).
+      const type = config.characters[b.characterId]?.skill.type;
+      if (!type || !skills.getReaction(type)) continue;
+      const prevB = prevProgress.get(b.id);
+      const curB = b.progress;
+      if (prevB === undefined) continue;
+      let best: RacerState | undefined;
+      for (const a of internal.racers) {
+        if (a.id === b.id) continue;
+        const prevA = prevProgress.get(a.id);
+        if (prevA === undefined) continue;
+        // A overtook B this frame: was at-or-behind, now strictly ahead.
+        if (!(prevA <= prevB && a.progress > curB)) continue;
+        // Representative passer = nearest ahead of B (smallest cur gap); procKey
+        // tie-break (stable, draw-order independent, no RNG draw here).
+        if (
+          !best ||
+          a.progress < best.progress ||
+          (a.progress === best.progress &&
+            internal.procKey.get(a.id)! < internal.procKey.get(best.id)!)
+        ) {
+          best = a;
+        }
+      }
+      if (best) passes.push({ overtaken: b, passer: best });
+    }
+    // Stable fire order: leader-side overtaken first (cur progress desc), procKey
+    // tie-break — same regime as the self-activation `order`.
+    passes.sort(
+      (x, y) =>
+        y.overtaken.progress - x.overtaken.progress ||
+        internal.procKey.get(y.overtaken.id)! - internal.procKey.get(x.overtaken.id)!,
+    );
+    for (const { overtaken, passer } of passes) fireSkill(overtaken, events, passer);
   }
 
   /**
@@ -608,9 +677,17 @@ export function createRaceEngine(
       );
       internal.iceZones = internal.iceZones.filter((z) => frame < z.expire);
       for (const self of order) resolveTimer(self);
-      for (const self of order) tryActivateSkill(self, events);
+      for (const self of order) fireSkill(self, events);
       internal.meanProgress = activeMeanProgress();
+
+      // Frame-boundary progress snapshot, taken AFTER self-activation skills (so
+      // a shove this frame counts) but BEFORE advance, to detect real overtakes
+      // (progress inversions) this advance produces.
+      const prevProgress = new Map<RacerId, number>();
+      for (const self of order) prevProgress.set(self.id, self.progress);
       for (const self of order) advance(self, events);
+      fireOvertakeHooks(prevProgress, events);
+
       updateBoxes(order, events);
 
       const f = snapshot(events);
