@@ -14,24 +14,10 @@
 import type { Rng } from './prng.ts';
 import type { RacerState } from './types.ts';
 import { powerBlockDecel } from './stats.ts';
-
-export const OVERTAKE = {
-  /** Forward proximity window that counts as "blocked by" / "occupied". */
-  nearAhead: 4.0,
-  /** Lateral closeness (lane units) that counts as the same lane band. */
-  laneNear: 0.16,
-  /** How far sideways to step when attempting a pass. */
-  laneStep: 0.3,
-  /** Per-frame lane drift speed. */
-  laneDrift: 0.05,
-  /** Chance to commit to a pass when a side is open. */
-  switchChance: 0.78,
-  /** Speed multiplier while boxed in. */
-  blockDecel: 0.5,
-  /** Gentle lane wander amplitude + frequency. */
-  wanderAmp: 0.1,
-  wanderFreq: 0.05,
-} as const;
+// OVERTAKE constants live in the central tuning module; re-exported here so the
+// existing `import { OVERTAKE } from './overtake.ts'` sites keep working.
+import { OVERTAKE } from './tuning.ts';
+export { OVERTAKE } from './tuning.ts';
 
 /** Lane no longer affects speed (kept for API compatibility). */
 export function laneSpeedFactor(_lane: number): number {

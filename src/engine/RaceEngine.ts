@@ -7,6 +7,7 @@
 import { createRng, type Rng } from './prng.ts';
 import { applyOvertake } from './overtake.ts';
 import { speedBias, powerEaseSlow } from './stats.ts';
+import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE } from './tuning.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
@@ -21,28 +22,8 @@ import type { SkillRegistry } from './skills/types.ts';
 import { resolveDodge } from './skills/dodge.ts';
 import type { ScoringRegistry } from './scoring/types.ts';
 
-const SPEED_JITTER = 0.08; // ±8% per-frame speed noise
-const RETRY_COOLDOWN_MS = 200; // re-check a skill that declined to fire soon
-
-/**
- * Catch-up / rubberbanding (anti-runaway). Deterministic, lane- and
- * character-agnostic: each frame a racer's speed is scaled purely by how far it
- * is from the field's mean progress. Trailers get a gentle tailwind, runaway
- * leaders a gentle drag — so the pack stays bunched and lead changes happen
- * without overriding skills (the band is small, a boosted leader still leads).
- * Gap is measured in laps (gap / trackLength) so it scales with track size.
- */
-const CATCHUP = {
-  /** Speed gain per lap of deficit behind the mean (trailers speed up). */
-  behindGain: 2.6,
-  /** Speed drag per lap of surplus ahead of the mean (leaders slow). */
-  aheadDrag: 2.2,
-  /** Clamp on the multiplier so nobody teleports or stalls. */
-  maxBoost: 1.2,
-  minBoost: 0.8,
-  /** Dead-zone (laps) around the mean where no correction applies. */
-  deadZone: 0.008,
-} as const;
+// Engine tuning knobs (SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED,
+// HOME_LANE, OVERTAKE, STATS) live in one place: engine/tuning.ts.
 
 // Item boxes spawn at random times + positions during the race (never at the
 // start), live briefly, and vanish when collected or after their lifetime.
@@ -175,12 +156,16 @@ export function createRaceEngine(
       const r = rng.fork(`base:${p.id}`);
       const stats = config.characters[p.characterId];
       // Small speed-stat bias on top of the fair jitter band (catch-up reins it).
-      const baseSpeed = r.range(1.3, 1.5) + speedBias(stats?.speed);
+      const baseSpeed = r.range(BASE_SPEED.min, BASE_SPEED.max) + speedBias(stats?.speed);
       // Personal cruising lane, spread across the track + a little jitter. The
       // spread is inside-weighted (exponent > 1) so more racers home toward the
       // inner lanes — purely a positional skew; lane never affects speed.
-      const spread = arr.length > 1 ? 0.1 + Math.pow(i / (arr.length - 1), 1.6) * 0.8 : 0.5;
-      const homeLane = Math.max(0.08, Math.min(0.92, spread + r.range(-0.05, 0.05)));
+      const spread =
+        arr.length > 1 ? HOME_LANE.lo + Math.pow(i / (arr.length - 1), HOME_LANE.exp) * HOME_LANE.span : 0.5;
+      const homeLane = Math.max(
+        HOME_LANE.clampMin,
+        Math.min(HOME_LANE.clampMax, spread + r.range(-HOME_LANE.jitter, HOME_LANE.jitter)),
+      );
       // Relay: leg = this racer's current (or next-up) leg, 0-based. The member
       // running leg 0 starts active; everyone else (including future legs of the
       // same member) waits. Members that never run (size > laps) stay waiting.

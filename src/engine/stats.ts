@@ -17,6 +17,8 @@
  * lane stat (the "lane never affects speed" invariant stands).
  */
 
+import { STATS } from './tuning.ts';
+
 /** Neutral stat → no bias/resistance. */
 const NEUTRAL = 3;
 
@@ -25,20 +27,7 @@ export function statDev(stat: number | undefined): number {
   return ((stat ?? NEUTRAL) - NEUTRAL) / 2;
 }
 
-/** Tuning coefficients — kept small so the fairness gates still hold. */
-export const STATS = {
-  /**
-   * baseSpeed bias at full speed deviation. The fair jitter band is 0.2 wide
-   * (1.3..1.5); this is kept to a *fraction* of that (≈±0.018 = under 10% of the
-   * band) so a fast animal surges early but the catch-up term reins it — flavor,
-   * not a ladder. Larger values (e.g. 0.05) break the fairness floor.
-   */
-  speedGain: 0.018,
-  /** Fraction by which a full power deviation scales an incoming effect's magnitude. */
-  powerResist: 0.15,
-  /** Fraction by which a full power deviation eases block deceleration toward 1. */
-  powerBlockEase: 0.2,
-} as const;
+// Coefficients live in the central tuning module (engine/tuning.ts).
 
 /**
  * Multiplier (~1) for an incoming negative effect's *magnitude* given the target's
