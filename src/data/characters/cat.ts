@@ -17,6 +17,9 @@ export const cat: CharacterData = {
   },
   runStyle: 'gallop',
   renderScale: 0.88,
+  // Nimble dodger: quick and slippery, a little sturdier than the dog.
+  speed: 4,
+  power: 2,
   skill: {
     type: 'catwalk',
     cooldownMs: [3000, 5000],

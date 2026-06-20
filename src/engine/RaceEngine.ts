@@ -6,6 +6,7 @@
 
 import { createRng, type Rng } from './prng.ts';
 import { applyOvertake } from './overtake.ts';
+import { speedBias, powerEaseSlow } from './stats.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
@@ -172,7 +173,9 @@ export function createRaceEngine(
   const internal: Internals = {
     racers: config.participants.map((p, i, arr) => {
       const r = rng.fork(`base:${p.id}`);
-      const baseSpeed = r.range(1.3, 1.5); // engine units/frame; tight band keeps it fair
+      const stats = config.characters[p.characterId];
+      // Small speed-stat bias on top of the fair jitter band (catch-up reins it).
+      const baseSpeed = r.range(1.3, 1.5) + speedBias(stats?.speed);
       // Personal cruising lane, spread across the track + a little jitter. The
       // spread is inside-weighted (exponent > 1) so more racers home toward the
       // inner lanes — purely a positional skew; lane never affects speed.
@@ -192,6 +195,7 @@ export function createRaceEngine(
         homeLane,
         speed: 0,
         baseSpeed,
+        power: stats?.power,
         leg,
         phase,
         facing: 0,
@@ -347,7 +351,10 @@ export function createRaceEngine(
     applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame);
 
     applyIce(self);
-    if ((self.skill.slowUntil ?? 0) > frame) self.speed *= Number(self.skill.slowMul ?? 1);
+    // slowMul (bristle / lightning / fart) — eased toward 1 by the racer's power.
+    if ((self.skill.slowUntil ?? 0) > frame) {
+      self.speed *= powerEaseSlow(Number(self.skill.slowMul ?? 1), self.power);
+    }
 
     self.progress += self.speed;
 
@@ -461,10 +468,11 @@ export function createRaceEngine(
           .bool(Number(config.characters.cat.skill.params.dodgeChance ?? 0));
       }
       if (self.skill.iceJumping) return; // jumped clear — no slow
-      self.speed *= zone.slowFactor;
+      self.speed *= powerEaseSlow(zone.slowFactor, self.power);
       return;
     }
-    self.speed *= self.characterId === 'penguin' ? zone.boostFactor : zone.slowFactor;
+    self.speed *=
+      self.characterId === 'penguin' ? zone.boostFactor : powerEaseSlow(zone.slowFactor, self.power);
   }
 
   /** A gamble box, on pickup, rolls one of four effects (weighted). */

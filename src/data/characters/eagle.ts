@@ -23,6 +23,9 @@ export const eagle: CharacterData = {
   // penguin's flippers). renderer 'biped' runStyle drives the leg/wing cycle.
   runStyle: 'biped',
   renderScale: 0.95,
+  // Gambling raptor: fast and aggressive on the charge, lighter on defence.
+  speed: 4,
+  power: 2,
   skill: {
     // type stays 'divebomb' — mechanic unchanged, only the flavor is now a
     // ground hop + headbutt (see src/engine/skills/divebomb.ts).

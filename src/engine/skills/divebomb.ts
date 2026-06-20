@@ -1,5 +1,6 @@
 import type { SkillHandler } from './types.ts';
 import { DT_MS } from '../types.ts';
+import { powerEffectScale } from '../stats.ts';
 
 /**
  * 독수리 박치기 (도박 박치기, type 이름은 'divebomb' 유지): the eagle hops up and
@@ -66,7 +67,8 @@ export const divebombHandler: SkillHandler = (ctx) => {
   victim.phase = 'stunned';
   victim.speed = 0;
   victim.skill.burst = 0;
-  victim.skill.effectUntil = frame + stunFrames;
+  // High-power victims shrug off some of the stun (resistance).
+  victim.skill.effectUntil = frame + Math.round(stunFrames * powerEffectScale(victim.power));
 
   if (success) {
     // Hop momentum: a short forward burst (in 'straying', blockable) — the

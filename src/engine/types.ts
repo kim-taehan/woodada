@@ -77,6 +77,12 @@ export interface SkillRuntime {
   /** ⚡/💨 item slow: speed is multiplied by `slowMul` until `slowUntil`. */
   slowUntil?: number;
   slowMul?: number;
+  /**
+   * banana anti-stack: frame index until which this racer is immune to *further*
+   * banana hits (set to end-of-stun + a buffer on a banana hit). Stops relay teams
+   * from chain-stunning one victim leg after leg.
+   */
+  bananaImmuneUntil?: number;
   /** catwalk: the cat is currently hopping clear over an ice zone (renderer cue). */
   iceJumping?: boolean;
   /** id of the ice zone the cat last decided on (one jump roll per zone entry). */
@@ -99,6 +105,12 @@ export interface RacerState {
   speed: number;
   /** Intrinsic cruise speed (jittered per racer, unbiased in expectation). */
   baseSpeed: number;
+  /**
+   * Contact/resistance stat (1..5, median 3) copied from CharacterData at init.
+   * Read at effect time to resist incoming slow/pushback/stun and ease block
+   * deceleration (see engine/stats.ts). Undefined → neutral (no effect).
+   */
+  power?: number;
   /**
    * Relay-only: this racer's leg index within its team (0-based, participation
    * order; anchor = last). The renderer reads this on the team's active

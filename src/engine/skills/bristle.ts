@@ -1,5 +1,6 @@
 import type { SkillHandler } from './types.ts';
 import { DT_MS } from '../types.ts';
+import { powerEffectScale } from '../stats.ts';
 
 /**
  * 고슴도치 가시 밀치기 (bristle): a reactive counter-shove. The hedgehog flares its
@@ -71,8 +72,10 @@ export const bristleHandler: SkillHandler = (ctx) => {
     return;
   }
 
-  // Shove the chaser back + briefly slow it.
-  target.progress = Math.max(0, target.progress - Number(params.pushBack));
+  // Shove the chaser back + briefly slow it. High-power chasers resist the shove
+  // distance here; the slow's *magnitude* is eased by power centrally at the
+  // speed-application site (RaceEngine), so all slowMul effects resist uniformly.
+  target.progress = Math.max(0, target.progress - Number(params.pushBack) * powerEffectScale(target.power));
   const slowFrames = Math.round(Number(params.slowMs) / DT_MS);
   target.skill.slowUntil = frame + slowFrames;
   target.skill.slowMul = Number(params.slowMul);

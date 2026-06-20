@@ -13,6 +13,7 @@
 
 import type { Rng } from './prng.ts';
 import type { RacerState } from './types.ts';
+import { powerBlockDecel } from './stats.ts';
 
 export const OVERTAKE = {
   /** Forward proximity window that counts as "blocked by" / "occupied". */
@@ -86,8 +87,10 @@ export function applyOvertake(self: RacerState, all: RacerState[], rng: Rng, fra
       self.facing = side;
       self.weaveSide = side;
     } else {
-      // Boxed in — decelerate behind the blocker. Drop any stale commitment.
-      self.speed = Math.min(self.speed, blocker.speed) * OVERTAKE.blockDecel;
+      // Boxed in — decelerate behind the blocker (high power shoulders through →
+      // less deceleration). Drop any stale commitment.
+      const decel = powerBlockDecel(OVERTAKE.blockDecel, self.power);
+      self.speed = Math.min(self.speed, blocker.speed) * decel;
       self.phase = 'blocked';
       self.facing = 0;
       self.weaveSide = 0;
