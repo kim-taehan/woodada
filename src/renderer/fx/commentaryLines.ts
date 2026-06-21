@@ -28,6 +28,11 @@ const LINES: Record<string, string[]> = {
   'roar:hit': ['{n}의 포효에 {t} 움찔 — 발 묶였다 ㅋㅋ', '{n} 크아앙! {t} 깜짝 놀라 주춤!'],
   'roar:dodge': ['{n} 포효에도 {t}는 끄떡없다! ㅋㅋ', '{n}의 으르렁, {t}한텐 안 통했다!'],
 
+  // — 거미 거미줄 납치(abduct): 앞선 표적을 뒤로 끌어내림 —
+  'abduct:activate': ['{n} 거미줄 슈웅— 앞에 누가 걸리려나 ㅋㅋ', '{n} 줄 쫙 던졌다! 누구 하나 낚으려고!', '{n} 거미줄 발사! 표적 조준 중!'],
+  'abduct:hit': ['{n}가 {t}를 거미줄로 콱! 뒤로 휙 끌어내렸다 ㅋㅋ', '{n}의 거미줄에 {t} 낚여서 뒷줄로 슉— ㅋㅋㅋ', '{n}가 1등 {t}를 줄로 잡아당겼다! {t} 엉켜서 허우적 ㅋㅋ'],
+  'abduct:dodge': ['{n}가 {t} 노리고 줄 던졌지만 {t} 쏙 빠져나갔다 ㅋㅋ', '{n}의 거미줄, {t}가 요리조리 피했다! 헛줄 ㅋㅋ'],
+
   // — items: self/AoE use {n}; the shell bonk lands on the leader {t} —
   'item:star': ['{n} 무적 발동! 별빛 두르고 폭주! ⭐', '{n} 지금은 못 막아! 반짝반짝 무적이다!', '{n} 레인보우 무적! 다 비켜라 ㅋㅋ'],
   'item:lightning': ['{n} 번개 발사! 나 빼고 다 감전 ㅋㅋ', '⚡ {n} 번쩍! 전원 처진다!', '{n} 천벌이다! 다들 느려졌어!'],
@@ -65,4 +70,39 @@ export function leadLine(name: string, seed: number): string {
 
 export function lastLapLine(seed: number): string {
   return pick(LASTLAP, seed);
+}
+
+/**
+ * 외계인 의태 스캔(mimic): the engine emits a `mimic:activate` marker (actor =
+ * alien, targetId = the racer being copied) BEFORE the copied skill's own events.
+ * The renderer derives the copied skill type from the target's character and calls
+ * this to announce the copy — "🛸 외계인이 {owner}의 {skill} 스캔·복제!". The copied
+ * skill's follow-up events still surface their own hit/dodge lines. `copiedType`
+ * maps via SKILL_LABEL (falls back to '스킬'); `owner` is the copied racer's name.
+ */
+const SKILL_LABEL: Record<string, string> = {
+  zoomies: '강아지 폭주',
+  catwalk: '고양이 캣워크',
+  banana: '원숭이 바나나',
+  divebomb: '독수리 박치기',
+  roar: '곰 포효',
+  bristle: '고슴도치 가시',
+  icefield: '펭귄 빙판',
+  nap: '토끼 낮잠',
+  brace: '코끼리 버티기',
+  abduct: '거미 거미줄',
+};
+
+const MIMIC: string[] = [
+  '🛸 {n}가 {o}의 {s} 스캔·복제! 그대로 따라한다 ㅋㅋ',
+  '🛸 {n} 의태 발동 — {o}의 {s} 똑같이 베꼈다 ㄷㄷ',
+  '🛸 {n}가 {o} 스캔 완료! {s} 카피해서 발동 ㅋㅋㅋ',
+];
+
+export function mimicLine(name: string, owner: string, copiedType: string, seed: number): string {
+  const label = SKILL_LABEL[copiedType] ?? '스킬';
+  return pick(MIMIC, seed)
+    .replace(/\{n\}/g, name)
+    .replace(/\{o\}/g, owner || '상대')
+    .replace(/\{s\}/g, label);
 }

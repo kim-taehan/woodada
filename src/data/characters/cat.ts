@@ -8,12 +8,14 @@ export const cat: CharacterData = {
   partModelId: 'cat',
   proportions: { headBody: '2.5등신', bigEyes: true },
   palette: {
-    base: '#9AA3AC',
-    point: '#EDEEF0',
-    outline: '#5C636B',
-    cheek: '#F2A6B6',
-    nose: '#E58A9C',
-    stripe: '#7C858E',
+    // Sleek black cat: near-black body with a slate underside, deep outline, and
+    // a fierce amber-yellow eye (in the part model) as the sharp accent.
+    base: '#1C1E24',
+    point: '#34373F',
+    outline: '#0C0D11',
+    cheek: '#34373F',
+    nose: '#D77A8E',
+    stripe: '#2A2D34',
   },
   runStyle: 'gallop',
   renderScale: 0.88,

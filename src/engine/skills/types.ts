@@ -25,6 +25,8 @@ export interface SkillContext {
   lines: { skill: string; win: string; lose: string; dodge?: string };
   /** The skill type of another racer's character — for situational activation. */
   skillTypeOf(id: RacerId): string | undefined;
+  /** The skill params of another racer's character (for mimic copy). */
+  skillParamsOf(id: RacerId): Record<string, number | string | boolean> | undefined;
   /**
    * Resolve catwalk's probabilistic dodge for `target` against an incoming
    * *direct* disruption (banana/roar/divebomb). Returns true if the target
@@ -45,6 +47,31 @@ export interface SkillContext {
     boostFactor: number;
     slowFactor: number;
   }): void;
+  /**
+   * Alien mimic: dispatch the registered handler for `copiedType` with `self` (the
+   * alien) as the actor, using `paramsOverride` (the scanned racer's skill params)
+   * instead of the alien's own. The engine owns the registry, so it builds the
+   * sub-context: ctx{ self:alien, all, frame, emit, lines, tryDodge, addIceZone }
+   * with params = paramsOverride and rng = an alien-only stable fork
+   * (`mimic:<copiedType>`) — the scanned racer's stream is never polluted and the
+   * draw order stays stable/deterministic.
+   *
+   * Returns false when `copiedType` is UNCOPYABLE — reactive-only (no
+   * self-activation tick, e.g. hedgehog 'bristle') or 'mimic' itself (recursion
+   * guard) — OR when the copied handler ran but HELD (emitted nothing). Returns
+   * true when the copied handler fired (emitted ≥1 event). Copied events are
+   * stamped with `copiedType`, so commentary / the renderer read them as "the alien
+   * used <that skill>" (actor = the alien). mimic can never dispatch mimic → no
+   * infinite recursion / chain.
+   */
+  invokeSkill(copiedType: string, paramsOverride: Record<string, number | string | boolean>): boolean;
+  /**
+   * Pure registry check (no dispatch, no RNG): is `copiedType` something the alien
+   * could mimic? False for 'mimic' (recursion guard) and reaction-only skills (no
+   * self-activation tick, e.g. 'bristle'). Lets mimic emit its "copying X" marker
+   * BEFORE running the copied handler, only for a target it can actually copy.
+   */
+  canCopySkill(copiedType: string): boolean;
 }
 
 export type SkillHandler = (ctx: SkillContext) => void;

@@ -21,16 +21,18 @@ describe('engine fairness (loose sanity — balance tuned later)', () => {
 
   // Fairness must hold across lap counts, not just single-lap. Multi-lap races run
   // ~Lx more frames, so N shrinks with laps to keep the suite fast. Thresholds are
-  // LOOSE sanity (can-win floor / no-dominance ceiling), and widen a little at high
-  // lap counts where skill effects compound (e.g. ice over many laps) — this is the
-  // deferred-balance gate, not a ±tolerance target.
+  // LOOSE sanity (can-win floor / no-dominance ceiling) expressed RELATIVE to the
+  // fair share (1/numChars), so they stay correct as the roster grows. Floors widen
+  // (drop) a little at high lap counts where skill effects compound (e.g. ice over
+  // many laps). This is the deferred-balance gate, not a ±tolerance target.
+  const fairShare = 1 / allThree.length;
   const LAP_CASES = [
-    { laps: 1, N: 1200, charFloor: 0.07, charCeil: 0.45, slotFloorMul: 0.3, slotCeilMul: 2.2 },
-    { laps: 3, N: 400, charFloor: 0.05, charCeil: 0.45, slotFloorMul: 0.25, slotCeilMul: 2.4 },
-    { laps: 10, N: 200, charFloor: 0.04, charCeil: 0.45, slotFloorMul: 0.2, slotCeilMul: 2.6 },
+    { laps: 1, N: 1200, charFloorMul: 0.4, charCeil: 0.45, slotFloorMul: 0.3, slotCeilMul: 2.2 },
+    { laps: 3, N: 400, charFloorMul: 0.35, charCeil: 0.45, slotFloorMul: 0.25, slotCeilMul: 2.4 },
+    { laps: 10, N: 200, charFloorMul: 0.3, charCeil: 0.45, slotFloorMul: 0.2, slotCeilMul: 2.6 },
   ];
 
-  for (const { laps, N, charFloor, charCeil, slotFloorMul, slotCeilMul } of LAP_CASES) {
+  for (const { laps, N, charFloorMul, charCeil, slotFloorMul, slotCeilMul } of LAP_CASES) {
     it(`every character can win and none dominates (laps=${laps})`, () => {
       const wins: Record<string, number> = Object.fromEntries(allThree.map((c) => [c, 0]));
       for (let s = 0; s < N; s++) {
@@ -39,7 +41,7 @@ describe('engine fairness (loose sanity — balance tuned later)', () => {
       }
       for (const cid of allThree) {
         const rate = wins[cid] / N;
-        expect(rate).toBeGreaterThan(charFloor); // can win
+        expect(rate).toBeGreaterThan(fairShare * charFloorMul); // can win
         expect(rate).toBeLessThan(charCeil); // does not dominate
       }
     });

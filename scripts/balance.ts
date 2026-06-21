@@ -19,7 +19,7 @@ import type { RaceConfig, RaceParticipant } from '../src/engine/types.ts';
 const skills = createDefaultSkillRegistry();
 const scoring = createDefaultScoringRegistry();
 
-const ROSTER = [...defaultCharacterIds]; // 7: dog cat monkey eagle bear penguin hedgehog
+const ROSTER = [...defaultCharacterIds]; // 8: dog cat monkey bear penguin hedgehog spider alien
 const FAIR = 1 / ROSTER.length;          // fair win share / (1/N)
 const FAIR_RANK = (ROSTER.length + 1) / 2; // fair avg finish rank
 
@@ -35,8 +35,10 @@ const LAPS_ONLY = lapsFlag >= 0 ? Number(args[lapsFlag + 1]) : undefined;
 const N_BY_LAPS: Record<number, number> = { 1: 3000, 3: 1500, 10: 400 };
 const LAP_SET = (LAPS_ONLY ? [LAPS_ONLY] : [1, 3, 10]).filter((l) => l > 0);
 const sampleN = (laps: number) => N_OVERRIDE ?? N_BY_LAPS[laps] ?? 800;
-// Generous frame cap so 10-lap races always finish (~400 frames/lap headroom).
-const maxFrames = (laps: number) => 60 * 40 * Math.max(laps, 1);
+// Generous frame cap so even adversarial 18-racer homogeneous-team races finish:
+// the spider's web-yank + tangle (and stacked stuns) can stretch a single lap to
+// ~2800 frames, so budget 60s/lap (3600 frames) — still a pure runaway guard.
+const maxFrames = (laps: number) => 60 * 60 * Math.max(laps, 1);
 
 function participants(ids: string[], teamIds?: (string | undefined)[]): RaceParticipant[] {
   return ids.map((cid, i) => ({ id: `p${i}`, name: `${cid}${i}`, characterId: cid, teamId: teamIds?.[i] }));
@@ -212,7 +214,7 @@ function teamPenguinStack() {
   const comp: Record<string, string[]> = {
     A_pengStack: ['penguin', 'penguin', 'penguin'],
     B_mixed: ['dog', 'cat', 'monkey'],
-    C_mixed: ['eagle', 'bear', 'hedgehog'],
+    C_mixed: ['spider', 'bear', 'hedgehog'],
   };
   const ids: string[] = [];
   const teamIds: string[] = [];

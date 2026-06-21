@@ -9,13 +9,114 @@ const skills = createDefaultSkillRegistry();
 const scoring = createDefaultScoringRegistry();
 
 describe('skill behaviour', () => {
-  it('all character skills activate over the course of races', () => {
+  it('all self-activating character skills activate over the course of races', () => {
+    // bristle is reaction-only (onOvertaken; no 'activate' emit) and mimic emits the
+    // COPIED skill's type (not 'mimic'), so neither shows up as its own 'activate'
+    // here — bristle is covered by its own hook test, mimic by the copy test below.
+    const expected = ['abduct', 'banana', 'catwalk', 'icefield', 'roar', 'zoomies'];
     const seen = new Set<string>();
-    for (let s = 0; s < 60 && seen.size < 7; s++) {
+    for (let s = 0; s < 80 && seen.size < expected.length; s++) {
       const { frames } = simulateRace(makeConfig({ characterIds: [...allThree, ...allThree], seed: s }), skills, scoring);
       for (const f of frames) for (const e of f.events) if (e.variant === 'activate') seen.add(e.type);
     }
-    expect([...seen].sort()).toEqual(['banana', 'bristle', 'catwalk', 'divebomb', 'icefield', 'roar', 'zoomies']);
+    for (const type of expected) expect([...seen]).toContain(type);
+  });
+
+  it('abduct yanks the nearest racer ahead back behind the spider + tangles it', () => {
+    // Deterministic (no gamble): on a hit the target must end up BEHIND the spider
+    // and carry a slow (tangle). Never a teammate; never targets behind. No cats so
+    // dodge never intervenes.
+    let sawHit = false;
+    for (let s = 0; s < 60; s++) {
+      const cfg = makeConfig({ characterIds: ['spider', 'dog', 'monkey', 'bear', 'penguin'], seed: s });
+      const { frames } = simulateRace(cfg, skills, scoring);
+      for (const f of frames) {
+        for (const e of f.events) {
+          if (e.type !== 'abduct' || e.variant !== 'hit' || !e.targetId) continue;
+          sawHit = true;
+          const spider = f.racers.find((r) => r.id === e.racerId)!;
+          const target = f.racers.find((r) => r.id === e.targetId)!;
+          // Yanked behind the spider this frame, and tangled (slow active now).
+          expect(target.progress).toBeLessThanOrEqual(spider.progress);
+          expect((target.skill.slowUntil ?? 0) > f.frame).toBe(true);
+        }
+      }
+    }
+    expect(sawHit).toBe(true);
+  });
+
+  it('abduct never yanks a teammate (relay/team exclusion)', () => {
+    for (let s = 0; s < 40; s++) {
+      const cfg = makeConfig({
+        characterIds: ['spider', 'spider', 'dog', 'dog'],
+        seed: s,
+        teamMode: true,
+        scoringId: 'teamRankSum',
+        teamIds: ['A', 'A', 'B', 'B'],
+      });
+      const { frames } = simulateRace(cfg, skills, scoring);
+      for (const f of frames) {
+        for (const e of f.events) {
+          if (e.type !== 'abduct' || e.variant !== 'hit' || !e.targetId) continue;
+          const thrower = cfg.participants.find((p) => p.id === e.racerId)!;
+          const target = cfg.participants.find((p) => p.id === e.targetId)!;
+          expect(target.teamId).not.toBe(thrower.teamId);
+        }
+      }
+    }
+  });
+
+  it('mimic copies the nearest racer\'s skill and fires it AS the alien, deterministically', () => {
+    // The alien has no fixed effect: it emits events stamped with the COPIED type,
+    // attributed to the alien (racerId = alien). Same (config, seed) must replay the
+    // alien's emitted event stream identically (alien-only sub-stream, stable order).
+    const roster = ['alien', 'dog', 'monkey', 'bear', 'spider', 'penguin'];
+    const cfg = () => makeConfig({ characterIds: roster, seed: 21 });
+    const a = simulateRace(cfg(), skills, scoring);
+    const b = simulateRace(cfg(), skills, scoring);
+    const alienId = 'p0';
+    const ev = (r: ReturnType<typeof simulateRace>) =>
+      r.frames.flatMap((f) =>
+        f.events
+          .filter((e) => e.racerId === alienId)
+          .map((e) => `${f.frame}:${e.type}:${e.variant}:${e.targetId ?? ''}`),
+      );
+    const evA = ev(a);
+    expect(evA).toEqual(ev(b)); // deterministic replay
+
+    // The alien emits a "따라하기" marker (type 'mimic', variant 'activate',
+    // targetId = the copied owner) on a successful copy, followed by the copied
+    // skill's own events (stamped with the COPIED type). It must have copied at
+    // least once, so a marker must exist with a real owner targetId.
+    const markers = a.frames.flatMap((f) =>
+      f.events.filter((e) => e.racerId === alienId && e.type === 'mimic' && e.variant === 'activate'),
+    );
+    expect(markers.length).toBeGreaterThan(0);
+    for (const m of markers) expect(m.targetId).toBeTruthy(); // owner of the copied skill
+
+    // The marker is the FIRST alien event of that activation: in the same frame, no
+    // alien NON-mimic event may precede a mimic marker.
+    for (const f of a.frames) {
+      const mine = f.events.filter((e) => e.racerId === alienId);
+      const firstMarkerIdx = mine.findIndex((e) => e.type === 'mimic' && e.variant === 'activate');
+      if (firstMarkerIdx < 0) continue;
+      const copiedBeforeMarker = mine.slice(0, firstMarkerIdx).some((e) => e.type !== 'mimic');
+      expect(copiedBeforeMarker).toBe(false);
+    }
+
+    // Every alien event is either the mimic marker, or a copied effect stamped with a
+    // real copyable (self-activating) type — never the alien firing 'bristle'
+    // (reaction-only) or recursively copying 'mimic'.
+    const copyable = ['zoomies', 'catwalk', 'banana', 'roar', 'icefield', 'abduct'];
+    for (const s of evA) {
+      const type = s.split(':')[1];
+      const variant = s.split(':')[2];
+      if (type === 'mimic') {
+        expect(variant).toBe('activate'); // the only 'mimic'-typed event is the marker
+        continue;
+      }
+      expect(copyable).toContain(type);
+    }
   });
 
   it('zoomies emits its line and pushes a burst (straying phase)', () => {
@@ -58,26 +159,26 @@ describe('skill behaviour', () => {
   });
 
   it('catwalk dodge: a cat that dodges in its window is not stunned that frame', () => {
-    // Probabilistic now (not guaranteed immunity). Whenever a roar/divebomb (which
-    // have no dodgeChance of their own — a dodge there can only be catwalk's) hits
+    // Probabilistic now (not guaranteed immunity). Whenever a roar (which has
+    // no dodgeChance of its own — a dodge there can only be catwalk's) hits
     // a cat that is in its dodge window, the cat avoids it and is not stunned.
     let sawCatDodge = false;
     for (let s = 0; s < 40; s++) {
-      const cfg = makeConfig({ characterIds: ['cat', 'cat', 'monkey', 'eagle', 'bear'], seed: s });
+      const cfg = makeConfig({ characterIds: ['cat', 'cat', 'monkey', 'penguin', 'bear'], seed: s });
       const catIds = new Set(cfg.participants.filter((p) => p.characterId === 'cat').map((p) => p.id));
       const { frames } = simulateRace(cfg, skills, scoring);
       for (const f of frames) {
         for (const e of f.events) {
           if (e.variant !== 'dodge' || !e.targetId || !catIds.has(e.targetId)) continue;
-          if (!['roar', 'divebomb'].includes(e.type)) continue;
+          if (!['roar'].includes(e.type)) continue;
           const cat = f.racers.find((r) => r.id === e.targetId)!;
-          // roar/divebomb have no self dodgeChance, so a dodge on a cat is either a
+          // roar has no self dodgeChance, so a dodge on a cat is either a
           // catwalk dodge (cat in its dodge window) OR a ⭐ star deflect (cat has an
           // active star). A starred cat may dodge without being in its catwalk window.
           if ((cat.skill.starUntil ?? 0) > f.frame) continue;
           sawCatDodge = true;
           expect((cat.skill.dodgeUntil ?? 0) > f.frame).toBe(true);
-          // A dodge avoids *this* incoming disruption: no roar/divebomb may also
+          // A dodge avoids *this* incoming disruption: no roar may also
           // land a 'hit' on the same cat this frame. (We don't assert phase!=
           // 'stunned' outright — a residual stun from an EARLIER frame can still
           // be in effect; the dodge only guarantees no NEW stun lands now.)
@@ -85,7 +186,7 @@ describe('skill behaviour', () => {
             (ev) =>
               ev.targetId === e.targetId &&
               ev.variant === 'hit' &&
-              ['roar', 'divebomb'].includes(ev.type),
+              ['roar'].includes(ev.type),
           );
           expect(stunnedNow).toBe(false);
         }
@@ -101,7 +202,7 @@ describe('skill behaviour', () => {
     function run(dodgeChance: number) {
       const characters = structuredClone(characterCatalog);
       characters.cat.skill.params = { ...characters.cat.skill.params, dodgeChance };
-      const cfg = { ...makeConfig({ characterIds: ['cat', 'monkey', 'bear', 'eagle'], seed: 11 }), characters };
+      const cfg = { ...makeConfig({ characterIds: ['cat', 'monkey', 'bear', 'penguin'], seed: 11 }), characters };
       return simulateRace(cfg, skills, scoring);
     }
     const always = run(1);
@@ -116,7 +217,7 @@ describe('skill behaviour', () => {
     for (const f of always.frames) {
       for (const e of f.events) {
         if (!e.targetId || !catIds.has(e.targetId)) continue;
-        if (!['banana', 'roar', 'divebomb', 'item'].includes(e.type)) continue;
+        if (!['banana', 'roar', 'item'].includes(e.type)) continue;
         // While in window, an attack on the cat must dodge, never hit.
         const cat = f.racers.find((r) => r.id === e.targetId)!;
         if ((cat.skill.dodgeUntil ?? 0) > f.frame && e.variant === 'hit') {
@@ -124,32 +225,6 @@ describe('skill behaviour', () => {
         }
       }
     }
-  });
-
-  it('divebomb gambles: hits the target, botches onto self, or whiffs', () => {
-    // 50/50: success stuns the nearest racer ahead (variant 'hit', targetId=that
-    // racer); failure stuns the eagle itself (variant 'hit', targetId=self). No
-    // target ahead in range (e.g. leading) → holds, emits nothing (engine retries
-    // soon). Across seeds we must see both hit branches, and a hit's victim must
-    // end up stunned that frame.
-    let sawTargetHit = false;
-    let sawSelfBotch = false;
-    for (let s = 0; s < 60; s++) {
-      // No cats so dodge never intervenes; targets are plain.
-      const cfg = makeConfig({ characterIds: ['eagle', 'dog', 'monkey', 'bear', 'dog'], seed: s });
-      const { frames } = simulateRace(cfg, skills, scoring);
-      for (const f of frames) {
-        for (const e of f.events) {
-          if (e.type !== 'divebomb' || e.variant !== 'hit' || !e.targetId) continue;
-          const victim = f.racers.find((r) => r.id === e.targetId)!;
-          expect(victim.phase).toBe('stunned');
-          if (e.racerId === e.targetId) sawSelfBotch = true;
-          else sawTargetHit = true;
-        }
-      }
-    }
-    expect(sawTargetHit).toBe(true);
-    expect(sawSelfBotch).toBe(true);
   });
 
   it('icefield: penguins glide faster and non-penguins slip slower inside the zone', () => {
@@ -219,7 +294,7 @@ describe('skill behaviour', () => {
     // frame a non-teammate crosses ahead). Same (config, seed) must replay the
     // hook's event stream identically (order-stable across simultaneous overtakes),
     // and a hedgehog must never counter (shove/slow) a teammate that passes it.
-    const roster = ['hedgehog', 'hedgehog', 'dog', 'monkey', 'eagle', 'bear'];
+    const roster = ['hedgehog', 'hedgehog', 'dog', 'monkey', 'penguin', 'bear'];
     const cfg = () =>
       makeConfig({
         characterIds: roster,
@@ -255,7 +330,7 @@ describe('skill behaviour', () => {
   });
 
   it('is deterministic for the same (config, seed) on the new roster', () => {
-    const cfg = () => makeConfig({ characterIds: ['dog', 'cat', 'monkey', 'eagle', 'bear'], seed: 7 });
+    const cfg = () => makeConfig({ characterIds: ['dog', 'cat', 'monkey', 'penguin', 'bear'], seed: 7 });
     const a = simulateRace(cfg(), skills, scoring);
     const b = simulateRace(cfg(), skills, scoring);
     expect(a.result.order).toEqual(b.result.order);

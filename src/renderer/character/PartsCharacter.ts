@@ -355,6 +355,25 @@ export class PartsCharacter {
             rot += name === 'legL' ? -28 : -20; // swing back/up (degrees), folded
           }
         }
+      } else if (style === 'skitter') {
+        // Spider scuttle: the front stepping pair (legL/legR) swing like a biped,
+        // while the six decorative legs (leg2/leg3/leg4 L/R) jitter in alternating
+        // ripples so the whole body reads as a busy eight-legged scurry — not a
+        // stiff two-legged march. A small low bob keeps it lively. (rot is DEGREES.)
+        if (name === 'legL') rot += Math.sin(t) * 30 * amp;
+        else if (name === 'legR') rot -= Math.sin(t) * 30 * amp;
+        else if (name === 'leg2L') rot += Math.sin(t + 1.0) * 12 * amp;
+        else if (name === 'leg2R') rot -= Math.sin(t + 1.0) * 12 * amp;
+        else if (name === 'leg3L') rot += Math.sin(t + 2.0) * 12 * amp;
+        else if (name === 'leg3R') rot -= Math.sin(t + 2.0) * 12 * amp;
+        else if (name === 'leg4L') rot += Math.sin(t + 3.0) * 10 * amp;
+        else if (name === 'leg4R') rot -= Math.sin(t + 3.0) * 10 * amp;
+        else if (name === 'body' || name === 'head') {
+          dy += moving ? -Math.abs(Math.sin(t)) * 5 * amp : 0; // low, quick bob
+          const sq = moving ? 1 - 0.05 * Math.sin(t * 2) * amp : 1;
+          scaleY *= sq;
+          scaleX *= (2 - sq) * stretch;
+        }
       } else {
         // Biped / swing (monkey, fallback): alternating legs + arm swing.
         if (isFrontLeg) scaleX = scaleY = 0;

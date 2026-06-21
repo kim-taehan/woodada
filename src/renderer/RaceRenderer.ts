@@ -18,7 +18,7 @@ import { NameTag } from './character/NameTag.ts';
 import { SpeechBubbleLayer } from './fx/SpeechBubble.ts';
 import { FxLayer } from './fx/FxLayer.ts';
 import { CommentaryBar } from './fx/Commentary.ts';
-import { eventLine, leadLine, lastLapLine } from './fx/commentaryLines.ts';
+import { eventLine, leadLine, lastLapLine, mimicLine } from './fx/commentaryLines.ts';
 import { Scoreboard } from './Scoreboard.ts';
 import { TopRankHud, type TopRow } from './TopRankHud.ts';
 import { teamPalette, type TeamId } from '../data/teams.ts';
@@ -48,6 +48,17 @@ interface RacerView {
    * point of the gamble) or no target. Display-only.
    */
   diveTargetId: string | null;
+  /**
+   * Spider abduct (web reel-in) screen-space catch-up: when this racer is yanked,
+   * the engine demotes its `progress` in ONE frame (a backward teleport). To make
+   * "reeled in on the silk" read, we hold the racer's screen spot from JUST BEFORE
+   * the yank here and, over REEL_SECS, lerp it (easeOut) toward its live engine
+   * spot — so the body slides back behind the spider instead of snapping. Pure
+   * visual offset; never touches simulation. `null` = not being reeled.
+   */
+  reelFrom: { x: number; y: number } | null;
+  /** clock (seconds) at which the reel-in tween started. */
+  reelStart: number;
 }
 
 export interface RaceRenderer {
@@ -89,6 +100,11 @@ const DIVE_LIFT = 46; // peak screen-Y hop height (px) — a low forward pounce,
 const DIVE_POP = 0.16; // slight scale bump at the apex of the hop
 // When the divebomb impact FX should land: as the headbutt connects at the bottom.
 const IMPACT_DELAY = DIVE_RISE + DIVE_HANG + DIVE_PLUNGE * 0.82;
+
+// Spider abduct reel-in: how long the yanked target's body takes to slide (in
+// screen space) from where it was to its engine-demoted spot behind the spider.
+// Matches the webPull strand/yank FX (~0.4s ttl) so glyph + body arrive together.
+const REEL_SECS = 0.25;
 
 /**
  * Screen-space hop offset at `age` seconds into the jump-headbutt: how high off
@@ -249,6 +265,14 @@ export function createRaceRenderer(): RaceRenderer {
   let scoreboard: Scoreboard | null = null;
   let topHud: TopRankHud | null = null;
   const views = new Map<string, RacerView>();
+  // Each racer's body screen position from the PREVIOUS frame, so an abduct:hit
+  // (processed after the current frame's main draw loop, which already moves the
+  // target to its engine-demoted spot) can seed the reel-in tween from where the
+  // target was JUST BEFORE the yank — otherwise it would snap to the new spot.
+  const prevScreenPos = new Map<string, { x: number; y: number }>();
+  // Scratch for the CURRENT frame's body positions; swapped into prevScreenPos at
+  // the next frame's start so prevScreenPos always lags by exactly one frame.
+  let curScreenPos = new Map<string, { x: number; y: number }>();
   // Deferred FX scheduled to fire at a future clock — used to land the eagle's
   // divebomb headbutt impact (feathers/stars/dizzy) at the BOTTOM of its hop
   // rather than at the instant of the event. Drained by renderFrame + pumpFx.
@@ -507,6 +531,12 @@ export function createRaceRenderer(): RaceRenderer {
       const pal = cid ? characterCatalog[cid]?.palette : undefined;
       return hexNum(pal?.base ?? pal?.point ?? '#9C6B3F');
     };
+    // Spider silk colour for the web-abduct strand/tangle (palette `web`).
+    const webTintOf = (id: string): number => {
+      const cid = charIdById.get(id);
+      const pal = cid ? characterCatalog[cid]?.palette : undefined;
+      return hexNum(pal?.web ?? '#E8ECF2');
+    };
     // A dodge where the TARGET is currently star-invincible is a "star deflect"
     // (the star no-sold the hit), not a cat catwalk slip. Branch the FX/glow.
     const targetStarred = e.variant === 'dodge' && !!e.targetId && (starUntilById.get(e.targetId) ?? -1) > curFrameIdx;
@@ -653,6 +683,47 @@ export function createRaceRenderer(): RaceRenderer {
         // whiff at the chaser unless a star deflected it (which has its own flash).
         if (at && !targetStarred) fx.whiff(at.x, at.y, clock);
         break;
+      case 'mimic:activate':
+        // 🛸 Alien mimic SCAN marker (no effect of its own): the engine emits this
+        // FIRST (targetId = the racer being copied), then the COPIED skill's own
+        // events follow stamped with that skill's type (actor = alien) and carry
+        // the real effect + speech bubble. So here we ONLY layer the scan/clone cue
+        // on the alien — holo scan rings + ✨ + "복사!" — so "scanned & cloned!" reads
+        // before the copied effect plays. No bubble (the marker has no line).
+        fx.scanCopy(self.x, self.y, v.tint, clock);
+        break;
+      case 'abduct:activate':
+        // 🕸️ Spider rears up and flings web (the partmodel 'skill' pose throws the
+        // front legs wide). The strand + yank land on the paired `abduct:hit`
+        // (same frame), which carries the target. Here just flick a couple of
+        // anticipation speed-lines off the cast. Actor glow/pop already raised.
+        fx.speedLines(self.x, self.y - 6, dir, clock);
+        break;
+      case 'abduct:hit':
+        // 🕸️ Web connects: a silk strand snaps spider→target, the target is reeled
+        // BACK behind the spider (its track spot is already demoted by the engine,
+        // so by next frame it's drawn behind), and it lands tangled in web (a
+        // sticky slow). The webPull yank + tangle read as "dragged the leader in".
+        if (at && v2) {
+          const webTint = webTintOf(e.racerId);
+          // The reel-in tween was seeded at the top of renderFrame (reelFrom = the
+          // target's pre-yank spot). Draw the silk strand + tangle FROM that same
+          // origin so the web visibly grabs the target where it was and the body
+          // slides down it to behind the spider. Display-only.
+          const from = v2.reelFrom ?? { x: at.x, y: at.y };
+          fx.webPull(self.x, self.y, from.x, from.y, webTint, clock);
+          fx.webTangle(from.x, from.y, webTint, clock);
+        }
+        break;
+      case 'abduct:dodge':
+        // 🕸️ The web glanced off (⭐ star / catwalk slip). The shared dodge handler
+        // below raises the star-shield / cat shimmer; add a "헛줄" whiff at the
+        // target unless a star deflected it (which has its own flash).
+        if (at) {
+          fx.webPull(self.x, self.y, at.x + dir * 24, at.y - 18, webTintOf(e.racerId), clock);
+          if (!targetStarred) fx.whiff(at.x, at.y, clock);
+        }
+        break;
       case 'relay:handoff': {
         // Baton from the finisher to the outgoing teammate, near the line.
         // Self-handoff (1-member team / cycle wrap, targetId === racerId): the
@@ -795,6 +866,8 @@ export function createRaceRenderer(): RaceRenderer {
       clearPodium();
       for (const v of views.values()) v.character.destroy();
       views.clear();
+      prevScreenPos.clear();
+      curScreenPos = new Map();
       pendingFx.length = 0;
       charLayer.removeChildren();
       bubbles.clear();
@@ -842,7 +915,7 @@ export function createRaceRenderer(): RaceRenderer {
         character.root.addChildAt(glow, 0); // behind the body
         const tag = new NameTag(p.name, tint);
         charLayer.addChild(character.root, tag.root);
-        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0, diveAt: -1, diveTargetId: null });
+        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0, diveAt: -1, diveTargetId: null, reelFrom: null, reelStart: 0 });
         names[p.id] = p.name;
       }
       namesById = names;
@@ -885,12 +958,32 @@ export function createRaceRenderer(): RaceRenderer {
       lastTime = frame.time;
       clock += dt;
       curFrameIdx = frame.frame;
+      // Roll last frame's body positions into prevScreenPos (lagging one frame) so
+      // an abduct:hit this frame can read the target's pre-yank screen spot.
+      prevScreenPos.clear();
+      for (const [id, p] of curScreenPos) prevScreenPos.set(id, p);
+      curScreenPos.clear();
       // Refresh star-invincibility windows so playEvent can branch deflected hits
       // into a "star shield" and the loop below can shimmer active star racers.
       starUntilById.clear();
       for (const r of frame.racers) {
         const su = r.skill.starUntil;
         if (su !== undefined) starUntilById.set(r.id, su);
+      }
+
+      // Spider abduct reel-in: seed the yanked target's tween HERE — before the
+      // draw loop — so the reel applies on the hit frame itself (no one-frame
+      // demoted-spot flash). The engine has already demoted the target's progress
+      // for this frame; prevScreenPos still holds its pre-yank spot. playEvent
+      // (later this frame) draws the silk FX from that same reelFrom origin.
+      for (const e of frame.events) {
+        if (e.type !== 'abduct' || e.variant !== 'hit' || !e.targetId || e.targetId === e.racerId) continue;
+        const tv = views.get(e.targetId);
+        const from = prevScreenPos.get(e.targetId);
+        if (tv && from) {
+          tv.reelFrom = { x: from.x, y: from.y };
+          tv.reelStart = clock;
+        }
       }
 
       const posById = new Map<string, Pos>();
@@ -931,6 +1024,7 @@ export function createRaceRenderer(): RaceRenderer {
         let bodyX = tp.x;
         let bodyY = tp.y;
         let diving = false;
+        let reeling = false; // true while an abduct reel-in tween is dragging the body
         let diveTilt = 0; // forward-lean applied AFTER update() (which sets root.rotation)
         if (v.diveAt >= 0) {
           const d = diveOffset(clock - v.diveAt);
@@ -956,6 +1050,22 @@ export function createRaceRenderer(): RaceRenderer {
           }
         } else {
           v.character.root.scale.set(baseScale);
+        }
+        // Spider abduct reel-in (display-only): the engine demoted this racer's
+        // progress in one frame, so `tp` (= bodyX/bodyY here) already sits behind
+        // the spider. Ease the BODY from its pre-yank spot toward that demoted spot
+        // over REEL_SECS so it slides back on the silk instead of teleporting. The
+        // engine spot keeps advancing each frame, so we lerp toward the LIVE tp.
+        if (v.reelFrom) {
+          const t = (clock - v.reelStart) / REEL_SECS;
+          if (t >= 1) {
+            v.reelFrom = null; // settled onto the engine spot
+          } else {
+            const e = easeOutCubic(t);
+            bodyX = v.reelFrom.x + (bodyX - v.reelFrom.x) * e;
+            bodyY = v.reelFrom.y + (bodyY - v.reelFrom.y) * e;
+            reeling = true;
+          }
         }
         v.character.root.position.set(bodyX, bodyY - lift);
         v.character.root.zIndex = diving ? 90000 + tp.z : tp.z; // dive sits above the field
@@ -983,7 +1093,11 @@ export function createRaceRenderer(): RaceRenderer {
           iceJumping,
         });
         if (diveTilt !== 0) v.character.root.rotation = diveTilt; // headbutt lunge lean (overrides update's pose)
-        v.tag.setPosition(tp.x, tp.y - 66 * tp.scale * fieldScale);
+        // The name tag (and bubbles/FX follow below) ride the BODY while a reel-in
+        // drags it, so the label stays glued to the racer as it's pulled back.
+        const followX = reeling ? bodyX : tp.x;
+        const followY = reeling ? bodyY : tp.y;
+        v.tag.setPosition(followX, followY - 66 * tp.scale * fieldScale);
         v.tag.root.zIndex = 100000 + tp.z;
 
         // ⭐ Star invincibility: while the window is live, force the glow on (it
@@ -1011,7 +1125,10 @@ export function createRaceRenderer(): RaceRenderer {
           fx.dizzyGlint(tp.x, tp.y - lift, clock);
         }
 
-        posById.set(r.id, { x: tp.x, y: tp.y, heading });
+        posById.set(r.id, { x: followX, y: followY, heading });
+        // Record the body's drawn screen spot for THIS frame; swapped into
+        // prevScreenPos next frame so an abduct:hit can read the pre-yank spot.
+        curScreenPos.set(r.id, { x: bodyX, y: bodyY });
       }
 
       // Relay waiting queue: park each team's not-yet-running members in the
@@ -1093,10 +1210,19 @@ export function createRaceRenderer(): RaceRenderer {
         // "어이쿠 자폭ㅋㅋ" line pool via a synthetic variant.
         const selfBotch = e.type === 'divebomb' && e.variant === 'hit' && e.targetId === e.racerId;
         const variant = selfBotch ? 'self' : e.variant;
+        // 🛸 Alien mimic SCAN marker (type 'mimic', actor = alien, targetId = the
+        // racer being copied): announce the copy — "외계인이 OO의 △△ 스캔·복제!" — by
+        // deriving the copied skill from targetId → characterId → catalog.skill.type.
+        // The copied skill's own follow-up events surface their hit/dodge lines below
+        // (they show the real effect), so this just adds the "따라하기" flavour.
+        const mimicCopy = e.type === 'mimic' && e.variant === 'activate' && !!e.targetId;
+        const copiedType = mimicCopy ? characterCatalog[charIdById.get(e.targetId!) ?? '']?.skill.type : undefined;
         // Pass the target name for "{n} did it to {t}" lines. Self-botch uses {n}
         // only, so don't feed it the (self) target name; undefined → '상대' fallback.
         const targetName = !selfBotch && e.targetId ? namesById[e.targetId] : undefined;
-        const line = eventLine(e.type, variant, n, frame.frame + (e.targetId ? 7 : 0), targetName);
+        const line = mimicCopy
+          ? mimicLine(n, namesById[e.targetId!] ?? '', copiedType ?? '', frame.frame)
+          : eventLine(e.type, variant, n, frame.frame + (e.targetId ? 7 : 0), targetName);
         if (line) {
           commentary.say(line, clock);
           saidThisFrame = true;

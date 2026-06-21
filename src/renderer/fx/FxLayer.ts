@@ -480,6 +480,109 @@ export class FxLayer {
     }
   }
 
+  /**
+   * 🕸️ Spider web abduct: a sticky silk line snaps from the spider to the target
+   * AHEAD, then the target is dragged BACK behind the spider. `web` is the silk
+   * colour. The line is drawn from spider→target and quickly retracts toward the
+   * spider (a yank), trailing a couple of 🕸️ glyphs back along the pull so "the
+   * leader got reeled in behind me" reads. Decorative only.
+   */
+  webPull(spiderX: number, spiderY: number, targetX: number, targetY: number, web: number, now: number): void {
+    const sy = spiderY - 18;
+    const ty = targetY - 16;
+    // The silk strand: a slightly wavy line spider→target that retracts (the yank).
+    // Drawn once; we animate the retract via an arc tween on a thin sprite below,
+    // but the strand itself reads best as a static streak that fades fast.
+    const strand = new Graphics();
+    const midx = (spiderX + targetX) / 2;
+    const midy = (sy + ty) / 2 - 14; // a little sag/whip in the silk
+    strand.moveTo(spiderX, sy).quadraticCurveTo(midx, midy, targetX, ty);
+    strand.stroke({ color: web, width: 3, alpha: 0.95 });
+    strand.position.set(0, 0);
+    this.push(strand, { bornAt: now, ttl: 0.4, grow: 0 });
+
+    // A second, ghost strand snapping closed toward the spider (the retract).
+    const snap = new Graphics();
+    snap.moveTo(spiderX, sy).lineTo(targetX, ty);
+    snap.stroke({ color: 0xffffff, width: 2, alpha: 0.7 });
+    snap.blendMode = 'add';
+    this.push(snap, { bornAt: now, ttl: 0.22 });
+
+    // 🕸️ glyph riding the strand from the target back toward the spider (the yank).
+    const web1 = new Text({ text: '🕸️', style: { fontSize: 30 } });
+    web1.anchor.set(0.5);
+    web1.position.set(targetX, ty);
+    this.push(web1, {
+      bornAt: now,
+      ttl: 0.42,
+      fade: false,
+      spin: 6,
+      arc: { fromX: targetX, fromY: ty, toX: spiderX, toY: sy, lift: 26 },
+    });
+    // A puff of motion dust where the target was, streaking the way it's pulled.
+    const pullDir = Math.sign(spiderX - targetX) || -1;
+    for (let i = 0; i < 4; i++) {
+      const g = new Graphics().roundRect(0, 0, 22, 3, 1.5).fill({ color: 0xffffff, alpha: 0.6 });
+      g.position.set(targetX, ty - 6 + i * 6);
+      this.push(g, { bornAt: now, ttl: 0.3, vx: pullDir * 260, vy: 0 });
+    }
+  }
+
+  /**
+   * 🕸️ Web tangle on the yanked target: a knot of sticky silk wrapping it for the
+   * tangle window — a couple of 🕸️ glyphs clinging on + a quick sticky ring, so
+   * "stuck in web, slowed" reads distinctly from a stun's dizzy stars. `web` tints
+   * a soft silk ring. Decorative only.
+   */
+  webTangle(x: number, y: number, web: number, now: number): void {
+    const ring = new Graphics().circle(0, 0, 16).stroke({ color: web, width: 5, alpha: 0.95 });
+    ring.position.set(x, y - 16);
+    this.push(ring, { bornAt: now, ttl: 0.5, grow: 1.4 });
+    for (let i = 0; i < 5; i++) {
+      const g = new Text({ text: '🕸️', style: { fontSize: 16 + (i % 2) * 6 } });
+      g.anchor.set(0.5);
+      const a = (i / 5) * Math.PI * 2;
+      g.position.set(x + Math.cos(a) * 14, y - 16 + Math.sin(a) * 14);
+      this.push(g, { bornAt: now, ttl: 0.85, vx: Math.cos(a) * 8, vy: Math.sin(a) * 8 - 6, spin: i % 2 ? 2 : -2 });
+    }
+  }
+
+  /**
+   * 🛸 Alien mimic scan: a tech "scanning + copying" read on the alien at the
+   * instant it copies a nearby racer's skill. A holographic green scan ring sweeps
+   * out, a bright ✨ shimmer, and a "복사!" tag pops so "the alien scanned & cloned"
+   * reads BEFORE the copied skill's own FX plays. The copied skill keeps its own
+   * visuals; this is the extra scan cue layered on the alien. `tint` is the alien's
+   * accent (antenna glow). Decorative only.
+   */
+  scanCopy(x: number, y: number, tint: number, now: number): void {
+    // Holographic scan rings — two concentric green hoops sweeping outward (a
+    // "ping" pulse), additive so they read as a tech beam, not a shockwave.
+    for (let i = 0; i < 2; i++) {
+      const ring = new Graphics().circle(0, 0, 16 + i * 8).stroke({ color: i ? 0xc8f2ce : tint, width: 4, alpha: 0.95 });
+      ring.position.set(x, y - 16);
+      ring.blendMode = 'add';
+      this.push(ring, { bornAt: now, ttl: 0.5 + i * 0.06, grow: 3.0 });
+    }
+    // A scanline sweep — a thin bright bar passing across the alien (the scan).
+    const bar = new Graphics().roundRect(-26, -2, 52, 4, 2).fill({ color: 0xc8f2ce, alpha: 0.9 });
+    bar.position.set(x, y - 36);
+    bar.blendMode = 'add';
+    this.push(bar, { bornAt: now, ttl: 0.4, vx: 0, vy: 52 });
+    // ✨ data shimmer + a "복사!" pop so the copy moment is unmistakable.
+    for (let i = 0; i < 6; i++) {
+      const g = new Text({ text: '✨', style: { fontSize: 16 + (i % 2) * 6 } });
+      g.anchor.set(0.5);
+      const a = (i / 6) * Math.PI * 2;
+      g.position.set(x + Math.cos(a) * 18, y - 16 + Math.sin(a) * 18);
+      this.push(g, { bornAt: now, ttl: 0.7, vx: Math.cos(a) * 30, vy: Math.sin(a) * 30 - 10, spin: 3 });
+    }
+    const tag = new Text({ text: '복사!', style: { fontSize: 24, fontWeight: '900', fill: 0x2bd24f, stroke: { color: 0xffffff, width: 4 } } });
+    tag.anchor.set(0.5);
+    tag.position.set(x, y - 46);
+    this.push(tag, { bornAt: now, ttl: 0.8, vx: 0, vy: -30 });
+  }
+
   update(now: number, dt: number): void {
     const live: Particle[] = [];
     for (const p of this.particles) {

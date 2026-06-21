@@ -43,7 +43,7 @@ describe('scoring strategies', () => {
   it('teamRankSum: generalizes over 4 arbitrary team ids (red/blue/white/black)', () => {
     // Two members per team; team ids are the relay palette, not 'A'/'B'.
     const cfg4 = makeConfig({
-      characterIds: ['dog', 'cat', 'monkey', 'eagle', 'bear', 'dog', 'cat', 'monkey'],
+      characterIds: ['dog', 'cat', 'monkey', 'penguin', 'bear', 'dog', 'cat', 'monkey'],
       seed: 7,
       teamMode: true,
       teamIds: ['red', 'blue', 'white', 'black', 'red', 'blue', 'white', 'black'],
