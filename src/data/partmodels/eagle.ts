@@ -26,7 +26,12 @@ export const eagleModel: PartModel = {
       name: 'tail',
       pivot: { x: -28, y: 50 },
       z: 0,
-      shapes: [{ kind: 'path', d: 'M-26,44 L-58,40 L-50,50 L-60,52 L-48,58 L-26,56 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
+      shapes: [
+        // fanned tail feathers with crisp notches between the rectrices
+        { kind: 'path', d: 'M-26,44 L-60,38 L-52,48 L-62,50 L-52,55 L-60,60 L-48,60 L-26,57 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 },
+        // feather split lines for definition
+        { kind: 'path', d: 'M-28,50 L-52,48 M-28,53 L-52,55', fill: 'none', stroke: 'outline', strokeW: 1.2, opacity: 0.5 },
+      ],
     },
     {
       // far leg (set back + darker for depth), drawn behind the body
@@ -35,7 +40,8 @@ export const eagleModel: PartModel = {
       z: 0,
       shapes: [
         { kind: 'line', x1: 6, y1: 72, x2: 6, y2: 90, stroke: FARLEG, strokeW: 2.6 },
-        { kind: 'path', d: 'M6,90 L12,94 M6,90 L1,94 M6,90 L6,96', fill: 'none', stroke: FARLEG, strokeW: 2 },
+        // matching three-talon foot, darker for depth
+        { kind: 'path', d: 'M6,90 Q12,92 14,96 M6,90 Q1,92 -1,96 M6,90 L6,97', fill: 'none', stroke: FARLEG, strokeW: 2.1 },
       ],
     },
     {
@@ -44,8 +50,10 @@ export const eagleModel: PartModel = {
       pivot: { x: 0, y: 50 },
       z: 2,
       shapes: [
-        { kind: 'path', d: 'M-26,50 Q-14,32 18,36 Q40,40 40,54 Q40,70 14,72 Q-16,72 -26,58 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        { kind: 'path', d: 'M14,54 Q34,52 38,58 Q36,68 16,68 Q2,68 0,60 Q4,55 14,54 Z', fill: 'point' },
+        // streamlined raptor torso: high chest at the front (+x), tapering to the tail
+        { kind: 'path', d: 'M-26,50 Q-12,30 20,34 Q42,38 42,54 Q42,70 14,73 Q-16,73 -26,57 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        // pale breast patch at the front underside
+        { kind: 'path', d: 'M16,52 Q36,50 40,58 Q38,69 16,69 Q3,69 1,60 Q5,53 16,52 Z', fill: 'point' },
       ],
     },
     {
@@ -54,17 +62,26 @@ export const eagleModel: PartModel = {
       pivot: { x: 16, y: 70 },
       z: 1,
       shapes: [
-        { kind: 'path', d: 'M14,66 Q12,74 14,80 L19,80 Q18,73 19,66 Z', fill: 'base', stroke: 'outline', strokeW: 2 },
-        { kind: 'line', x1: 16, y1: 80, x2: 16, y2: 92, stroke: 'beak', strokeW: 3 },
-        { kind: 'path', d: 'M16,92 L24,96 L25,93 M16,92 L9,96 L8,93 M16,92 L16,98', fill: 'none', stroke: TALON, strokeW: 2.4 },
+        // feathered thigh, then a scaled golden shank ending in three hooked talons
+        { kind: 'path', d: 'M13,65 Q11,74 14,81 L20,81 Q19,73 20,65 Z', fill: 'base', stroke: 'outline', strokeW: 2 },
+        { kind: 'line', x1: 16, y1: 81, x2: 16, y2: 92, stroke: 'beak', strokeW: 3.2 },
+        // splayed taloned foot — three curling claws, clearer hook than before
+        { kind: 'path', d: 'M16,92 Q24,94 26,99 M16,92 Q9,94 7,99 M16,92 L16,100', fill: 'none', stroke: TALON, strokeW: 2.6 },
       ],
     },
     {
-      // folded wing on the near flank with notched primary tips
+      // folded near wing — a broad shoulder tapering to clearly notched primary
+      // feather tips. NOTE: the pivot sits at the shoulder so the renderer can
+      // flap the whole wing about it; base rot is 0 (kept stable for animation).
       name: 'wingL',
-      pivot: { x: 2, y: 46 },
+      pivot: { x: -4, y: 44 },
       z: 3,
-      shapes: [{ kind: 'path', d: 'M-6,44 Q14,40 30,48 L22,50 L28,54 L18,55 L24,60 L8,58 Q-2,54 -6,50 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 }],
+      shapes: [
+        // wing mass: rounded shoulder sweeping to layered primary tips trailing back
+        { kind: 'path', d: 'M-8,42 Q16,37 34,46 L24,49 L31,53 L19,55 L26,61 L10,60 L14,64 Q-2,60 -8,50 Z', fill: 'wing', stroke: 'outline', strokeW: 2.5 },
+        // covert feather seam for depth
+        { kind: 'path', d: 'M-2,46 Q14,44 28,49', fill: 'none', stroke: 'outline', strokeW: 1.4, opacity: 0.5 },
+      ],
     },
     {
       // sloped raptor head facing +x: crest, dark crown, heavy brow ridge, eye,
@@ -73,17 +90,23 @@ export const eagleModel: PartModel = {
       pivot: { x: 30, y: 22 },
       z: 5,
       shapes: [
-        { kind: 'path', d: 'M18,8 Q6,2 0,12 Q12,12 22,18 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
-        { kind: 'path', d: 'M16,22 Q18,2 34,2 Q50,4 52,16 Q52,26 40,30 Q24,32 16,22 Z', fill: 'point', stroke: 'outline', strokeW: 2.5 },
-        { kind: 'path', d: 'M16,18 Q22,2 36,3 Q30,9 26,18 Z', fill: 'base', stroke: 'outline', strokeW: 2 },
-        // heavy brow ridge over the eye (the fierce raptor cue)
-        { kind: 'path', d: 'M28,12 L44,12 L44,17 L30,18 Z', fill: 'crest' },
-        { kind: 'circle', cx: 36, cy: 16, r: 4, fill: EYE },
-        { kind: 'circle', cx: 35, cy: 15, r: 1.4, fill: HI },
-        // long hooked beak (+x), curling to a sharp point
-        { kind: 'path', d: 'M48,12 Q66,14 66,20 Q64,26 52,25 Q60,21 58,18 Q54,17 48,18 Z', fill: 'beak', stroke: 'outline', strokeW: 2 },
+        // swept-back nape crest — sharper, more raked spikes for a fierce read
+        { kind: 'path', d: 'M20,6 Q4,-2 -4,8 Q8,9 18,14 L10,18 Q18,20 24,20 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
+        // rounded crown / cheek mass (clear contrast against the dark crown above)
+        { kind: 'path', d: 'M16,24 Q16,2 34,1 Q52,3 54,17 Q54,28 40,31 Q22,32 16,24 Z', fill: 'point', stroke: 'outline', strokeW: 2.5 },
+        // dark crown cap sweeping down the nape
+        { kind: 'path', d: 'M15,18 Q20,1 37,2 Q30,9 27,19 Z', fill: 'crest', stroke: 'outline', strokeW: 2 },
+        // heavy angled brow ridge jutting over the eye (the signature fierce cue)
+        { kind: 'path', d: 'M26,9 L48,12 L46,18 L30,17 Z', fill: 'crest' },
+        // fierce glaring eye tucked under the brow + sharp highlight
+        { kind: 'circle', cx: 37, cy: 16, r: 4.2, fill: EYE },
+        { kind: 'circle', cx: 35, cy: 14, r: 1.5, fill: HI },
+        // long, sharply hooked beak (+x): a straight golden mass curling to a hooked point
+        { kind: 'path', d: 'M46,11 L70,17 Q72,21 68,24 Q60,27 52,25 Q62,22 61,18 L52,18 Z', fill: 'beak', stroke: 'outline', strokeW: 2 },
+        // gape line under the upper mandible for definition
+        { kind: 'path', d: 'M52,19 Q60,20 67,22', fill: 'none', stroke: 'outline', strokeW: 1.4 },
         // cere nostril dot
-        { kind: 'circle', cx: 52, cy: 16, r: 1.4, fill: 'outline' },
+        { kind: 'circle', cx: 51, cy: 16, r: 1.4, fill: 'outline' },
       ],
     },
   ],

@@ -139,7 +139,7 @@ export class PartsCharacter {
     // Glide (eagle): side-profile flyer. Mirrored to travel direction (like the
     // gallop runners) but with NO leg cycle — it flies. A small steady lift +
     // gentle bob + a forward tilt (set below) read as "leaning into a glide";
-    // wings/tail get only a faint flutter. Not a vertical hover or wing-flap.
+    // the wing flaps softly and the tail trails. Not a vertical hover.
     const gliding = style === 'glide' && !o.reducedMotion && moving;
 
     // Cycle clock; rate per locomotion style. Rabbit hops with a longer term.
@@ -322,11 +322,23 @@ export class PartsCharacter {
         }
       } else if (style === 'glide') {
         // Glide (eagle): NO leg cycle — it flies. While airborne (moving) the talon
-        // legs TUCK up under the belly like a real bird; the near wing + tail get a
-        // faint flutter, and the body breathes a touch. The whole-body tilt + lift
-        // below carry the "gliding" read. (rot is DEGREES.)
-        if (name === 'wingL') {
-          rot += Math.sin(o.clock * 4.2) * 5; // soft wing flutter (not a flap)
+        // legs TUCK up under the belly like a real bird; the wing FLAPS, the tail
+        // trails, and the body breathes a touch. The whole-body tilt + lift below
+        // carry the "gliding" read. (rot is DEGREES.) Wing part is graceful no-op
+        // for any future glide character that lacks one.
+        if (name === 'wingL' || name === 'wingR') {
+          // Avian flight: mostly an elegant glide (wing nearly still) with an
+          // INTERMITTENT flap burst — a real eagle holds the wing out, then beats
+          // a few times. A slow envelope gates the flap on/off so it isn't a
+          // constant tremble; between bursts a faint sway keeps it alive. The flap
+          // pivots at the shoulder (partmodel), so tens of degrees read cleanly.
+          // (rot is DEGREES.) Far wing (wingR, if any) beats a touch shallower.
+          const beat = o.clock * 6.0; // flap beat during a burst
+          const env = Math.max(0, Math.sin(o.clock * 0.9 - 1)); // 0 while gliding, rises for a burst
+          const flap = (Math.sin(beat) * 26 + Math.sin(beat * 2) * 5) * env; // gated flap
+          const glideSway = Math.sin(o.clock * 2.2) * 3; // gentle hold between bursts
+          const w = flap + glideSway;
+          rot += name === 'wingR' ? w * 0.85 : w;
         } else if (name === 'tail') {
           rot += Math.sin(o.clock * 4.2 - 0.5) * 6; // tail feathers trail + sway
         } else if (name === 'body') {
