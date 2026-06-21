@@ -69,11 +69,13 @@ describe('skill behaviour', () => {
       for (const f of frames) {
         for (const e of f.events) {
           if (e.variant !== 'dodge' || !e.targetId || !catIds.has(e.targetId)) continue;
-          // roar/divebomb dodges can ONLY be catwalk dodges (those skills have no
-          // self dodgeChance), so the cat must be in-window and un-stunned.
           if (!['roar', 'divebomb'].includes(e.type)) continue;
-          sawCatDodge = true;
           const cat = f.racers.find((r) => r.id === e.targetId)!;
+          // roar/divebomb have no self dodgeChance, so a dodge on a cat is either a
+          // catwalk dodge (cat in its dodge window) OR a ⭐ star deflect (cat has an
+          // active star). A starred cat may dodge without being in its catwalk window.
+          if ((cat.skill.starUntil ?? 0) > f.frame) continue;
+          sawCatDodge = true;
           expect((cat.skill.dodgeUntil ?? 0) > f.frame).toBe(true);
           // A dodge avoids *this* incoming disruption: no roar/divebomb may also
           // land a 'hit' on the same cat this frame. (We don't assert phase!=

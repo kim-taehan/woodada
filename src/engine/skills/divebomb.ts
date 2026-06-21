@@ -27,6 +27,10 @@ import { powerEffectScale } from '../stats.ts';
 export const divebombHandler: SkillHandler = (ctx) => {
   const { self, all, rng, params, frame } = ctx;
   const range = Number(params.range);
+  // Minimum gliding distance: a target closer than `minRange` is *skipped* (no
+  // runway to dive) — the eagle looks past it to a target in the minRange..range
+  // band. Defaults to 0 (back-compat / neutral for any other character).
+  const minRange = Number(params.minRange ?? 0);
 
   const candidates = all
     .filter(
@@ -36,6 +40,7 @@ export const divebombHandler: SkillHandler = (ctx) => {
         r.phase !== 'waiting' &&
         (self.teamId === undefined || r.teamId !== self.teamId) &&
         r.progress > self.progress &&
+        r.progress - self.progress >= minRange &&
         r.progress - self.progress <= range,
     )
     .sort((a, b) => a.progress - b.progress || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

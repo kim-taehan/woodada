@@ -225,6 +225,78 @@ export class FxLayer {
   }
 
   /**
+   * Divebomb SUCCESS cue on the eagle (the gamble paid off): a triumphant GOLD
+   * burst — a bright golden core flash, a fat gold ring, radiating gold spark
+   * rays, and a "명중!" pop. Warm/bright so a clean hit reads instantly as a WIN,
+   * contrasting the dull-grey self-botch slump below.
+   */
+  goldBurst(x: number, y: number, now: number): void {
+    // Bright golden core flash + a fat expanding gold ring.
+    const core = new Graphics().circle(0, 0, 22).fill({ color: 0xfff3b0, alpha: 0.95 });
+    core.position.set(x, y - 16);
+    core.blendMode = 'add';
+    this.push(core, { bornAt: now, ttl: 0.3, grow: 1.4 });
+
+    const ring = new Graphics().circle(0, 0, 22).stroke({ color: 0xffc629, width: 9, alpha: 1 });
+    ring.position.set(x, y - 16);
+    ring.blendMode = 'add';
+    this.push(ring, { bornAt: now, ttl: 0.5, grow: 3.4 });
+
+    // Radiating gold spark rays flung outward — celebratory "did it!" sunburst.
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const ray = new Graphics().roundRect(0, 0, 24, 4, 2).fill({ color: 0xffd23f, alpha: 0.95 });
+      ray.position.set(x, y - 16);
+      ray.rotation = a;
+      ray.blendMode = 'add';
+      this.push(ray, { bornAt: now, ttl: 0.4, vx: Math.cos(a) * 200, vy: Math.sin(a) * 200 });
+    }
+
+    const tag = new Text({ text: '명중!', style: { fontSize: 26, fontWeight: '900', fill: 0xffb300, stroke: { color: 0xffffff, width: 4 } } });
+    tag.anchor.set(0.5);
+    tag.position.set(x, y - 40);
+    this.push(tag, { bornAt: now, ttl: 0.8, vx: 0, vy: -36 });
+  }
+
+  /**
+   * Divebomb FAILURE cue on the eagle (gamble lost, face-planted itself): a dull,
+   * deflated GREY slump — a grey dust puff billowing low, drooping grey dizzy
+   * swirl over the head, a sweat-bead and a "꽝..." pop. Cold/muted so a self-botch
+   * reads instantly as a flop, the opposite of the bright-gold hit.
+   */
+  dustSlump(x: number, y: number, now: number): void {
+    // Low billow of dull grey dust (heavier + greyer than the warm `dust`).
+    for (let i = 0; i < 12; i++) {
+      const r = 7 + (i % 4) * 3;
+      const shade = i % 2 ? 0x9a9a9a : 0xbdbdbd;
+      const g = new Graphics().circle(0, 0, r).fill({ color: shade, alpha: 0.85 });
+      g.position.set(x, y + 8);
+      this.push(g, { bornAt: now, ttl: 0.8, vx: (i - 6) * 30, vy: -10 - (i % 3) * 6, gravity: 50 });
+    }
+    // Drooping grey dizzy swirl — same orbit idea as `dizzy` but muted grey so the
+    // failure reads "dazed in a sad grey cloud", not the bright stars of a victim hit.
+    for (let i = 0; i < 5; i++) {
+      const g = new Text({ text: i % 2 ? '💫' : '😵', style: { fontSize: 18 + (i % 2) * 3 } });
+      g.anchor.set(0.5);
+      const a = (i / 5) * Math.PI * 2;
+      g.position.set(x + Math.cos(a) * 16, y - 30 + Math.sin(a) * 7);
+      // grey-tint the swirl glyphs so even the emoji read as drained/cold.
+      g.tint = 0xb8b8c0;
+      this.push(g, { bornAt: now, ttl: 0.9, vx: Math.cos(a) * 8, vy: -8, spin: i % 2 ? 5 : -5 });
+    }
+    // A sad sweat-bead sliding off the slumped head.
+    const drop = new Text({ text: '💧', style: { fontSize: 20 } });
+    drop.anchor.set(0.5);
+    drop.position.set(x + 14, y - 28);
+    this.push(drop, { bornAt: now, ttl: 0.8, vx: 8, vy: 28, gravity: 24 });
+
+    const tag = new Text({ text: '꽝...', style: { fontSize: 24, fontWeight: '900', fill: 0x8a8a8a, stroke: { color: 0xffffff, width: 3 } } });
+    tag.anchor.set(0.5);
+    tag.position.set(x, y - 44);
+    this.push(tag, { bornAt: now, ttl: 0.9, vx: 0, vy: 8, gravity: 18 });
+  }
+
+  /**
    * ⚡ Lightning strike: a full-screen white flash plus a jagged bolt + sparks
    * raining over the racer who ate the box. Big and punchy so "everyone else got
    * zapped" reads instantly. `w`/`h` size the flash to the whole canvas.

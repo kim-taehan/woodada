@@ -36,7 +36,9 @@ export const eagle: CharacterData = {
     // hop's momentum (diveBurst for diveBurstMs); lose → the eagle crashes itself.
     // selfStunMs: shorter self-botch stun than stunMs, so multi-lap self-crashes
     // recover faster and the eagle isn't polarized to last place over many laps.
-    params: { range: 70, stunMs: 720, selfStunMs: 400, selfRiskChance: 0.42, diveBurst: 0.92, diveBurstMs: 850 },
+    // minRange: a target closer than this is skipped — the dive needs runway, so
+    // only racers in the minRange..range band are valid (none → hold, no fire).
+    params: { range: 70, minRange: 16, stunMs: 720, selfStunMs: 400, selfRiskChance: 0.42, diveBurst: 0.92, diveBurstMs: 850 },
   },
   lines: { skill: '받아랏! 🦅', win: '1등은 내 거다!', lose: '끼…욱…', dodge: '휘릭, 안 맞지롱~' },
 };
