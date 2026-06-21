@@ -52,6 +52,13 @@ interface CaptureOpts {
    * settled celebration tableau (#33) can be shot. Ignored mid-race.
    */
   settleFrames?: number;
+  /**
+   * Arena theme id for the capture (feat/arenas). DEFAULTS TO 'grassland' for
+   * the capture hook so the existing character/FX golden shots stay on the
+   * classic look (no theme drift) unless a showcase shot explicitly asks for a
+   * different arena. The live game defaults to 'random' (store), not here.
+   */
+  arenaId?: string;
 }
 
 const DEFAULT_IDS = ['penguin', 'dog', 'cat', 'monkey', 'eagle', 'bear', 'hedgehog'];
@@ -128,7 +135,9 @@ const hooks = {
     renderer.setReducedMotion(opts.reducedMotion ?? false);
     await renderer.mount(host);
     const cfg = configFor(opts.characterIds ?? DEFAULT_IDS, opts.seed ?? 7, opts.laps ?? 1, opts.teamIds, opts.relay ?? false);
-    const controller = new RaceController(renderer, cfg);
+    // Capture pins the arena (default grassland) so existing golden shots don't
+    // drift; showcase shots pass an explicit arenaId. Game default is 'random'.
+    const controller = new RaceController(renderer, cfg, opts.arenaId ?? 'grassland');
     controller.seek(frame);
     // Capture-only: develop the post-finish coast/scatter/emote into its settled
     // state (display-only; engine untouched). No-op unless the race has finished.

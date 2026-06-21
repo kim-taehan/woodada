@@ -11,6 +11,7 @@ import { defaultCharacterIds, characterCatalog } from '../../data/characters/ind
 import { gameModes } from '../../data/modes.ts';
 import { teamOrder, teamPalette, type TeamId } from '../../data/teams.ts';
 import { randomName } from '../../data/names.ts';
+import { trackCatalog, defaultArenaIds } from '../../data/tracks/index.ts';
 import { openGuide } from './GuideOverlay.ts';
 
 const CHAR_LABEL: Record<string, string> = { dog: '🐶', cat: '🐱', monkey: '🐒', eagle: '🦅', bear: '🐻', penguin: '🐧', hedgehog: '🦔' };
@@ -139,6 +140,16 @@ export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLEle
   lapsSelect.value = String(store.laps);
   lapsSelect.addEventListener('change', () => (store.laps = Number(lapsSelect.value)));
 
+  // ---- Arena (track theme) pick: 🎲 랜덤 default + 6 named themes ----
+  const arenaSelect = el('select', { ariaLabel: '경기장' }) as HTMLSelectElement;
+  arenaSelect.append(el('option', { value: 'random', textContent: '🎲 랜덤' }));
+  for (const id of defaultArenaIds) {
+    const theme = trackCatalog[id];
+    arenaSelect.append(el('option', { value: id, textContent: `${theme.emoji} ${theme.label}` }));
+  }
+  arenaSelect.value = store.arenaId;
+  arenaSelect.addEventListener('change', () => (store.arenaId = arenaSelect.value));
+
   const teamCountSelect = el('select', { ariaLabel: '팀 수' }) as HTMLSelectElement;
   for (const n of [2, 3, 4]) teamCountSelect.append(el('option', { value: String(n), textContent: `${n}팀` }));
   teamCountSelect.value = String(store.teamCount);
@@ -184,6 +195,7 @@ export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLEle
     el('div', { class: 'mode-row' }, [indivBtn, teamBtn]),
     el('div', { class: 'opts-row' }, [
       el('span', { class: 'opt-group' }, [el('label', { textContent: '바퀴 수' }), lapsSelect]),
+      el('span', { class: 'opt-group' }, [el('label', { textContent: '경기장' }), arenaSelect]),
       teamGroup,
     ]),
     participantsArea,

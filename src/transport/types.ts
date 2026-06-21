@@ -31,6 +31,12 @@ export interface RoomState {
   resultMapping: ResultMapping;
   seed: number;
   laps: number;
+  /**
+   * Selected arena (track theme) id, or 'random' to resolve from the seed at
+   * render time. Purely visual — never part of the engine RaceConfig. Optional
+   * for backward-compatible deserialization (absent = 'random').
+   */
+  arenaId?: string;
 }
 
 export type RoomEvent =

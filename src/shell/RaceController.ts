@@ -22,9 +22,16 @@ export class RaceController {
   private running = false;
   private coastRaf = 0;
 
-  constructor(private renderer: RaceRenderer, config: RaceConfig) {
+  /**
+   * `arenaId` is purely visual: forwarded to the renderer seam only, never the
+   * engine. Omitted/undefined → the renderer uses grassland (classic, the
+   * regression-safe default); 'random' → renderer picks from config.seed; a
+   * known id → that theme. The shell passes store.selectedArenaId (default
+   * 'grassland'); leaving it undefined here also lands on grassland.
+   */
+  constructor(private renderer: RaceRenderer, config: RaceConfig, arenaId?: string) {
     this.engine = createRaceEngine(config, skills, scoring);
-    this.renderer.buildScene(config);
+    this.renderer.buildScene(config, { arenaId });
     this.renderer.renderFrame(this.engine.current());
   }
 
