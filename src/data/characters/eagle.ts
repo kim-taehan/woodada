@@ -8,16 +8,15 @@ export const eagle: CharacterData = {
   partModelId: 'eagle',
   proportions: { headBody: '2.5등신', bigEyes: true },
   palette: {
-    // Raptor tones, contrast pushed vs the penguin's soft black-and-white: a
-    // deep chocolate body, a bright cream face/breast, a sharp golden beak +
-    // talon, and a near-black crest for the angular feather tufts.
-    base: '#5E3F26', // deep chocolate-brown body
-    point: '#F6F2E6', // bright cream face / breast
-    outline: '#2E2013', // dark, crisp outline
-    cheek: '#E08A86', // muted blush (less candy than the penguin's pink)
-    beak: '#F6A81E', // sharp golden-orange beak + talons
-    wing: '#43301D', // darker wing feathers (more contrast against the body)
-    crest: '#2A1D12', // near-black pointed crest tufts + angry brow
+    // Golden-eagle tones: a warm russet-gold body, a golden-ivory face/nape,
+    // deep near-black wings for strong contrast, and a bright gold beak + talon.
+    base: '#7A4F23', // warm russet-gold body
+    point: '#EFE0BC', // golden-ivory face / nape (warmer than cold cream)
+    outline: '#2A1B0F', // dark, crisp outline
+    cheek: '#D98A72', // warm tawny blush
+    beak: '#FFB627', // bright gold beak + talons
+    wing: '#36240F', // deep near-black wing feathers (strong contrast)
+    crest: '#241710', // near-black pointed crest tufts + angry brow
   },
   // Side-profile raptor: a "real bird" silhouette (head faces +x). The 'glide'
   // runStyle mirrors it to travel direction + adds a tilt/hover (no leg cycle —
