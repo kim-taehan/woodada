@@ -48,7 +48,7 @@ export class App {
     window.addEventListener('resize', this.onResize);
 
     const config = this.store.buildRaceConfig();
-    this.controller = new RaceController(this.renderer, config);
+    this.controller = new RaceController(this.renderer, config, this.store.arenaId);
 
     await this.runCountdown(countdown, skip);
     countdown.remove();

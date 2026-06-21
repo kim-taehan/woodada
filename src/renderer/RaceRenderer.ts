@@ -11,6 +11,8 @@ import { characterCatalog } from '../data/characters/index.ts';
 import { partModels } from '../data/partmodels/index.ts';
 import { OvalTrack, ovalForCanvas } from './track/OvalTrack.ts';
 import { buildTrackScene } from './track/TrackScene.ts';
+import { trackCatalog, grassland, pickArena } from '../data/tracks/index.ts';
+import type { TrackTheme } from '../data/tracks/schema.ts';
 import { PartsCharacter } from './character/PartsCharacter.ts';
 import { NameTag } from './character/NameTag.ts';
 import { SpeechBubbleLayer } from './fx/SpeechBubble.ts';
@@ -50,7 +52,15 @@ interface RacerView {
 
 export interface RaceRenderer {
   mount(parent: HTMLElement): Promise<void>;
-  buildScene(config: RaceConfig): void;
+  /**
+   * Build the scene for a race. `opts.arenaId` selects the arena theme
+   * (feat/arenas):
+   *   • undefined  → grassland (classic; NOT seed-derived → e2e goldens stay put)
+   *   • 'random'   → pickArena(config.seed) (deterministic per seed, opt-in)
+   *   • a known id → that theme (unknown id falls back to grassland)
+   * Theme is renderer-only — it never touches the engine RaceConfig contract.
+   */
+  buildScene(config: RaceConfig, opts?: { arenaId?: string }): void;
   renderFrame(frame: EngineFrame): void;
   showResult(result: RaceResult): void;
   /**
@@ -210,6 +220,10 @@ export function createRaceRenderer(): RaceRenderer {
   const app = new Application();
   let track: OvalTrack;
   let config: RaceConfig | null = null;
+  // Arena theme (feat/arenas). Resolved once per race in buildScene from the
+  // requested arenaId (or the seed when 'random'/unset). Held so resize/rebuild
+  // re-draws the same arena. Defaults to the classic grassland.
+  let theme: TrackTheme = grassland;
   let trackLayer = new Container();
   const charLayer = new Container();
   const fx = new FxLayer();
@@ -432,8 +446,24 @@ export function createRaceRenderer(): RaceRenderer {
         }
       }
     }
-    trackLayer = buildTrackScene(track, width, height, teamColors);
+    trackLayer = buildTrackScene(track, width, height, teamColors, theme);
     app.stage.addChildAt(trackLayer, 0);
+  }
+
+  /**
+   * Resolve a requested arenaId to a concrete theme:
+   *   • undefined        → grassland (classic). NOT seed-derived, so omitting an
+   *     arena never drifts the look — this keeps the e2e goldens (seed 7/35 etc.)
+   *     pinned to the original grassland background.
+   *   • 'random'         → deterministic pick from the seed (explicit opt-in only).
+   *   • a known id       → that theme.
+   *   • an unknown id    → grassland fallback (a bad id never breaks the scene;
+   *     pickArena is reserved for an explicit 'random').
+   */
+  function resolveTheme(arenaId: string | undefined, seed: number): TrackTheme {
+    if (arenaId === undefined) return grassland;
+    if (arenaId === 'random') return pickArena(seed);
+    return trackCatalog[arenaId] ?? grassland;
   }
 
   /** Queue an FX callback to fire once `clock` reaches `at` (drained each frame). */
@@ -759,8 +789,9 @@ export function createRaceRenderer(): RaceRenderer {
       commentary.root.position.set(width / 2, height - 40);
     },
 
-    buildScene(cfg) {
+    buildScene(cfg, opts) {
       config = cfg;
+      theme = resolveTheme(opts?.arenaId, cfg.seed);
       clearPodium();
       for (const v of views.values()) v.character.destroy();
       views.clear();

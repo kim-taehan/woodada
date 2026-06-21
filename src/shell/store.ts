@@ -33,6 +33,12 @@ export class RoomStore {
   resultMapping: ResultMapping = { byRank: {}, byTeamRank: {} };
   seed = 1;
   laps = 1;
+  /**
+   * Selected arena (track theme). 'random' = let the renderer resolve it from
+   * the seed at race start (single source = renderer + seed). Purely visual, so
+   * it never reaches the engine config — only the renderer seam consumes it.
+   */
+  arenaId = 'random';
   /** Number of active teams in team mode (range 2~4). */
   teamCount = 2;
   /** Relay (이어달리기) toggle — Phase 2; kept here so config carries it. */
@@ -130,6 +136,7 @@ export class RoomStore {
       resultMapping: this.resultMapping,
       seed: this.seed,
       laps: this.laps,
+      arenaId: this.arenaId,
     };
   }
 

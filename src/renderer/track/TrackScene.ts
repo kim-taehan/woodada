@@ -1,12 +1,18 @@
 /**
- * Draws the stadium look (spec §7): outer stands, red/orange tatan track band,
- * white lane lines, inner grass field, and the start/finish line. Purely
- * decorative — built from the same OvalTrack geometry the racers use.
+ * Draws the stadium look (spec §7) from a data-driven TrackTheme (feat/arenas):
+ * outer stands, the track band, lane lines, inner field, decor props, an
+ * optional ambient particle hint, and the start/finish line. Purely decorative —
+ * built from the same OvalTrack geometry the racers use. The theme only swaps
+ * COLORS + background props; it never changes the oval, so it cannot affect the
+ * (engine-owned) simulation. Readability first: the surface stays legible on
+ * every theme.
  */
 
 import { Container, Graphics } from 'pixi.js';
 import { OvalTrack } from './OvalTrack.ts';
 import { FINISH_OFFSET_FRAC } from '../../engine/types.ts';
+import { grassland } from '../../data/tracks/grassland.ts';
+import type { TrackTheme, DecorSpec, Ambient } from '../../data/tracks/schema.ts';
 
 function stadiumPolygon(track: OvalTrack, off: number, samples = 320): number[] {
   const pts: number[] = [];
@@ -15,6 +21,251 @@ function stadiumPolygon(track: OvalTrack, off: number, samples = 320): number[] 
     pts.push(p.x, p.y);
   }
   return pts;
+}
+
+/**
+ * Vertical sky gradient as a stack of horizontal bands (top→bottom). When
+ * skyTop === skyBottom (grassland) it collapses to a single flat fill — a
+ * pixel-for-pixel match of the original solid green surround.
+ */
+function drawSky(width: number, height: number, top: number, bottom: number): Graphics {
+  const g = new Graphics();
+  if (top === bottom) {
+    g.rect(0, 0, width, height).fill(top);
+    return g;
+  }
+  const bands = 24;
+  const tr = (top >> 16) & 0xff, tg = (top >> 8) & 0xff, tb = top & 0xff;
+  const br = (bottom >> 16) & 0xff, bg = (bottom >> 8) & 0xff, bb = bottom & 0xff;
+  const bh = height / bands;
+  for (let i = 0; i < bands; i++) {
+    const k = i / (bands - 1);
+    const r = Math.round(tr + (br - tr) * k);
+    const gn = Math.round(tg + (bg - tg) * k);
+    const b = Math.round(tb + (bb - tb) * k);
+    g.rect(0, i * bh, width, bh + 1).fill((r << 16) | (gn << 8) | b);
+  }
+  return g;
+}
+
+// --- Decor: each kind is a small, cheap, cute Pixi shape drawn at (px,py,s). ---
+// Coordinates arrive normalized 0..1 over the scene; the caller maps to pixels.
+
+function decorSun(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: body 0xffd24a, rays 0xffe48a (light), diameter ≈ 0.06 of width.
+  const r = 30 * s;
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    g.moveTo(x + Math.cos(a) * r * 1.2, y + Math.sin(a) * r * 1.2)
+      .lineTo(x + Math.cos(a) * r * 1.7, y + Math.sin(a) * r * 1.7)
+      .stroke({ color: 0xffe48a, width: 5 * s, alpha: 0.9 });
+  }
+  g.circle(x, y, r).fill(0xffd24a);
+  g.circle(x - r * 0.28, y - r * 0.28, r * 0.5).fill({ color: 0xffe48a, alpha: 0.5 });
+}
+
+function decorMoon(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: warm-white 0xf2eedb + soft glow ring (alpha 0.25).
+  const r = 26 * s;
+  g.circle(x, y, r * 1.7).fill({ color: 0xf2eedb, alpha: 0.25 });
+  g.circle(x, y, r).fill(0xf2eedb);
+  // Crescent bite + a couple of craters.
+  g.circle(x + r * 0.45, y - r * 0.2, r * 0.85).fill(0x1a1e3a);
+  g.circle(x - r * 0.3, y + r * 0.25, r * 0.16).fill({ color: 0xddd6c0, alpha: 0.7 });
+  g.circle(x - r * 0.05, y - r * 0.35, r * 0.1).fill({ color: 0xddd6c0, alpha: 0.7 });
+}
+
+function decorCloud(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: flat, wide white puff (3-4 circles, flat base). alpha 0.92.
+  const r = 18 * s;
+  g.circle(x - r, y, r * 0.9).fill({ color: 0xffffff, alpha: 0.92 });
+  g.circle(x, y - r * 0.45, r * 1.15).fill({ color: 0xffffff, alpha: 0.92 });
+  g.circle(x + r, y, r * 0.9).fill({ color: 0xffffff, alpha: 0.92 });
+  g.ellipse(x, y + r * 0.3, r * 1.9, r * 0.7).fill({ color: 0xffffff, alpha: 0.92 });
+}
+
+function decorCactus(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: muted green 0x5fa05a, rounded caps, arms. Spikes omitted.
+  const w = 10 * s, h = 46 * s;
+  const GREEN = 0x5fa05a;
+  g.roundRect(x - w / 2, y - h, w, h, w / 2).fill(GREEN);
+  // Arms.
+  g.roundRect(x - w * 1.7, y - h * 0.55, w * 0.8, h * 0.35, w / 2).fill(GREEN);
+  g.roundRect(x - w * 1.7, y - h * 0.55, w * 0.8, w, w / 2).fill(GREEN);
+  g.roundRect(x + w * 0.9, y - h * 0.7, w * 0.8, h * 0.4, w / 2).fill(GREEN);
+  g.roundRect(x + w * 0.9, y - h * 0.7, w * 0.8, w, w / 2).fill(GREEN);
+}
+
+function decorPalm(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: stem 0x9a6b3c, fronds 0x4f9e57 (muted green).
+  const h = 50 * s;
+  g.moveTo(x, y).bezierCurveTo(x + 6 * s, y - h * 0.5, x - 6 * s, y - h * 0.8, x + 2 * s, y - h)
+    .stroke({ color: 0x9a6b3c, width: 7 * s });
+  const top = { x: x + 2 * s, y: y - h };
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI * 0.5 + (i - 2) * 0.62;
+    g.moveTo(top.x, top.y)
+      .quadraticCurveTo(top.x + Math.cos(a) * 22 * s, top.y + Math.sin(a) * 18 * s, top.x + Math.cos(a) * 40 * s, top.y + Math.sin(a) * 30 * s)
+      .stroke({ color: 0x4f9e57, width: 6 * s });
+  }
+  g.circle(top.x, top.y, 6 * s).fill(0x8a5a32);
+}
+
+function decorParasol(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: coral canopy 0xe9603f + white 0xfff4ec wedges, pole 0xccb89a.
+  const r = 26 * s;
+  g.moveTo(x, y - r * 0.2).lineTo(x, y + r * 1.3).stroke({ color: 0xccb89a, width: 4 * s });
+  // Striped half-dome (alternating wedges).
+  const wedges = 6;
+  for (let i = 0; i < wedges; i++) {
+    const a0 = Math.PI + (i / wedges) * Math.PI;
+    const a1 = Math.PI + ((i + 1) / wedges) * Math.PI;
+    g.moveTo(x, y - r * 0.2)
+      .lineTo(x + Math.cos(a0) * r, y - r * 0.2 + Math.sin(a0) * r)
+      .lineTo(x + Math.cos(a1) * r, y - r * 0.2 + Math.sin(a1) * r)
+      .fill(i % 2 ? 0xe9603f : 0xfff4ec);
+  }
+}
+
+function decorTube(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: coral ring 0xff6f61 + white quarter pads. alpha 0.95.
+  const r = 22 * s;
+  g.circle(x, y, r).fill({ color: 0xff6f61, alpha: 0.95 });
+  g.circle(x, y, r).stroke({ color: 0xffffff, width: 5 * s });
+  g.circle(x, y, r * 0.5).cut();
+  // Stripes (four white pads).
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    g.circle(x + Math.cos(a) * r * 0.75, y + Math.sin(a) * r * 0.75, r * 0.22).fill(0xffffff);
+  }
+}
+
+function decorBuilding(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: body 0x2b3050 (alpha 0.9), lit windows 0xffd66b (alpha 0.85).
+  const w = 40 * s, h = 120 * s;
+  g.rect(x - w / 2, y, w, h).fill({ color: 0x2b3050, alpha: 0.9 });
+  // Lit windows grid.
+  const cols = 3, rows = Math.max(4, Math.floor(h / (14 * s)));
+  const ww = w / (cols + 1) * 0.7;
+  for (let r0 = 0; r0 < rows; r0++) {
+    for (let c = 0; c < cols; c++) {
+      const lit = ((r0 * 7 + c * 3) % 5) < 3; // deterministic on/off pattern
+      const wx = x - w / 2 + ((c + 0.7) / cols) * w - ww / 2;
+      const wy = y + 10 * s + r0 * 14 * s;
+      if (lit) g.rect(wx, wy, ww, 8 * s).fill({ color: 0xffd66b, alpha: 0.85 });
+    }
+  }
+}
+
+function decorPine(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: muted evergreen 0x3f7a4e, stem 0x6e4a2e, white snow cap.
+  const h = 52 * s, w = 30 * s;
+  g.rect(x - 4 * s, y - 8 * s, 8 * s, 12 * s).fill(0x6e4a2e);
+  for (let i = 0; i < 3; i++) {
+    const ty = y - 8 * s - i * h * 0.28;
+    const tw = w * (1 - i * 0.22);
+    g.moveTo(x - tw / 2, ty).lineTo(x + tw / 2, ty).lineTo(x, ty - h * 0.4).fill(0x3f7a4e);
+  }
+  // Snow cap.
+  g.moveTo(x - w * 0.3, y - 8 * s - h * 0.56).lineTo(x + w * 0.3, y - 8 * s - h * 0.56).lineTo(x, y - 8 * s - h * 0.56 - h * 0.2).fill({ color: 0xffffff, alpha: 0.9 });
+}
+
+function decorSnowman(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: near-white body 0xfbfdff, thin outline 0xdfeaf2, nose 0xf08a3c.
+  g.circle(x, y, 20 * s).fill(0xfbfdff);
+  g.circle(x, y - 24 * s, 14 * s).fill(0xfbfdff);
+  g.circle(x, y - 24 * s, 14 * s).stroke({ color: 0xdfeaf2, width: 1.5 });
+  g.circle(x, y, 20 * s).stroke({ color: 0xdfeaf2, width: 1.5 });
+  // Face + buttons + carrot.
+  g.circle(x - 4 * s, y - 27 * s, 1.6 * s).fill(0x333333);
+  g.circle(x + 4 * s, y - 27 * s, 1.6 * s).fill(0x333333);
+  g.moveTo(x, y - 24 * s).lineTo(x + 10 * s, y - 22 * s).lineTo(x, y - 21 * s).fill(0xf08a3c);
+  g.circle(x, y - 2 * s, 1.8 * s).fill(0x333333);
+  g.circle(x, y + 6 * s, 1.8 * s).fill(0x333333);
+}
+
+function decorLeaf(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: big frond, deep green 0x357a3f, vein 0x2a5f32. Hangs from a corner.
+  const w = 42 * s, h = 56 * s;
+  g.moveTo(x, y)
+    .quadraticCurveTo(x - w, y + h * 0.4, x - w * 0.2, y + h)
+    .quadraticCurveTo(x, y + h * 0.5, x + w * 0.2, y + h)
+    .quadraticCurveTo(x + w, y + h * 0.4, x, y)
+    .fill(0x357a3f);
+  g.moveTo(x, y).lineTo(x, y + h * 0.9).stroke({ color: 0x2a5f32, width: 3 * s });
+}
+
+function decorVine(g: Graphics, x: number, y: number, s: number): void {
+  // Spec t04: dangling vine, stem 0x4a7a3a, leaf dots 0x3f8a46 (alpha 0.9).
+  const len = 70 * s;
+  g.moveTo(x, y)
+    .bezierCurveTo(x + 12 * s, y + len * 0.35, x - 12 * s, y + len * 0.7, x + 6 * s, y + len)
+    .stroke({ color: 0x4a7a3a, width: 4 * s, alpha: 0.9 });
+  for (let i = 1; i <= 3; i++) {
+    const ly = y + (len * i) / 3.5;
+    const lx = x + Math.sin(i * 1.7) * 12 * s;
+    g.ellipse(lx, ly, 9 * s, 5 * s).fill({ color: 0x3f8a46, alpha: 0.9 });
+  }
+}
+
+const DECOR_DRAW: Record<string, (g: Graphics, x: number, y: number, s: number) => void> = {
+  sun: decorSun,
+  moon: decorMoon,
+  cloud: decorCloud,
+  cactus: decorCactus,
+  palm: decorPalm,
+  parasol: decorParasol,
+  tube: decorTube,
+  building: decorBuilding,
+  pine: decorPine,
+  snowman: decorSnowman,
+  leaf: decorLeaf,
+  vine: decorVine,
+};
+
+function buildDecor(specs: DecorSpec[], width: number, height: number): Graphics {
+  const g = new Graphics();
+  for (const d of specs) {
+    const draw = DECOR_DRAW[d.kind];
+    if (!draw) continue;
+    draw(g, d.x * width, d.y * height, d.scale ?? 1);
+  }
+  return g;
+}
+
+/**
+ * A light ambient particle field (display-only — no RNG, no sim feedback). The
+ * layout is a fixed deterministic lattice + a per-particle phase so the same
+ * theme always looks the same in a still. The renderer does not animate this
+ * (TrackScene is a static build); motion would only show in live play, but the
+ * static spread already reads as "snow / sand / fireflies" in a screenshot.
+ */
+function buildAmbient(ambient: Ambient, width: number, height: number): Container {
+  const c = new Container();
+  if (ambient === 'none') return c;
+  const count = ambient === 'fireflies' ? 26 : 60;
+  for (let i = 0; i < count; i++) {
+    // Deterministic pseudo-scatter from the index (no Math.random → determinism).
+    const fx = ((i * 73 + 19) % 100) / 100;
+    const fy = ((i * 137 + 41) % 100) / 100;
+    const px = fx * width;
+    const py = fy * height;
+    const g = new Graphics();
+    if (ambient === 'snow') {
+      // Spec t04: round white flakes, 2-4px, alpha 0.7-0.9.
+      g.circle(px, py, 2 + (i % 3)).fill({ color: 0xffffff, alpha: 0.8 });
+    } else if (ambient === 'sand') {
+      // Spec t04: thin horizontal sand streaks, 0xe9cf9b alpha 0.35-0.5.
+      g.moveTo(px, py).lineTo(px + 14, py + 4).stroke({ color: 0xe9cf9b, width: 2, alpha: 0.45 });
+    } else if (ambient === 'fireflies') {
+      // Spec t04: glow dot, core 0xfff3a0, halo 0xd6ff7a alpha 0.4.
+      g.circle(px, py, 2).fill({ color: 0xfff3a0, alpha: 0.9 });
+      g.circle(px, py, 5).fill({ color: 0xd6ff7a, alpha: 0.4 });
+    }
+    c.addChild(g);
+  }
+  c.blendMode = ambient === 'fireflies' ? 'add' : 'normal';
+  return c;
 }
 
 export function buildTrackScene(
@@ -28,6 +279,8 @@ export function buildTrackScene(
    * undefined for individual races → classic black/white checker only.
    */
   teamColors: number[] = [],
+  /** Arena theme (palette + decor + ambient). Defaults to grassland (classic). */
+  theme: TrackTheme = grassland,
 ): Container {
   const scene = new Container();
   const { laneSpan } = track.geo;
@@ -36,30 +289,43 @@ export function buildTrackScene(
   const outerOff = half + margin;
   const innerOff = -half - margin * 0.5;
 
-  // Background / grass surround.
-  const bg = new Graphics().rect(0, 0, width, height).fill(0x6fae6a);
-  scene.addChild(bg);
+  // Sky / backdrop (flat for grassland, vertical gradient otherwise).
+  scene.addChild(drawSky(width, height, theme.skyTop, theme.skyBottom));
 
-  // Stands ring (outer).
+  // Stands ring (outer) — renderer-internal neutral, not themed.
   const stands = new Graphics().poly(stadiumPolygon(track, half + margin * 2.1)).fill(0x9aa3b2);
   scene.addChild(stands);
 
-  // Track band: tatan outer fill, then infield grass punched on top.
-  const trackBand = new Graphics().poly(stadiumPolygon(track, half + margin)).fill(0xd2452f);
+  // Track band: themed surface outer fill, then inner field punched on top.
+  const trackBand = new Graphics().poly(stadiumPolygon(track, half + margin)).fill(theme.surface);
   scene.addChild(trackBand);
-  const innerEdge = new Graphics().poly(stadiumPolygon(track, -half - margin * 0.5)).fill(0xe8923c);
+  // Subtle alternating lane band on the surface (skipped if no surfaceAlt).
+  if (theme.surfaceAlt !== undefined) {
+    const altBand = new Graphics().poly(stadiumPolygon(track, (half + innerOff) / 2)).fill({ color: theme.surfaceAlt, alpha: 0.5 });
+    scene.addChild(altBand);
+  }
+  const innerEdge = new Graphics().poly(stadiumPolygon(track, -half - margin * 0.5)).fill(theme.kerb);
   scene.addChild(innerEdge);
-  const infield = new Graphics().poly(stadiumPolygon(track, -half - margin * 0.5 - 6)).fill(0x7ec46f);
+  const infield = new Graphics().poly(stadiumPolygon(track, -half - margin * 0.5 - 6)).fill(theme.infield);
   scene.addChild(infield);
-  const infieldInner = new Graphics().poly(stadiumPolygon(track, -half - margin * 1.4)).fill(0x68b25b);
-  scene.addChild(infieldInner);
+  if (theme.infieldEdge !== undefined) {
+    const infieldInner = new Graphics().poly(stadiumPolygon(track, -half - margin * 1.4)).fill(theme.infieldEdge);
+    scene.addChild(infieldInner);
+  }
+
+  // Decor props + ambient sit OVER the infield/backdrop (the oval covers most of
+  // the canvas, so props on the open infield read clearly) but UNDER the lane
+  // lines + finish tape so the running surface stays crisp. Behind racers (the
+  // whole trackLayer is at stage index 0). decor coords target sky/field areas.
+  scene.addChild(buildDecor(theme.decor, width, height));
+  scene.addChild(buildAmbient(theme.ambient ?? 'none', width, height));
 
   // Lane lines (3 lanes → 3 lines; visual only, racers move continuously).
   for (let l = 0; l <= 2; l++) {
     const off = -half + (l / 2) * laneSpan;
     const line = new Graphics();
     const poly = stadiumPolygon(track, off);
-    line.poly(poly, true).stroke({ color: 0xffffff, width: 1.5, alpha: 0.55 });
+    line.poly(poly, true).stroke({ color: theme.laneLine, width: 1.5, alpha: 0.55 });
     scene.addChild(line);
   }
 
