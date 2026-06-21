@@ -26,7 +26,9 @@ export const catModel: PartModel = {
       pivot: { x: -28, y: 28 },
       z: 0,
       shapes: [
-        { kind: 'path', d: 'M-26,30 Q-54,28 -52,4 Q-51,-8 -40,-6 Q-48,-2 -47,8 Q-47,22 -24,22 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        // slender S-curl tail, thinner taper with a hooked tip for a clean feline read
+        { kind: 'path', d: 'M-26,30 Q-56,30 -56,4 Q-56,-12 -42,-12 Q-50,-8 -49,4 Q-48,20 -24,22 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'path', d: 'M-50,-10 Q-44,-10 -44,-2', fill: 'none', stroke: 'stripe', strokeW: 2.5 },
       ],
     },
     {
@@ -35,8 +37,9 @@ export const catModel: PartModel = {
       pivot: { x: 34, y: -22 },
       z: 1,
       shapes: [
-        { kind: 'path', d: 'M22,-20 L34,-54 L50,-22 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        { kind: 'path', d: 'M28,-22 L34,-44 L43,-23 Z', fill: 'cheek' },
+        // taller, sharper triangular ear with a crisp tip for an alert feline read
+        { kind: 'path', d: 'M20,-20 L36,-60 L52,-22 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'path', d: 'M27,-22 L36,-48 L45,-23 Z', fill: 'cheek' },
       ],
     },
     // Far-side legs (behind the body), thin and a touch darker for depth.
@@ -64,8 +67,9 @@ export const catModel: PartModel = {
       pivot: { x: -2, y: 32 },
       z: 2,
       shapes: [
-        { kind: 'ellipse', cx: -2, cy: 32, rx: 27, ry: 19, fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        { kind: 'ellipse', cx: 2, cy: 39, rx: 16, ry: 9, fill: 'point' },
+        // slim feline body with a gently arched back line (haunches higher at the rear)
+        { kind: 'path', d: 'M-28,32 Q-26,16 -6,15 Q22,14 25,30 Q26,46 6,49 Q-22,50 -28,38 Z', fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'ellipse', cx: 2, cy: 40, rx: 16, ry: 8, fill: 'point' },
         // tabby flank stripes
         { kind: 'path', d: 'M-14,20 Q-12,30 -16,40', fill: 'none', stroke: 'stripe', strokeW: 2.5 },
         { kind: 'path', d: 'M-2,18 Q0,29 -4,40', fill: 'none', stroke: 'stripe', strokeW: 2.5 },
@@ -107,12 +111,12 @@ export const catModel: PartModel = {
         { kind: 'path', d: 'M66,9 L62,5 Q62,2 64,3 L66,5 L68,3 Q70,2 70,5 Z', fill: 'nose' },
         // mouth
         { kind: 'path', d: 'M66,11 Q62,15 57,13', fill: 'none', stroke: 'outline', strokeW: 1.6 },
-        // big aloof half-lidded almond eye + highlight
-        { kind: 'ellipse', cx: 46, cy: -3, rx: 8, ry: 9, fill: EYE },
-        { kind: 'circle', cx: 43, cy: -7, r: 3, fill: HI },
-        { kind: 'circle', cx: 49, cy: 0, r: 1.5, fill: HI },
-        // upper lid for a sleepy / haughty look
-        { kind: 'path', d: 'M37,-7 Q46,-11 55,-6', fill: 'none', stroke: 'outline', strokeW: 2 },
+        // big aloof almond eye, rounder + larger for a babier chibi read + highlight
+        { kind: 'ellipse', cx: 46, cy: -2, rx: 9, ry: 10.5, fill: EYE },
+        { kind: 'circle', cx: 42, cy: -7, r: 3.6, fill: HI },
+        { kind: 'circle', cx: 49, cy: 1, r: 1.8, fill: HI },
+        // crisp upper lid for a sleepy / haughty look
+        { kind: 'path', d: 'M36,-7 Q46,-12 56,-5', fill: 'none', stroke: 'outline', strokeW: 2.2 },
         // whiskers fanning forward off the muzzle
         { kind: 'line', x1: 56, y1: 14, x2: 84, y2: 9, stroke: 'outline', strokeW: 1.4 },
         { kind: 'line', x1: 56, y1: 18, x2: 84, y2: 20, stroke: 'outline', strokeW: 1.4 },
@@ -122,7 +126,8 @@ export const catModel: PartModel = {
   poses: {
     idle: {},
     run: {},
-    skill: { head: { dy: -3 }, tail: { rot: -20 }, frontLegL: { rot: 18 } },
+    // catwalk: chin held high + tail lofted in a proud curl + a dainty lifted front paw
+    skill: { head: { dy: -5, rot: -6 }, body: { dy: -2 }, tail: { rot: -30 }, frontLegL: { rot: 26 }, earL: { rot: -8 } },
     win: { head: { dy: -6 }, tail: { rot: -28 } },
     fall: { head: { rot: 16 }, tail: { rot: 20 } },
   },

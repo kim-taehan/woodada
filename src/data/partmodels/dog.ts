@@ -19,15 +19,20 @@ export const dogModel: PartModel = {
       pivot: { x: -32, y: 26 },
       z: 0,
       shapes: [
-        { kind: 'path', d: 'M-30,30 Q-52,22 -46,2 Q-38,14 -22,20 Z', fill: 'point', stroke: 'outline', strokeW: 2.5 },
+        // perky curled tail, fuller arc so the wag reads at a glance
+        { kind: 'path', d: 'M-28,30 Q-58,24 -54,-4 Q-44,-12 -40,2 Q-50,2 -44,18 Q-38,26 -22,22 Z', fill: 'point', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'path', d: 'M-30,26 Q-50,20 -48,2', fill: 'none', stroke: 'cheek', strokeW: 2.5, opacity: 0.5 },
       ],
     },
     {
+      // floppy ear hinged high on the head; a long teardrop that reads clearly
+      // as it flutters back during the gallop (pivot up top so swing is legible).
       name: 'earL',
-      pivot: { x: 30, y: -18 },
+      pivot: { x: 30, y: -20 },
       z: 1,
       shapes: [
-        { kind: 'path', d: 'M32,-14 Q12,-30 22,-52 Q40,-44 44,-16 Z', fill: 'point', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'path', d: 'M30,-18 Q6,-30 14,-58 Q34,-54 46,-22 Q40,-12 30,-18 Z', fill: 'point', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'path', d: 'M28,-22 Q14,-30 20,-48 Q30,-44 36,-24 Z', fill: 'cheek', opacity: 0.55 },
       ],
     },
     // Far-side legs (behind the body).
@@ -82,16 +87,19 @@ export const dogModel: PartModel = {
       pivot: { x: 40, y: 4 },
       z: 4,
       shapes: [
-        { kind: 'circle', cx: 41, cy: 0, r: 36, fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        { kind: 'ellipse', cx: 62, cy: 14, rx: 12, ry: 9.5, fill: 'base', stroke: 'outline', strokeW: 2.5 },
-        { kind: 'ellipse', cx: 61, cy: 16, rx: 7.5, ry: 5, fill: BELLY },
-        { kind: 'ellipse', cx: 38, cy: 17, rx: 9, ry: 6, fill: 'cheek' },
-        { kind: 'ellipse', cx: 73, cy: 11, rx: 5.2, ry: 5.8, fill: 'nose' },
-        { kind: 'path', d: 'M73,15 Q68,23 60,21', fill: 'none', stroke: 'nose', strokeW: 1.8 },
-        { kind: 'ellipse', cx: 58, cy: 23, rx: 5, ry: 7, fill: 'tongue' },
-        { kind: 'circle', cx: 47, cy: -3, r: 12, fill: EYE },
-        { kind: 'circle', cx: 42, cy: -8, r: 4.8, fill: HI },
-        { kind: 'circle', cx: 51, cy: 2, r: 2.2, fill: HI },
+        // bigger round cranium for a stronger chibi head-to-body ratio
+        { kind: 'circle', cx: 41, cy: -1, r: 39, fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        // rounded muzzle puff
+        { kind: 'ellipse', cx: 64, cy: 15, rx: 13, ry: 10.5, fill: 'base', stroke: 'outline', strokeW: 2.5 },
+        { kind: 'ellipse', cx: 63, cy: 17, rx: 8, ry: 5.5, fill: BELLY },
+        { kind: 'ellipse', cx: 36, cy: 19, rx: 9.5, ry: 6.5, fill: 'cheek' },
+        { kind: 'ellipse', cx: 76, cy: 11, rx: 5.6, ry: 6.2, fill: 'nose' },
+        { kind: 'path', d: 'M76,16 Q70,24 62,22', fill: 'none', stroke: 'nose', strokeW: 1.8 },
+        { kind: 'ellipse', cx: 60, cy: 24, rx: 5, ry: 7, fill: 'tongue' },
+        // big round sparkly eye (rounder + larger highlight = babier)
+        { kind: 'circle', cx: 48, cy: -4, r: 13, fill: EYE },
+        { kind: 'circle', cx: 43, cy: -9, r: 5.4, fill: HI },
+        { kind: 'circle', cx: 52, cy: 2, r: 2.6, fill: HI },
       ],
     },
   ],
