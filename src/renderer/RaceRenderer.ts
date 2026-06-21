@@ -522,25 +522,27 @@ export function createRaceRenderer(): RaceRenderer {
         break;
       case 'divebomb:hit':
         if (e.targetId === e.racerId) {
-          // Gamble lost — the eagle face-plants ITSELF at the bottom of its hop:
-          // a hard dust burst, an impact pop, and dizzy swirl as it crashes head
-          // -first. No glide: the body stays over its own spot (the gamble's point).
+          // Gamble LOST — the eagle face-plants ITSELF at the bottom of its hop.
+          // Failure cue is deliberately DULL + GREY (no bright stars/gold): a grey
+          // dust slump, a drooping 😵 swirl, sweat-bead and a "꽝..." so it reads
+          // instantly as a flop. No glide: the body stays over its own spot.
           v.diveTargetId = null;
           scheduleFx(clock + IMPACT_DELAY, () => {
             const p = posById.get(e.racerId) ?? self;
             fx.swoop(p.x - dir * 40, p.y, p.x, p.y, clock + IMPACT_DELAY);
-            fx.dust(p.x, p.y + 12, clock + IMPACT_DELAY);
-            fx.pop(p.x, p.y, v.tint, clock + IMPACT_DELAY);
-            fx.dizzy(p.x, p.y, clock + IMPACT_DELAY);
+            fx.dustSlump(p.x, p.y, clock + IMPACT_DELAY);
           });
         } else if (at) {
-          // Headbutt connects at the bottom of the hop — the target is slammed: a
-          // head-first impact burst, feathers scatter, stars, and a dizzy stun (so
-          // the victim reads as "stunned" like a bear-roar hit). Lunge the body onto
-          // the target's CURRENT spot so the eagle rams INTO it, not in place.
+          // Gamble WON — headbutt connects at the bottom of the hop. Success cue is
+          // bright + GOLD: a triumphant gold burst + "명중!" pop ON THE EAGLE (who
+          // acted), while the TARGET is slammed (head-first impact, feathers, stars,
+          // dizzy stun). The gold-on-actor vs grey-self-slump contrast makes win vs
+          // flop read at a glance. Lunge the body onto the target's CURRENT spot.
           v.diveTargetId = e.targetId ?? null;
           scheduleFx(clock + IMPACT_DELAY, () => {
             const a = (e.targetId ? posById.get(e.targetId) : undefined) ?? at;
+            const eagle = posById.get(e.racerId) ?? self;
+            fx.goldBurst(eagle.x, eagle.y, clock + IMPACT_DELAY);
             fx.swoop(self.x, a.y, a.x, a.y, clock + IMPACT_DELAY);
             fx.feathers(a.x, a.y, clock + IMPACT_DELAY);
             fx.stars(a.x, a.y, clock + IMPACT_DELAY);
