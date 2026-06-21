@@ -208,6 +208,116 @@ function decorVine(g: Graphics, x: number, y: number, s: number): void {
   }
 }
 
+function decorBunting(g: Graphics, x: number, y: number, s: number): void {
+  // Spec u01 §4.1: festival flag garland. String sags from (x,y) to (x+240s,y);
+  // ~8 triangular flags cycling a 4-color sports palette.
+  const span = 240 * s;
+  const sag = 18 * s;
+  const cx = x + span / 2;
+  g.moveTo(x, y).quadraticCurveTo(cx, y + sag, x + span, y)
+    .stroke({ color: 0x8a6d3a, width: 2 * s, alpha: 0.7 });
+  const COLORS = [0xe7574d, 0xf5b13d, 0x4fa3e0, 0x5fbf6a];
+  const flags = 8;
+  const fw = 16 * s, fh = 20 * s;
+  for (let i = 0; i < flags; i++) {
+    const t = (i + 0.5) / flags;
+    // Point on the sagging quadratic Bézier (B(t) = (1-t)²P0 + 2(1-t)t Pc + t²P2).
+    const mt = 1 - t;
+    const bx = mt * mt * x + 2 * mt * t * cx + t * t * (x + span);
+    const by = mt * mt * y + 2 * mt * t * (y + sag) + t * t * y;
+    g.moveTo(bx - fw / 2, by).lineTo(bx + fw / 2, by).lineTo(bx, by + fh)
+      .fill({ color: COLORS[i % 4], alpha: 0.92 });
+  }
+}
+
+function decorFlower(g: Graphics, x: number, y: number, s: number): void {
+  // Spec u01 §4.2: a clump of 3-4 small flowers around the anchor (clump base).
+  // Deterministic offsets (no RNG) within ±14s.
+  const PETAL = [0xff8fb3, 0xfff3a0, 0xe88fe0];
+  const spots = [
+    { dx: 0, dy: -2 * s, ci: 0 },
+    { dx: -12 * s, dy: 4 * s, ci: 1 },
+    { dx: 11 * s, dy: 6 * s, ci: 2 },
+    { dx: 4 * s, dy: -10 * s, ci: 0 },
+  ];
+  for (const sp of spots) {
+    const fx = x + sp.dx, fy = y + sp.dy;
+    // Short green stem/leaf down from the bloom.
+    g.moveTo(fx, fy).lineTo(fx, fy + 6 * s).stroke({ color: 0x4f9e57, width: 2 * s });
+    for (let p = 0; p < 5; p++) {
+      const a = (p / 5) * Math.PI * 2 - Math.PI / 2;
+      g.circle(fx + Math.cos(a) * 5 * s, fy + Math.sin(a) * 5 * s, 4 * s).fill(PETAL[sp.ci]);
+    }
+    g.circle(fx, fy, 3 * s).fill(0xffd64a);
+  }
+}
+
+function decorSeagull(g: Graphics, x: number, y: number, s: number): void {
+  // Spec u01 §4.3: minimal "M" gull silhouette, two bezier wings. No body.
+  const stroke = { color: 0x55606e, width: 3 * s, alpha: 0.85 } as const;
+  g.moveTo(x - 18 * s, y).quadraticCurveTo(x - 9 * s, y - 7 * s, x, y).stroke(stroke);
+  g.moveTo(x, y).quadraticCurveTo(x + 9 * s, y - 7 * s, x + 18 * s, y).stroke(stroke);
+}
+
+function decorSandcastle(g: Graphics, x: number, y: number, s: number): void {
+  // Spec u01 §4.4: trapezoid body + 3 towers w/ coral pennants + arch door.
+  const SAND = 0xddb878;
+  const bw = 40 * s, tw = 30 * s, bh = 26 * s;
+  // Body trapezoid (anchor = base center; sits on the sand).
+  g.moveTo(x - bw / 2, y).lineTo(x + bw / 2, y)
+    .lineTo(x + tw / 2, y - bh).lineTo(x - tw / 2, y - bh)
+    .fill(SAND);
+  g.moveTo(x - bw / 2, y).lineTo(x + bw / 2, y)
+    .lineTo(x + tw / 2, y - bh).lineTo(x - tw / 2, y - bh).closePath()
+    .stroke({ color: 0xc9a06a, width: 1.5 });
+  // Three towers rising above the body.
+  const towerW = 8 * s, towerRise = 12 * s, top = y - bh;
+  const towerX = [-tw / 2 + towerW / 2, 0, tw / 2 - towerW / 2];
+  for (const tx of towerX) {
+    g.rect(x + tx - towerW / 2, top - towerRise, towerW, towerRise).fill(SAND);
+    // Coral pennant on each tower top.
+    const fx = x + tx;
+    const fy = top - towerRise;
+    g.moveTo(fx, fy).lineTo(fx + 7 * s, fy + 3 * s).lineTo(fx, fy + 6 * s).fill(0xff6f61);
+  }
+  // Arch door (dark sand half-circle) centered on the body base.
+  g.moveTo(x - 6 * s, y).arc(x, y, 6 * s, Math.PI, 0).fill(0xbf9a5e);
+}
+
+function decorStarfish(g: Graphics, x: number, y: number, s: number): void {
+  // Spec u01 §4.5: 5-point star, coral orange, slight tilt + light dots.
+  const outer = 14 * s, inner = 6 * s, tilt = -0.3;
+  const pts: number[] = [];
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = tilt - Math.PI / 2 + (i / 10) * Math.PI * 2;
+    pts.push(x + Math.cos(a) * r, y + Math.sin(a) * r);
+  }
+  g.poly(pts).fill(0xff9f5a);
+  g.poly(pts, true).stroke({ color: 0xe07f3a, width: 1.5 });
+  // A few light speckles toward the center.
+  const dots = [
+    { dx: 0, dy: 0 }, { dx: -3 * s, dy: 2 * s },
+    { dx: 3 * s, dy: -2 * s }, { dx: 1 * s, dy: 4 * s },
+  ];
+  for (const d of dots) g.circle(x + d.dx, y + d.dy, 1.5 * s).fill(0xffd0a0);
+}
+
+function decorBeachball(g: Graphics, x: number, y: number, s: number): void {
+  // Spec u01 §4.6: white ball with 6 alternating color wedges + highlight.
+  const r = 16 * s;
+  const WEDGE = [0xff5a5a, 0x4fa3e0, 0xffd64a];
+  g.circle(x, y, r).fill(0xffffff);
+  for (let i = 0; i < 6; i++) {
+    const a0 = (i / 6) * Math.PI * 2;
+    const a1 = ((i + 1) / 6) * Math.PI * 2;
+    g.moveTo(x, y).arc(x, y, r, a0, a1).closePath().fill(WEDGE[i % 3]);
+  }
+  g.circle(x, y, r).stroke({ color: 0xddddee, width: 1.5 });
+  // Top-left specular highlight.
+  g.circle(x - r * 0.35, y - r * 0.35, 5 * s).fill({ color: 0xffffff, alpha: 0.6 });
+}
+
 const DECOR_DRAW: Record<string, (g: Graphics, x: number, y: number, s: number) => void> = {
   sun: decorSun,
   moon: decorMoon,
@@ -221,6 +331,12 @@ const DECOR_DRAW: Record<string, (g: Graphics, x: number, y: number, s: number) 
   snowman: decorSnowman,
   leaf: decorLeaf,
   vine: decorVine,
+  bunting: decorBunting,
+  flower: decorFlower,
+  seagull: decorSeagull,
+  sandcastle: decorSandcastle,
+  starfish: decorStarfish,
+  beachball: decorBeachball,
 };
 
 function buildDecor(specs: DecorSpec[], width: number, height: number): Graphics {
