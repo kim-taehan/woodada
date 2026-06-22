@@ -36,6 +36,19 @@ export interface RaceConfig {
    * active at a time. Non-relay races ignore this and run the classic model.
    */
   relay: boolean;
+  /**
+   * Death-match (탈락 모드, individual only). When set, the race eliminates one
+   * active racer at every lap boundary — the moment the leader (max-progress
+   * active racer) completes a new full lap (integer multiple of trackLength):
+   *   - 'first': the current 1st place (max progress) is eliminated;
+   *   - 'last' : the current last place (min progress) is eliminated.
+   * Eliminated racers stop advancing (phase='eliminated') and are excluded from
+   * skills/items/catch-up. The race ends when one active racer remains. Ranks:
+   *   - 'first': earlier-eliminated ranks HIGHER (1st-out = rank 1, survivor = N);
+   *   - 'last' : earlier-eliminated ranks LOWER  (survivor = rank 1, 1st-out = N).
+   * Undefined → classic race (finish-order ranking, no eliminations).
+   */
+  elimination?: 'first' | 'last';
 }
 
 export type RacerPhase =
@@ -47,7 +60,9 @@ export type RacerPhase =
   | 'straying'
   | 'finished'
   /** Relay-only: a teammate parked off-track until its leg starts (spec §5). */
-  | 'waiting';
+  | 'waiting'
+  /** Death-match: knocked out at a lap boundary; frozen, no longer racing. */
+  | 'eliminated';
 
 /** Per-skill scratch state (serializable). */
 export interface SkillRuntime {
@@ -130,6 +145,18 @@ export interface RacerState {
   weaveSide?: -1 | 0 | 1;
   /** Frame index when the finish line was crossed. */
   finishedAt?: number;
+  /**
+   * Death-match: frame index at which this racer was eliminated. Undefined for
+   * the lone survivor and for non-elimination races. The renderer reads this (and
+   * `eliminationOrder`) to stage the knocked-out racers.
+   */
+  eliminatedAt?: number;
+  /**
+   * Death-match: 1-based order of elimination (1 = first knocked out). Lets the
+   * renderer/shell recover the exact elimination sequence from any frame without
+   * scanning event history. Undefined for the survivor and non-elimination races.
+   */
+  eliminationOrder?: number;
   /** Final placement, 1 = first. Assigned at finish. */
   rank?: number;
   /** Frame index until which the skill is on cooldown. */
@@ -143,7 +170,9 @@ export interface SkillEvent {
   type: string;
   variant:
     | 'activate' | 'hit' | 'dodge' | 'wake' | 'boost' | 'slip' | 'handoff'
-    | 'star' | 'lightning' | 'shell' | 'shellhit' | 'fart';
+    | 'star' | 'lightning' | 'shell' | 'shellhit' | 'fart'
+    /** Death-match: this racer was just eliminated at a lap boundary. */
+    | 'out';
   targetId?: RacerId;
   /** Speech-bubble text (from character.lines). */
   line?: string;

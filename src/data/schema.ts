@@ -103,6 +103,21 @@ export interface GameMode {
   label: string;
   team: boolean;
   scoringId: ScoringId;
+  /**
+   * Individual-mode deathmatch flavor. Each lap eliminates one racer:
+   * `'first'` = the leader drops out (먼저 빠질수록 상위), `'last'` = the
+   * trailer drops out (끝까지 남으면 우승). Omitted = normal race. Mirrors
+   * `RaceConfig.elimination` (engine) — same field name & values. Final ranking
+   * is the engine rank, so no separate scoringId is needed.
+   */
+  elimination?: 'first' | 'last';
   /** Legacy fixed layout. Unused now — team count lives in RoomStore/RaceConfig. */
   teamLayout?: { teams: number; perTeam: number };
 }
+
+/**
+ * Setup-screen options for the individual-mode deathmatch selector (mirrors the
+ * teamScoringOptions pattern). `id: 'none'` = normal race; `'first' | 'last'`
+ * map straight to `GameMode.elimination` / `RaceConfig.elimination`.
+ */
+export type EliminationId = 'none' | 'first' | 'last';

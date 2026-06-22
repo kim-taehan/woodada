@@ -7,7 +7,7 @@
 import { characterCatalog, defaultCharacterIds } from '../data/characters/index.ts';
 import { defaultModeId, gameModes } from '../data/modes.ts';
 import { teamOrder, type TeamId } from '../data/teams.ts';
-import { defaultTeamScoringId, TEAM_SCORING_TO_ID, type TeamScoringId } from '../data/schema.ts';
+import { defaultTeamScoringId, TEAM_SCORING_TO_ID, type EliminationId, type TeamScoringId } from '../data/schema.ts';
 import { createRng } from '../engine/prng.ts';
 import { randomName } from '../data/names.ts';
 import type { RaceConfig, RaceParticipant } from '../engine/types.ts';
@@ -48,6 +48,12 @@ export class RoomStore {
    * of truth for team scoring; `relay` is derived (relay === 'relay').
    */
   teamScoringId: TeamScoringId = defaultTeamScoringId;
+  /**
+   * Individual-mode deathmatch flavor (#dm): 'none' = classic, 'first' =
+   * 선두탈락, 'last' = 꼴찌탈락. Single source of truth; `buildRaceConfig` maps
+   * 'first'|'last' onto `RaceConfig.elimination` and 'none' to undefined.
+   */
+  eliminationKind: EliminationId = 'none';
 
   addName(name: string, teamId?: TeamId): void {
     const trimmed = name.trim();
@@ -152,6 +158,14 @@ export class RoomStore {
     this.seed = nextSeed();
   }
 
+  /** Resolved deathmatch kind for engine/state: only in individual mode, and
+   * 'none' maps to undefined (classic race). */
+  private resolvedElimination(): 'first' | 'last' | undefined {
+    const mode = gameModes[this.modeId];
+    if (mode.team || this.eliminationKind === 'none') return undefined;
+    return this.eliminationKind;
+  }
+
   buildRoomState(): RoomState {
     const mode = gameModes[this.modeId];
     const participants = this.resolveParticipants(this.seed);
@@ -169,6 +183,7 @@ export class RoomStore {
       seed: this.seed,
       laps: this.laps,
       arenaId: this.arenaId,
+      elimination: this.resolvedElimination(),
     };
   }
 
@@ -186,6 +201,7 @@ export class RoomStore {
       scoringId: room.scoringId,
       teamMode: mode.team,
       relay,
+      elimination: room.elimination,
     };
   }
 }

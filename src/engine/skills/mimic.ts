@@ -43,7 +43,7 @@ export const mimicHandler: SkillHandler = (ctx) => {
   // The single nearest racer in range (absolute progress gap; id tie-break, no RNG).
   let target: typeof all[number] | undefined;
   for (const r of all) {
-    if (r.id === self.id || r.phase === 'finished' || r.phase === 'waiting') continue;
+    if (r.id === self.id || r.phase === 'finished' || r.phase === 'waiting' || r.phase === 'eliminated') continue;
     const gap = Math.abs(r.progress - self.progress);
     if (gap > scanRange) continue;
     if (

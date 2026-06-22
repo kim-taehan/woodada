@@ -18,7 +18,7 @@ import { NameTag } from './character/NameTag.ts';
 import { SpeechBubbleLayer } from './fx/SpeechBubble.ts';
 import { FxLayer } from './fx/FxLayer.ts';
 import { CommentaryBar } from './fx/Commentary.ts';
-import { eventLine, leadLine, lastLapLine, mimicLine, mimicCopyBubble, bananaFailBubble, catDodgeBubble, catDodgeLine } from './fx/commentaryLines.ts';
+import { eventLine, leadLine, lastLapLine, mimicLine, mimicCopyBubble, bananaFailBubble, catDodgeBubble, catDodgeLine, eliminationLine, eliminationBubble } from './fx/commentaryLines.ts';
 import { Scoreboard } from './Scoreboard.ts';
 import { TopRankHud, type TopRow } from './TopRankHud.ts';
 import { teamPalette, type TeamId } from '../data/teams.ts';
@@ -59,6 +59,14 @@ interface RacerView {
   reelFrom: { x: number; y: number } | null;
   /** clock (seconds) at which the reel-in tween started. */
   reelStart: number;
+  /**
+   * Death-match (선두탈락 only) rank badge ("1등"/"2등"…) shown above this racer
+   * once it's knocked out and lined up in the centre row. Lazily created in
+   * placeEliminated (so non-elimination races never make one); dropped with the
+   * view on the next buildScene (charLayer.removeChildren + views.clear). null
+   * until first shown / in 꼴찌탈락 (last) mode, which shows no badge.
+   */
+  rankBadge: Text | null;
 }
 
 export interface RaceRenderer {
@@ -336,6 +344,8 @@ export function createRaceRenderer(): RaceRenderer {
 
   // Lap counter + final-lap emphasis.
   let lapText: Text | null = null;
+  // Death-match survivor counter ("남은 N명"), under the lap counter.
+  let survivorText: Text | null = null;
   let lastLapTriggered = false;
   let banner: Container | null = null;
   let bannerBornAt = 0;
@@ -812,6 +822,24 @@ export function createRaceRenderer(): RaceRenderer {
         if (v2g) v2g.glowUntil = clock + 1.6;
         break;
       }
+      case 'eliminate:out': {
+        // 💀 Death-match knock-out at a lap boundary. Branch the emotion on the
+        // mode: 선두탈락(first)이면 탈락=환호(sparkle/heart + 신난 버블), 꼴찌탈락(last)이면
+        // 탈락=좌절(sweat/dizzy/dustSlump + 시무룩 버블). The held pose/FX at the centre
+        // row are driven by placeEliminated; this is the impact-instant punch +
+        // a head bubble. (e.line is empty for eliminate events, so spawn our own.)
+        const mode = config!.elimination === 'first' ? 'first' : 'last';
+        bubbles.spawn(e.racerId, eliminationBubble(mode, curFrameIdx + e.racerId.length), v.tint, self.x, self.y - 64, clock);
+        if (mode === 'first') {
+          fx.sparkle(self.x, self.y, clock);
+          fx.heart(self.x, self.y - 70, clock);
+        } else {
+          fx.sweat(self.x + 14, self.y - 52, clock);
+          fx.dizzy(self.x, self.y, clock);
+          fx.dustSlump(self.x, self.y, clock);
+        }
+        break;
+      }
     }
 
     // A shrugged-off disruption surfaces as a `<attacker>:dodge` (targetId = the
@@ -922,6 +950,110 @@ export function createRaceRenderer(): RaceRenderer {
       } else if (lastish && !teamGated && Math.sin(clock * 3) > 0.9) {
         fx.sweat(x + 14, y - 52, clock);
       }
+    }
+
+    posById.set(r.id, { x, y, heading: 1 });
+  }
+
+  /**
+   * Death-match: stage a KNOCKED-OUT racer (phase==='eliminated') in a tidy
+   * HORIZONTAL row across the track centre, ordered left→right by
+   * `eliminationOrder` (1 = first out, sits leftmost). Mirrors placeFinished's
+   * coast-then-emote shape but lays the field along the infield's X axis instead
+   * of scattering it. Emotion branches on the death-match flavour:
+   *   • 'first' (선두탈락) → being out is GOOD: 'celebrate' pose + sparkle/heart.
+   *   • 'last'  (꼴찌탈락) → being out is a BUMMER: 'dejected' pose + sweat.
+   * Display-only — positions key off (frame - eliminatedAt) + eliminationOrder so
+   * the tableau is reproducible and never feeds back into the simulation.
+   */
+  function placeEliminated(
+    r: RacerState,
+    v: RacerView,
+    elimTotal: number,
+    frameIdx: number,
+    posById: Map<string, Pos>,
+  ): void {
+    const mode = config!.elimination === 'first' ? 'first' : 'last';
+    const order = r.eliminationOrder ?? 1; // 1-based; 1 = first out
+    const geo = track.geo;
+    // Where it was when knocked out: the live track point at its last spot. The
+    // body slides IN from there to its centre slot (slide-in feel).
+    const cross = track.place(r.progress, config!.trackLength, r.lane);
+
+    // Centre horizontal row: fan the eliminated across the infield's X span,
+    // ordered by eliminationOrder (1 = leftmost). Width grows with how many are
+    // out but stays clear of the curves. Two staggered Y rows so a long row of
+    // knocked-out racers doesn't fully overlap.
+    const slots = Math.max(1, elimTotal);
+    const rowSpan = Math.min(geo.straightHalf * 1.5, slots * 86);
+    const frac = slots > 1 ? (order - 1) / (slots - 1) : 0.5; // 0..1 across the row
+    const targetX = geo.cx - rowSpan / 2 + frac * rowSpan;
+    const targetY = geo.cy - 8 + (order % 2) * 22; // gentle two-row stagger about centre
+
+    // Coast: ease-out glide from the knock-out spot to the centre slot.
+    const secs = Math.max(0, frameIdx - (r.eliminatedAt ?? frameIdx)) / 60;
+    const k = easeOutCubic(secs / COAST_SECS);
+    const x = cross.x + (targetX - cross.x) * k;
+    const y = cross.y + (targetY - cross.y) * k;
+
+    // Perspective scale tracks screen-Y (nearer the front = bigger), like the
+    // finished tableau, so the centre cluster sits naturally in depth.
+    const depthScale = 0.82 + ((y - (geo.cy - geo.radius)) / (2 * geo.radius)) * 0.36;
+    const baseScale = CHAR_SCALE * depthScale * v.size * fieldScale;
+    v.character.root.scale.set(baseScale);
+    v.character.root.position.set(x, y);
+    v.character.root.zIndex = 70000 + y; // above the track, below the live finish crowd
+
+    // Emote only once settled, so the slide-in reads as a glide. first→환호,
+    // last→좌절. Keep the feeling held every frame at the centre.
+    const settled = k > 0.85;
+    const happy = mode === 'first';
+    const phase: string = settled ? (happy ? 'celebrate' : 'dejected') : 'finished';
+    v.character.update({
+      phase,
+      speedNorm: happy ? 1 : 0.3,
+      clock,
+      facing: 0,
+      heading: 1,
+      reducedMotion,
+    });
+    v.tag.setPosition(x, y - 66 * depthScale * fieldScale);
+    v.tag.root.zIndex = 100000 + y;
+    v.glow.visible = false;
+
+    // Held emotion FX at the centre: first→sparkle/heart shower (환호),
+    // last→occasional sweat-drop (시무룩). Throttled + deterministic-ish via clock
+    // phase + order so it stays sparse; suppressed under reduced motion.
+    if (settled && !reducedMotion) {
+      const hx = hash01(r.id, 1) * 2 - 1;
+      const hy = hash01(r.id, 2) * 2 - 1;
+      if (happy) {
+        if (Math.sin(clock * 9 + order) > 0.7) fx.sparkle(x + hx * 18, y - 70 + hy * 8, clock);
+        if (Math.sin(clock * 5 + order * 1.7) > 0.85) fx.heart(x, y - 78, clock);
+      } else if (Math.sin(clock * 3 + order) > 0.9) {
+        fx.sweat(x + 14, y - 52, clock);
+      }
+    }
+
+    // 선두탈락(first) 순위 배지: 먼저 빠질수록 상위라 first 모드의 rank = eliminationOrder
+    // (1=가장 먼저 탈락=1등). 중앙 줄에 선 탈락자 머리 위에 "N등" 라벨을 띄운다(왼쪽=1등,
+    // eliminationOrder 순으로 이미 정렬됨). settled 후에만 보여 슬라이드인 중엔 안 뜬다.
+    // 꼴찌탈락(last)은 배지 없음 — 혹시 모드가 섞여도 last에선 무조건 숨긴다.
+    if (happy && settled) {
+      if (!v.rankBadge) {
+        v.rankBadge = new Text({
+          text: `${order}등`,
+          style: { fontFamily: 'sans-serif', fontSize: 18, fontWeight: '900', fill: 0xffd23f, stroke: { color: 0x6b4a10, width: 4 } },
+        });
+        v.rankBadge.anchor.set(0.5, 1);
+        charLayer.addChild(v.rankBadge);
+      }
+      v.rankBadge.visible = true;
+      v.rankBadge.position.set(x, y - 96 * depthScale * fieldScale); // 이름표(−66) 위로 띄워 겹침 회피
+      v.rankBadge.scale.set(depthScale * fieldScale);
+      v.rankBadge.zIndex = 110000 + y; // 이름표(100000)보다 위
+    } else if (v.rankBadge) {
+      v.rankBadge.visible = false; // last 모드 / 슬라이드인 중엔 숨김
     }
 
     posById.set(r.id, { x, y, heading: 1 });
@@ -1126,7 +1258,7 @@ export function createRaceRenderer(): RaceRenderer {
         character.root.addChildAt(glow, 0); // behind the body
         const tag = new NameTag(p.name, tint);
         charLayer.addChild(character.root, tag.root);
-        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0, diveAt: -1, diveTargetId: null, reelFrom: null, reelStart: 0 });
+        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0, diveAt: -1, diveTargetId: null, reelFrom: null, reelStart: 0, rankBadge: null });
         names[p.id] = p.name;
       }
       namesById = names;
@@ -1144,6 +1276,8 @@ export function createRaceRenderer(): RaceRenderer {
       // Counter HUD: lap counter (multi-lap) or relay leg counter.
       if (lapText) lapText.destroy();
       lapText = null;
+      if (survivorText) survivorText.destroy();
+      survivorText = null;
       lastLapTriggered = false;
       if (banner) {
         banner.destroy();
@@ -1160,6 +1294,16 @@ export function createRaceRenderer(): RaceRenderer {
         lapText.anchor.set(0.5, 0);
         lapText.position.set(width / 2, 10);
         app.stage.addChild(lapText);
+      }
+      // Death-match: a "남은 N명" survivor counter just under the lap counter.
+      if (cfg.elimination) {
+        survivorText = new Text({
+          text: `💀 남은 ${cfg.participants.length}명`,
+          style: { fontFamily: 'sans-serif', fontSize: 18, fontWeight: '800', fill: 0xffe08a, stroke: { color: 0x1f2a1c, width: 4 } },
+        });
+        survivorText.anchor.set(0.5, 0);
+        survivorText.position.set(width / 2, lapText ? 38 : 10);
+        app.stage.addChild(survivorText);
       }
     },
 
@@ -1211,6 +1355,11 @@ export function createRaceRenderer(): RaceRenderer {
       // finisher (rank 1). Other teams still coast + settle but stay neutral.
       // undefined in individual mode (every placement keeps its own emote).
       let winningTeamId: string | undefined;
+      // Death-match: how many racers are knocked out so far, to size the centre
+      // row (each gets a slot ordered by eliminationOrder). Survivors still race.
+      const elimTotal = config.elimination
+        ? frame.racers.reduce((n, r) => (r.phase === 'eliminated' ? n + 1 : n), 0)
+        : 0;
       if (config.teamMode) {
         let bestRank = Infinity;
         for (const r of frame.racers) {
@@ -1237,6 +1386,11 @@ export function createRaceRenderer(): RaceRenderer {
         // waiting runners, handled above; finished racers (relay or not) all coast.
         if (r.phase === 'finished' && r.finishedAt !== undefined) {
           placeFinished(r, v, fieldCount, frame.frame, posById, winningTeamId);
+          continue;
+        }
+        // ── Death-match knock-out: stage the eliminated in the centre row.
+        if (r.phase === 'eliminated') {
+          placeEliminated(r, v, elimTotal, frame.frame, posById);
           continue;
         }
         const tp = track.place(r.progress, config.trackLength, r.lane);
@@ -1456,7 +1610,11 @@ export function createRaceRenderer(): RaceRenderer {
         // 하단 자막도 머리 위 버블과 같은 갈래로: 고양이가 회피한 dodge면 냥펀치/캣워크
         // 톤으로 오버라이드(그 외는 기존 generic dodge 라인 유지). 렌더러 전용.
         const catDodge = e.variant === 'dodge' && !!e.targetId && charIdById.get(e.targetId) === 'cat';
-        const line = mimicCopy
+        // 💀 데스매치 탈락 자막: 선두탈락(first)이면 약올림, 꼴찌탈락(last)이면 안쓰러움 톤.
+        const elimOut = e.type === 'eliminate' && e.variant === 'out';
+        const line = elimOut
+          ? eliminationLine(config.elimination === 'first' ? 'first' : 'last', n, frame.frame)
+          : mimicCopy
           ? mimicLine(n, namesById[e.targetId!] ?? '', copiedType ?? '', frame.frame)
           : catDodge
           ? catDodgeLine(e.type, n, namesById[e.targetId!] ?? '상대', frame.frame)
@@ -1465,7 +1623,10 @@ export function createRaceRenderer(): RaceRenderer {
           // An event always "claims" the bar this frame (so lead-change defers to
           // it), even when CommentaryBar's rate-limit holds the actual swap so a
           // packed field doesn't flicker the caption faster than it can be read.
-          commentary.say(line, clock);
+          // A death-match knock-out is a once-per-lap headline beat, so FORCE it
+          // past the hold (it can't flicker at that low cadence) — otherwise a
+          // skill line said <1.4s earlier would swallow "선두 탈락!"/"꼴찌 탈락!".
+          commentary.say(line, clock, elimOut);
           saidThisFrame = true;
         }
       }
@@ -1525,6 +1686,11 @@ export function createRaceRenderer(): RaceRenderer {
         }
       }
 
+      // Death-match survivor count: total minus the knocked-out (elimTotal above).
+      if (survivorText) {
+        survivorText.text = `💀 남은 ${Math.max(1, fieldCount - elimTotal)}명`;
+      }
+
       if (banner) {
         const age = clock - bannerBornAt;
         if (age > 1.8) {
@@ -1551,6 +1717,7 @@ export function createRaceRenderer(): RaceRenderer {
       if (scoreboard) scoreboard.root.visible = false;
       if (topHud) topHud.root.visible = false;
       if (lapText) lapText.visible = false;
+      if (survivorText) survivorText.visible = false;
       if (banner) {
         banner.destroy();
         banner = null;
@@ -1899,6 +2066,7 @@ export function createRaceRenderer(): RaceRenderer {
       if (topHud) topHud.root.position.set(TOP_HUD_MARGIN, height - TOP_HUD_H - TOP_HUD_MARGIN);
       commentary.root.position.set(width / 2, height - 40);
       if (lapText) lapText.position.set(width / 2, 10);
+      if (survivorText) survivorText.position.set(width / 2, lapText ? 38 : 10);
     },
 
     destroy() {

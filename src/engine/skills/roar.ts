@@ -15,7 +15,14 @@ export const roarHandler: SkillHandler = (ctx) => {
   const range = Number(params.range);
   const stagger = Math.round(Number(params.staggerMs) / DT_MS);
   for (const r of all) {
-    if (r.id === self.id || r.phase === 'finished' || r.phase === 'waiting' || r.phase === 'stunned') continue;
+    if (
+      r.id === self.id ||
+      r.phase === 'finished' ||
+      r.phase === 'waiting' ||
+      r.phase === 'stunned' ||
+      r.phase === 'eliminated'
+    )
+      continue;
     if (self.teamId !== undefined && r.teamId === self.teamId) continue;
     if (Math.abs(r.progress - self.progress) > range) continue;
     if ((r.skill.starUntil ?? 0) > frame) { ctx.emit({ variant: 'dodge', targetId: r.id }); continue; } // ⭐ star

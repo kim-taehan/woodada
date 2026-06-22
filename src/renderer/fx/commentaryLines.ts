@@ -47,6 +47,45 @@ const LINES: Record<string, string[]> = {
 const LEAD = ['선두 교체! {n} 1등!', '{n} 치고 나간다!', '{n} 선두 등극!'];
 const LASTLAP = ['마지막 바퀴! 대역전 간다!', '마지막 바퀴! 끝까지 모른다!'];
 
+// 데스매치(탈락) 실황 자막. content-designer(dm02) 풀을 {n}=탈락자 이름으로 토큰화.
+// 선두탈락(first): 1등이 먼저 빠지는 반전 — 의기양양·약올림 톤.
+const ELIM_FIRST_BAR = [
+  '1등? 축하해요~ {n} 가장 먼저 집에 가세요!',
+  '선두 {n}, 박수받으며 퇴장입니다 짝짝짝',
+  '앞서가던 {n}, 가장 먼저 사라지다…',
+  '1등 자리는 함정이었어! {n} 빠빠이~',
+  '{n} 너무 잘 달렸어요. 그래서 탈락입니다 ^^',
+  '선두 탈락! 꼴찌들이 환호하는 소리가 들리네요',
+  '역시 모난 돌이 정 맞는 법, {n} 먼저 아웃!',
+];
+// 꼴찌탈락(last): 끝까지 살아남기 — 불쌍·안쓰러움 톤.
+const ELIM_LAST_BAR = [
+  '꼴찌 {n}… 오늘은 여기까지예요 ㅠㅠ',
+  '마지막 주자 {n}, 조용히 트랙을 떠납니다…',
+  '{n} 조금만 더 빨랐어도… 안녕히 가세요',
+  '꼴찌 탈락! {n} 다음 생엔 다리가 길길 바라요',
+  '{n} 열심히 했는데… 결과는 냉정하네요',
+  '{n} 한 명 또 별이 되었습니다…☆',
+  '살아남은 자들이여, {n}를 기억해주세요',
+];
+// 탈락 당한 캐릭터 머리 위 말풍선 (짧게).
+const ELIM_FIRST_BUBBLE = ['엥, 내가 1등인데?!', '이게 무슨 룰이야!', '잘한 게 죄야…', '앞서간 게 잘못이라고?!'];
+const ELIM_LAST_BUBBLE = ['다리가 짧아서…', '여기까지인가 봐 ㅠ', '잘 가, 친구들…', '다음엔 꼭 살아남을게!'];
+
+/**
+ * 데스매치 탈락 실황 자막. mode='first'(선두탈락)면 약올림 톤, 'last'(꼴찌탈락)면
+ * 안쓰러움 톤. {n} = 탈락한 레이서 이름.
+ */
+export function eliminationLine(mode: 'first' | 'last', name: string, seed: number): string {
+  const pool = mode === 'first' ? ELIM_FIRST_BAR : ELIM_LAST_BAR;
+  return pick(pool, seed).replace(/\{n\}/g, name);
+}
+
+/** 데스매치 탈락 당한 캐릭터의 머리 위 말풍선. first=억울/황당, last=시무룩/포기. */
+export function eliminationBubble(mode: 'first' | 'last', seed: number): string {
+  return pick(mode === 'first' ? ELIM_FIRST_BUBBLE : ELIM_LAST_BUBBLE, seed);
+}
+
 function pick(pool: string[], seed: number): string {
   return pool[Math.abs(seed) % pool.length];
 }

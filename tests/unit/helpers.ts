@@ -10,6 +10,7 @@ export function makeConfig(opts: {
   trackLength?: number;
   laps?: number;
   relay?: boolean;
+  elimination?: 'first' | 'last';
 }): RaceConfig {
   const participants: RaceParticipant[] = opts.characterIds.map((cid, i) => ({
     id: `p${i}`,
@@ -27,6 +28,7 @@ export function makeConfig(opts: {
     scoringId: opts.scoringId ?? 'individual',
     teamMode: opts.teamMode ?? false,
     relay: opts.relay ?? false,
+    elimination: opts.elimination,
   };
 }
 

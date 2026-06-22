@@ -18,7 +18,14 @@ app.start();
 const skills = createDefaultSkillRegistry();
 const scoring = createDefaultScoringRegistry();
 
-function configFor(characterIds: string[], seed: number, laps = 1, teamIds?: string[], relay = false): RaceConfig {
+function configFor(
+  characterIds: string[],
+  seed: number,
+  laps = 1,
+  teamIds?: string[],
+  relay = false,
+  elimination?: 'first' | 'last',
+): RaceConfig {
   const team = relay || (teamIds?.some(Boolean) ?? false);
   return {
     participants: characterIds.map((cid, i) => ({
@@ -37,6 +44,8 @@ function configFor(characterIds: string[], seed: number, laps = 1, teamIds?: str
     scoringId: team ? TEAM_SCORING_TO_ID[relay ? 'relay' : 'rankSum'] : 'individual',
     teamMode: team,
     relay,
+    // Death-match (개인전): 'first'|'last' eliminations; omitted = classic race.
+    elimination,
   };
 }
 
@@ -49,6 +58,11 @@ interface CaptureOpts {
   teamIds?: string[];
   /** Relay (이어달리기) mode (waiting queue, baton hand-off, leg counter). */
   relay?: boolean;
+  /**
+   * Death-match (개인전 탈락전): 'first' = 선두탈락, 'last' = 꼴찌탈락. Omitted =
+   * classic race. Lets the renderer's center-pile / elimination FX be captured.
+   */
+  elimination?: 'first' | 'last';
   /**
    * Capture-only: after seeking to the end, advance the renderer's post-finish
    * coast/scatter/emote clock by this many frames (engine untouched) so the
@@ -70,7 +84,7 @@ const hooks = {
   /** Headless: first frame index of each `${type}:${variant}` event + total frames. */
   simulate(opts: CaptureOpts = {}) {
     const laps = opts.laps ?? 1;
-    const cfg = configFor(opts.characterIds ?? DEFAULT_IDS, opts.seed ?? 7, laps, opts.teamIds, opts.relay ?? false);
+    const cfg = configFor(opts.characterIds ?? DEFAULT_IDS, opts.seed ?? 7, laps, opts.teamIds, opts.relay ?? false, opts.elimination);
     const { frames, result } = simulateRace(cfg, skills, scoring);
     const eventFrames: Record<string, number> = {};
     let busiestFrame = 0;
@@ -137,7 +151,7 @@ const hooks = {
     const renderer = createRaceRenderer();
     renderer.setReducedMotion(opts.reducedMotion ?? false);
     await renderer.mount(host);
-    const cfg = configFor(opts.characterIds ?? DEFAULT_IDS, opts.seed ?? 7, opts.laps ?? 1, opts.teamIds, opts.relay ?? false);
+    const cfg = configFor(opts.characterIds ?? DEFAULT_IDS, opts.seed ?? 7, opts.laps ?? 1, opts.teamIds, opts.relay ?? false, opts.elimination);
     // Capture pins the arena (default grassland) so existing golden shots don't
     // drift; showcase shots pass an explicit arenaId. Game default is 'random'.
     const controller = new RaceController(renderer, cfg, opts.arenaId ?? 'grassland');

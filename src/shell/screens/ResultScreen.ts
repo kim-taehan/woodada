@@ -48,7 +48,10 @@ export function buildResultScreen(
 
   const winnerLine = isTeam
     ? `우승 팀: ${teamPalette[result.scoring.order[0] as TeamId]?.label ?? result.scoring.order[0]}`
-    : `1등 🏆 ${nameOf(result.order[0])}`;
+    // Death-match: the #1 ranked racer is the last one standing, not the leader.
+    : config.elimination
+      ? `최후의 생존자 🏆 ${nameOf(result.order[0])}`
+      : `1등 🏆 ${nameOf(result.order[0])}`;
 
   // ---- Records (Feature B): this race's time + best on record. ----
   const recordPanel = el('div', { class: `records${record.isNew ? ' record-new' : ''}` }, [

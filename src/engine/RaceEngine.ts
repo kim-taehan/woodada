@@ -107,6 +107,14 @@ interface Internals {
   teamLeg: Map<string, number>;
   /** Relay only: number of teams whose anchor (final) leg has finished. */
   teamsFinished: number;
+  /**
+   * Death-match only: integer lap index (1-based) of the next elimination. The
+   * leader crossing into lap `elimLapTarget` (progress ≥ elimLapTarget×trackLength)
+   * triggers one knock-out, then this advances. Pure progress-derived; no RNG.
+   */
+  elimLapTarget: number;
+  /** Death-match only: number of racers eliminated so far (also the next order #). */
+  elimCount: number;
   /** Mean progress of active racers this frame (catch-up reference). */
   meanProgress: number;
   /**
@@ -222,6 +230,8 @@ export function createRaceEngine(
     legQueues,
     teamLeg: new Map([...legQueues.keys()].map((t) => [t, 0])),
     teamsFinished: 0,
+    elimLapTarget: 1,
+    elimCount: 0,
     meanProgress: 0,
     spreadBehind: 1,
   };
@@ -244,7 +254,7 @@ export function createRaceEngine(
   function resolveTimer(self: RacerState): void {
     // A finished racer (relay leg done, or race over) must never be resurrected
     // by a stale transient timer; relay keeps stepping while others run.
-    if (self.phase === 'finished' || self.phase === 'waiting') return;
+    if (self.phase === 'finished' || self.phase === 'waiting' || self.phase === 'eliminated') return;
     if (self.skill.effectUntil === undefined || frame < self.skill.effectUntil) return;
 
     if (self.phase === 'stunned') {
@@ -324,7 +334,13 @@ export function createRaceEngine(
    */
   function fireSkill(self: RacerState, events: SkillEvent[], passer?: RacerState): void {
     if (frame < self.skillCooldownUntil) return;
-    if (self.phase === 'finished' || self.phase === 'waiting' || self.phase === 'stunned') return;
+    if (
+      self.phase === 'finished' ||
+      self.phase === 'waiting' ||
+      self.phase === 'stunned' ||
+      self.phase === 'eliminated'
+    )
+      return;
 
     const character = config.characters[self.characterId];
     const reaction = passer ? skills.getReaction(character.skill.type) : undefined;
@@ -503,7 +519,7 @@ export function createRaceEngine(
   function activeRunnerCount(): number {
     let n = 0;
     for (const r of internal.racers) {
-      if (r.phase === 'finished' || r.phase === 'waiting') continue;
+      if (r.phase === 'finished' || r.phase === 'waiting' || r.phase === 'eliminated') continue;
       n++;
     }
     return n;
@@ -525,7 +541,7 @@ export function createRaceEngine(
     let sum = 0;
     let n = 0;
     for (const r of internal.racers) {
-      if (r.phase === 'finished' || r.phase === 'waiting') continue;
+      if (r.phase === 'finished' || r.phase === 'waiting' || r.phase === 'eliminated') continue;
       sum += r.progress;
       n++;
     }
@@ -533,7 +549,7 @@ export function createRaceEngine(
   }
 
   function advance(self: RacerState, events: SkillEvent[]): void {
-    if (self.phase === 'finished' || self.phase === 'waiting') return;
+    if (self.phase === 'finished' || self.phase === 'waiting' || self.phase === 'eliminated') return;
     if (self.phase === 'stunned') {
       self.speed = 0;
       return;
@@ -553,6 +569,11 @@ export function createRaceEngine(
     }
 
     self.progress += self.speed;
+
+    // Death-match: nobody "finishes" by crossing a goal line — the race ends only
+    // by elimination (handled in applyEliminations / isRaceFinished). Racers keep
+    // lapping until knocked out or left the lone survivor.
+    if (config.elimination) return;
 
     // Anchor runs the extended finish; every other leg hands off at the lap line.
     const effectiveGoal =
@@ -628,6 +649,60 @@ export function createRaceEngine(
     events.push({ frame, racerId: finisher.id, type: 'relay', variant: 'handoff', targetId: nextId });
   }
 
+  /**
+   * Death-match elimination at lap boundaries. A lap boundary is the moment the
+   * leader (max-progress active racer) completes a new full lap — i.e. some active
+   * racer's progress has reached `elimLapTarget × trackLength`. On each boundary,
+   * one active racer is knocked out:
+   *   - 'first': current 1st (max progress) — leading too hard gets you out;
+   *   - 'last' : current last (min progress) — trailing gets you out.
+   * Ties broken by the stable per-racer procKey (deterministic, draw-order
+   * independent, no RNG). Eliminations stop once a lone survivor remains. The
+   * leader may have lapped several boundaries in one frame (rare): the while-loop
+   * fires one knock-out per crossed boundary, still exactly one per lap.
+   *
+   * Pure: depends only on progress + the fixed procKey, so the same (config, seed)
+   * yields the identical elimination order/ranks.
+   */
+  function applyEliminations(events: SkillEvent[]): void {
+    if (!config.elimination) return;
+    const isActive = (r: RacerState) =>
+      r.phase !== 'finished' && r.phase !== 'waiting' && r.phase !== 'eliminated';
+
+    while (true) {
+      const active = internal.racers.filter(isActive);
+      if (active.length <= 1) return; // lone survivor (or none) — nothing to do
+      // Boundary reached when the front-runner has crossed elimLapTarget laps.
+      const leadProgress = Math.max(...active.map((r) => r.progress));
+      if (leadProgress < internal.elimLapTarget * config.trackLength) return;
+
+      // Pick the eliminee: extreme progress for the mode, procKey tie-break.
+      let victim = active[0];
+      for (const r of active) {
+        if (r === victim) continue;
+        const better =
+          config.elimination === 'first'
+            ? r.progress > victim.progress ||
+              (r.progress === victim.progress &&
+                internal.procKey.get(r.id)! < internal.procKey.get(victim.id)!)
+            : r.progress < victim.progress ||
+              (r.progress === victim.progress &&
+                internal.procKey.get(r.id)! < internal.procKey.get(victim.id)!);
+        if (better) victim = r;
+      }
+
+      victim.phase = 'eliminated';
+      victim.speed = 0;
+      victim.skill.burst = 0;
+      victim.skill.effectUntil = undefined;
+      victim.eliminatedAt = frame;
+      victim.eliminationOrder = ++internal.elimCount;
+      events.push({ frame, racerId: victim.id, type: 'eliminate', variant: 'out' });
+
+      internal.elimLapTarget++;
+    }
+  }
+
   /** True if `lapPos` (0..trackLength) lies inside the zone, accounting for wrap. */
   function inZone(lapPos: number, zone: IceZone): boolean {
     const len = config.trackLength;
@@ -678,7 +753,8 @@ export function createRaceEngine(
   /** A gamble box, on pickup, rolls one of four effects (weighted). */
   function applyItemPickup(self: RacerState, order: RacerState[], events: SkillEvent[]): void {
     const irng = internal.itemRng.get(self.id)!;
-    const active = (r: RacerState) => r.phase !== 'finished' && r.phase !== 'waiting' && r.phase !== 'stunned';
+    const active = (r: RacerState) =>
+      r.phase !== 'finished' && r.phase !== 'waiting' && r.phase !== 'stunned' && r.phase !== 'eliminated';
     // Immune to this item's disruption: ⭐ star OR brief skill-activation i-frames.
     const immune = (r: RacerState) => (r.skill.starUntil ?? 0) > frame || isSkillInvuln(r);
     const x = irng.range(0, 8); // weights: star 1 / lightning 2 / shell 2 / fart 3
@@ -732,7 +808,13 @@ export function createRaceEngine(
     // Collect boxes by proximity.
     const collected = new Set<string>();
     for (const self of order) {
-      if (self.phase === 'finished' || self.phase === 'waiting' || self.phase === 'stunned') continue;
+      if (
+        self.phase === 'finished' ||
+        self.phase === 'waiting' ||
+        self.phase === 'stunned' ||
+        self.phase === 'eliminated'
+      )
+        continue;
       const lapProgress = self.progress % config.trackLength;
       for (const box of internal.boxes) {
         if (collected.has(box.id)) continue;
@@ -791,19 +873,48 @@ export function createRaceEngine(
   // every racer has crossed. Relay racers re-enter waiting, so a global racer
   // count would never settle — track team completions instead.
   function isRaceFinished(): boolean {
+    if (config.elimination) {
+      // Death-match ends when at most one racer is still active (the survivor).
+      let active = 0;
+      for (const r of internal.racers) {
+        if (r.phase !== 'finished' && r.phase !== 'waiting' && r.phase !== 'eliminated') active++;
+      }
+      return active <= 1;
+    }
     return config.relay
       ? internal.teamsFinished >= internal.legQueues.size
       : internal.finishedCount >= internal.racers.length;
   }
 
   function buildResult(): RaceResult {
+    if (config.elimination) assignEliminationRanks();
     const order = [...internal.racers]
       .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity))
       .map((r) => r.id);
     const finishFrame: Record<RacerId, number> = {};
-    for (const r of internal.racers) finishFrame[r.id] = r.finishedAt ?? frame;
+    for (const r of internal.racers) finishFrame[r.id] = r.finishedAt ?? r.eliminatedAt ?? frame;
     const strategy = scoring.get(config.scoringId) ?? scoring.get('individual')!;
     return { order, finishFrame, scoring: strategy(order, config), seed: config.seed };
+  }
+
+  /**
+   * Death-match rank assignment from elimination order (1 = first knocked out).
+   * N = total racers; the lone survivor has no eliminationOrder.
+   *   - 'first' (선두탈락): earlier-out ranks HIGHER → rank = eliminationOrder;
+   *     survivor (last remaining) = rank N (worst).
+   *   - 'last'  (꼴찌탈락): earlier-out ranks LOWER  → rank = N − eliminationOrder + 1;
+   *     survivor = rank 1 (winner). i.e. exactly the reverse of elimination order.
+   */
+  function assignEliminationRanks(): void {
+    const n = internal.racers.length;
+    for (const r of internal.racers) {
+      const k = r.eliminationOrder; // undefined for the survivor
+      if (k === undefined) {
+        r.rank = config.elimination === 'first' ? n : 1; // survivor
+      } else {
+        r.rank = config.elimination === 'first' ? k : n - k + 1;
+      }
+    }
   }
 
   const engine: RaceEngine = {
@@ -841,6 +952,9 @@ export function createRaceEngine(
       for (const self of order) prevProgress.set(self.id, self.progress);
       for (const self of order) advance(self, events);
       fireOvertakeHooks(prevProgress, events);
+
+      // Death-match: knock out one racer at each lap boundary the leader crosses.
+      applyEliminations(events);
 
       updateBoxes(order, events);
 
@@ -896,7 +1010,12 @@ function fieldCooldownFactor(activeRunners: number): number {
 function autoMaxFrames(config: RaceConfig): number {
   const MIN_SUSTAINED_SPEED = 0.4; // units/frame, conservative worst case
   const BUFFER = 1.5;
-  const distance = config.trackLength * (config.laps + FINISH_OFFSET_FRAC);
+  // Death-match ignores `laps`: the leader laps until N−1 racers are knocked out,
+  // so the bounding distance is the (N−1)th lap boundary plus the finish offset.
+  const laps = config.elimination
+    ? Math.max(1, config.participants.length - 1)
+    : config.laps;
+  const distance = config.trackLength * (laps + FINISH_OFFSET_FRAC);
   return Math.ceil((distance / MIN_SUSTAINED_SPEED) * BUFFER);
 }
 

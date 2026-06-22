@@ -15,6 +15,8 @@ const skills = createDefaultSkillRegistry();
 const scoring = createDefaultScoringRegistry();
 
 const PLAYBACK_SPEED = 0.6; // steady playback speed (0.6 = 60% real-time, gently slower)
+const SLOWMO_FACTOR = 0.35; // death-match elimination slow-mo: 35% of normal pace
+const SLOWMO_MS = 700; // real-time duration of the elimination slow-mo window
 
 export class RaceController {
   private engine: RaceEngine;
@@ -50,6 +52,7 @@ export class RaceController {
     return new Promise((resolve) => {
       let acc = 0; // accumulated (scaled) ms toward the next engine step
       let last = 0;
+      let slowMs = 0; // remaining real-time ms of death-match elimination slow-mo
 
       const tick = (ts: number) => {
         if (!this.running) return;
@@ -57,7 +60,11 @@ export class RaceController {
         const realDt = Math.min(ts - last, 100); // clamp big gaps (tab switches)
         last = ts;
 
-        acc += realDt * PLAYBACK_SPEED;
+        // Death-match: briefly slow pacing when someone is knocked out so the
+        // elimination moment reads. Display-only; the engine stays fixed-step.
+        const speed = slowMs > 0 ? PLAYBACK_SPEED * SLOWMO_FACTOR : PLAYBACK_SPEED;
+        slowMs = Math.max(0, slowMs - realDt);
+        acc += realDt * speed;
 
         let frame = this.engine.current();
         let stepped = false;
@@ -65,6 +72,9 @@ export class RaceController {
           frame = this.engine.step();
           acc -= DT_MS;
           stepped = true;
+          if (frame.events.some((e) => e.type === 'eliminate' && e.variant === 'out')) {
+            slowMs = SLOWMO_MS;
+          }
         }
 
         if (stepped) this.renderer.renderFrame(frame);

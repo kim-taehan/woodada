@@ -47,16 +47,22 @@ export const BASE_SPEED = {
 
 /**
  * homeLane spread across the track (0 inside .. 1 outside). Per-slot deterministic:
- * `lo + pow(i/(n-1), exp) * span`, inside-weighted by `exp` > 1, then clamped with
- * a small ± jitter. Lane never affects speed — this is purely positional.
+ * `lo + pow(i/(n-1), exp) * span`, then clamped with a small ± jitter. Lane never
+ * affects speed — this is purely positional.
+ *
+ * `exp` was 1.6 (inside-weighted), which crowded the first ~5 of a 10-racer field
+ * into lanes 0.10–0.32 (slot gaps 0.024–0.094, all under OVERTAKE.laneNear 0.16) so
+ * the pack read as a single inside line. `exp = 1` gives an even spread (flat ~0.089
+ * slot gaps across the full span); the jitter is widened a touch to decorrelate the
+ * remaining sub-band slot overlaps that the lateral-separation push then resolves.
  */
 export const HOME_LANE = {
   lo: 0.1,
   span: 0.8,
-  exp: 1.6,
+  exp: 1.0,
   clampMin: 0.08,
   clampMax: 0.92,
-  jitter: 0.05,
+  jitter: 0.07,
 } as const;
 
 /**
@@ -132,8 +138,21 @@ export const OVERTAKE = {
   /** Speed multiplier while boxed in. */
   blockDecel: 0.5,
   /** Gentle lane wander amplitude + frequency. */
-  wanderAmp: 0.1,
+  wanderAmp: 0.14,
   wanderFreq: 0.05,
+  /**
+   * Lateral separation ("자리경합" / position contest). Two racers running
+   * shoulder-to-shoulder — small forward gap AND within `sepLaneBand` of each
+   * other's lane — push their lane targets apart so they stop overlapping. This
+   * only nudges the lane target (speed-neutral; the existing blockDecel still
+   * handles the front-to-back "boxed in" slowdown). The direction is decided
+   * deterministically by a stable per-pair key (racer id order), never RNG —
+   * the inner-keyed racer is pushed inside, the outer-keyed one outside — so the
+   * push is symmetric and draw-order / array-order independent.
+   */
+  sepRange: 3.0, // |progress gap| window (units) that counts as side-by-side
+  sepLaneBand: 0.14, // lane closeness (units) that counts as overlapping
+  sepPush: 0.5, // max fraction of laneStep added to the target at point-blank
   /**
    * Jockeying (low-traffic position contest). When not lane-blocked, a racer
    * leans its lane target toward a rival ahead within `jockeyRange` (progress
