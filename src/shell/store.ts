@@ -8,6 +8,7 @@ import { characterCatalog, defaultCharacterIds } from '../data/characters/index.
 import { defaultModeId, gameModes } from '../data/modes.ts';
 import { teamOrder, type TeamId } from '../data/teams.ts';
 import { createRng } from '../engine/prng.ts';
+import { randomName } from '../data/names.ts';
 import type { RaceConfig, RaceParticipant } from '../engine/types.ts';
 import type { ResultMapping, RoomState } from '../transport/types.ts';
 
@@ -32,7 +33,7 @@ export class RoomStore {
   modeId = defaultModeId;
   resultMapping: ResultMapping = { byRank: {}, byTeamRank: {} };
   seed = 1;
-  laps = 1;
+  laps = 5;
   /**
    * Selected arena (track theme). 'random' = let the renderer resolve it from
    * the seed at race start (single source = renderer + seed). Purely visual, so
@@ -53,6 +54,16 @@ export class RoomStore {
 
   addBulk(text: string): void {
     for (const line of text.split(/[\n,]/)) this.addName(line);
+  }
+
+  /**
+   * Seed the first-launch roster so the setup screen opens ready to start
+   * (spec §0). Same shape as "+ 참가자 추가": random name, undefined character
+   * (=🎲 random). No-op if drafts already exist, so user clears/edits stick.
+   */
+  seedDefaults(count = 2): void {
+    if (this.drafts.length) return;
+    for (let i = 0; i < count; i++) this.addName(randomName());
   }
 
   remove(index: number): void {

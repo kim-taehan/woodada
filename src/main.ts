@@ -61,7 +61,7 @@ interface CaptureOpts {
   arenaId?: string;
 }
 
-const DEFAULT_IDS = ['penguin', 'dog', 'cat', 'monkey', 'eagle', 'bear', 'hedgehog'];
+const DEFAULT_IDS = ['penguin', 'dog', 'cat', 'monkey', 'bear', 'hedgehog', 'spider', 'alien'];
 
 const hooks = {
   /** Headless: first frame index of each `${type}:${variant}` event + total frames. */

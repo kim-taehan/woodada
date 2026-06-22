@@ -79,6 +79,16 @@ export const OVERTAKE = {
   /** Gentle lane wander amplitude + frequency. */
   wanderAmp: 0.1,
   wanderFreq: 0.05,
+  /**
+   * Jockeying (low-traffic position contest). When not lane-blocked, a racer
+   * leans its lane target toward a rival ahead within `jockeyRange` (progress
+   * units, wider than nearAhead so the lean engages *before* the rival becomes a
+   * lane blocker and the weave/block logic takes over). `jockeyLean` is the max
+   * fraction of the way to the rival's lane (at point-blank); it fades linearly to
+   * 0 at the edge of the range. Speed-neutral — moves the lane target only.
+   */
+  jockeyRange: 9.0,
+  jockeyLean: 0.6,
 } as const;
 
 /**

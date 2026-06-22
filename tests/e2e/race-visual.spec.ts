@@ -105,9 +105,9 @@ test('FX & facing proof shots (curve / icefield / roar / divebomb self-botch)', 
 
   // Bear roar: a bear-led pack so the shockwave catches several at once; capture
   // a beat after the hit so the per-victim dizzy stagger develops (≠ banana).
-  const ROAR_IDS = ['bear', 'dog', 'cat', 'monkey', 'penguin', 'eagle'];
+  const ROAR_IDS = ['bear', 'dog', 'cat', 'monkey', 'penguin', 'spider'];
   for (const seed of [2, 5, 13, 21, 33, 41]) {
-    const s = await page.evaluate((sd) => window.__woodada.simulate({ seed: sd, characterIds: ['bear', 'dog', 'cat', 'monkey', 'penguin', 'eagle'] }), seed);
+    const s = await page.evaluate((sd) => window.__woodada.simulate({ seed: sd, characterIds: ['bear', 'dog', 'cat', 'monkey', 'penguin', 'spider'] }), seed);
     if (s.eventFrames['roar:hit'] === undefined) continue;
     await page.evaluate(([ff, sd, ids]) => window.__woodada.showRaceAt((ff as number) + 2, { seed: sd as number, characterIds: ids as string[] }), [s.eventFrames['roar:hit'], seed, ROAR_IDS] as const);
     await settle(page);

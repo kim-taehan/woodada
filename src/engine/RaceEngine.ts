@@ -264,23 +264,28 @@ export function createRaceEngine(
     if (!reaction && !tick) return;
 
     const before = events.length;
-    const ctx: SkillContext = {
+    // Bits of the context shared by the racer's OWN skill and any skill the alien
+    // copies through invokeSkill (the actor `self` is the same in both — only
+    // params/rng/type-stamping differ for a copied skill).
+    const shared = {
       self,
       all: internal.racers,
       byId: (id: RacerId) => internal.racers.find((r) => r.id === id),
       participants: participantsById,
-      rng: internal.skillRng.get(self.id)!,
       frame,
-      params: character.skill.params,
       lines: character.lines,
       skillTypeOf: (id: RacerId) => {
         const cid = participantsById[id]?.characterId;
         return cid ? config.characters[cid]?.skill.type : undefined;
       },
-      emit: (e) =>
-        events.push({ frame, racerId: self.id, type: character.skill.type, ...e }),
-      tryDodge: (target) => resolveDodge(target, frame, internal.skillRng.get(target.id)!),
-      addIceZone: (z) => {
+      skillParamsOf: (id: RacerId) => {
+        const cid = participantsById[id]?.characterId;
+        return cid ? config.characters[cid]?.skill.params : undefined;
+      },
+      // Pure check (no dispatch / RNG): copyable = registered tick handler, not mimic.
+      canCopySkill: (copiedType: string) => copiedType !== 'mimic' && skills.get(copiedType) !== undefined,
+      tryDodge: (target: RacerState) => resolveDodge(target, frame, internal.skillRng.get(target.id)!),
+      addIceZone: (z: Parameters<SkillContext['addIceZone']>[0]) => {
         const start = ((z.startProgress % config.trackLength) + config.trackLength) % config.trackLength;
         internal.iceZones.push({
           id: `ice${internal.iceCounter++}`,
@@ -291,6 +296,38 @@ export function createRaceEngine(
           boostFactor: z.boostFactor,
           slowFactor: z.slowFactor,
         });
+      },
+    };
+    const ctx: SkillContext = {
+      ...shared,
+      rng: internal.skillRng.get(self.id)!,
+      params: character.skill.params,
+      emit: (e) => events.push({ frame, racerId: self.id, type: character.skill.type, ...e }),
+      // Alien mimic dispatch: run another skill's handler with `self` (the alien)
+      // as the actor, the scanned racer's params, and an alien-only stable rng fork.
+      // Refuses 'mimic' (recursion) and reaction-only skills (no tick handler);
+      // returns whether the copied handler actually fired (emitted an event).
+      invokeSkill: (copiedType, paramsOverride) => {
+        if (copiedType === 'mimic') return false; // recursion guard
+        const copiedTick = skills.get(copiedType);
+        if (!copiedTick) return false; // reaction-only (e.g. 'bristle') or unknown → uncopyable
+        const copiedBefore = events.length;
+        const copiedCtx: SkillContext = {
+          ...shared,
+          // Alien-only sub-stream per copied type: isolates the copied skill's draws
+          // from the scanned racer's stream and keeps the order stable/deterministic.
+          rng: internal.skillRng.get(self.id)!.fork(`mimic:${copiedType}`),
+          params: paramsOverride,
+          // Stamp the COPIED type so commentary/renderer read it as the alien using
+          // that skill (actor stays the alien via racerId = self.id).
+          emit: (e) => events.push({ frame, racerId: self.id, type: copiedType, ...e }),
+          // A copied skill may not itself copy again (defence in depth; the registry
+          // refusal above already blocks 'mimic', this also blocks nested chains).
+          invokeSkill: () => false,
+          canCopySkill: () => false,
+        };
+        copiedTick(copiedCtx);
+        return events.length > copiedBefore;
       },
     };
     if (reaction && passer) reaction({ ...ctx, passer });

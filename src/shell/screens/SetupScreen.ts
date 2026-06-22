@@ -14,7 +14,7 @@ import { randomName } from '../../data/names.ts';
 import { trackCatalog, defaultArenaIds } from '../../data/tracks/index.ts';
 import { openGuide } from './GuideOverlay.ts';
 
-const CHAR_LABEL: Record<string, string> = { dog: '🐶', cat: '🐱', monkey: '🐒', eagle: '🦅', bear: '🐻', penguin: '🐧', hedgehog: '🦔' };
+const CHAR_LABEL: Record<string, string> = { dog: '🐶', cat: '🐱', monkey: '🐒', eagle: '🦅', bear: '🐻', penguin: '🐧', hedgehog: '🦔', spider: '🕷️', alien: '🛸' };
 const TEAM_EMOJI: Record<TeamId, string> = { red: '🔴', blue: '🔵', white: '⚪', black: '⚫' };
 
 export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLElement {

@@ -9,6 +9,13 @@
  * frame. Then it drifts back home; if both sides are blocked it decelerates until
  * a gap opens. Lane no longer affects speed, so nobody has a reason to crowd the
  * inside.
+ *
+ * Jockeying (low-traffic dynamics): even when NOT lane-blocked, a racer that is
+ * close behind a rival (any lane) leans its lane target toward that rival's lane
+ * to "draw alongside" and challenge for position. The lean strength is a smooth
+ * function of how close the rival is (1 at point-blank, fading to 0 at the edge of
+ * the window) so there is no on/off boundary to wobble against, and it never
+ * touches speed — purely a positional drift so 1-on-1 races stop looking parallel.
  */
 
 import type { Rng } from './prng.ts';
@@ -85,10 +92,41 @@ export function applyOvertake(self: RacerState, all: RacerState[], rng: Rng, fra
     // Clear of traffic — release any weave commitment and drift home.
     self.weaveSide = 0;
     self.phase = 'running';
+
+    // Jockeying: lean toward the lane of the nearest rival just ahead (any lane,
+    // not lane-blocking) to draw alongside and contest position. Strength fades
+    // smoothly with distance so there's no boundary to wobble against; this only
+    // moves the lane TARGET (speed untouched, inside stays neutral).
+    const rival = nearestRival(all, self);
+    if (rival) {
+      const gap = rival.progress - self.progress;
+      const lean = OVERTAKE.jockeyLean * (1 - gap / OVERTAKE.jockeyRange);
+      target = clamp(target + (rival.lane - target) * lean, 0.05, 0.95);
+    }
+
     self.facing = target > self.lane ? 1 : target < self.lane ? -1 : 0;
   }
 
   self.lane = moveToward(self.lane, target, OVERTAKE.laneDrift);
+}
+
+/**
+ * Nearest racer ahead within the jockey window, IGNORING lane (the rival to
+ * contest, not a lane blocker). Used only for the low-traffic lane lean.
+ */
+function nearestRival(all: RacerState[], self: RacerState): RacerState | undefined {
+  let best: RacerState | undefined;
+  let bestGap = Infinity;
+  for (const r of all) {
+    if (r.id === self.id || r.phase === 'finished' || r.phase === 'waiting') continue;
+    const gap = r.progress - self.progress;
+    if (gap <= 0 || gap > OVERTAKE.jockeyRange) continue;
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = r;
+    }
+  }
+  return best;
 }
 
 function nearestAhead(

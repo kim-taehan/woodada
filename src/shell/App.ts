@@ -21,6 +21,9 @@ export class App {
   constructor(private root: HTMLElement) {}
 
   start(): void {
+    // First launch opens with a ready-to-go roster (spec §0); no-op once the
+    // user has added/cleared anyone, so this never overwrites their state.
+    this.store.seedDefaults();
     this.showSetup();
   }
 
