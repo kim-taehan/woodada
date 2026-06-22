@@ -7,7 +7,7 @@
 import { createRng, type Rng } from './prng.ts';
 import { applyOvertake } from './overtake.ts';
 import { speedBias, powerEaseSlow } from './stats.ts';
-import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE } from './tuning.ts';
+import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD } from './tuning.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
@@ -19,7 +19,7 @@ import {
   type SkillEvent,
 } from './types.ts';
 import type { SkillContext, SkillRegistry } from './skills/types.ts';
-import { resolveDodge } from './skills/dodge.ts';
+import { rollDodge } from './skills/dodge.ts';
 import type { ScoringRegistry } from './scoring/types.ts';
 
 // Engine tuning knobs (SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED,
@@ -40,6 +40,10 @@ const ITEM = {
   shellStunMs: 750, // 🐢 stuns the current leader (even the picker)
   starBoost: 1.4, starMs: 2400, // 🌟 self speed + full immunity
 } as const;
+
+// Skill-activation i-frames: ~0.3s of immunity to incoming disruption granted the
+// instant a racer activates its own skill (so it isn't interrupted mid-cast).
+const SKILL_INVULN_FRAMES = Math.round(300 / DT_MS);
 
 interface ItemBox {
   id: string;
@@ -151,6 +155,14 @@ export function createRaceEngine(
     return j < config.laps ? j : undefined;
   }
 
+  // Active-runner count at the start line — relay members on a non-first leg begin
+  // `waiting`, so only concurrently-running racers count toward the field-size
+  // cooldown factor (the initial cooldown uses the same factor as in-race re-arms).
+  const initialActive = config.relay
+    ? config.participants.filter((p) => firstLegOf(p.id) === 0).length
+    : config.participants.length;
+  const initialCooldownFactor = fieldCooldownFactor(initialActive);
+
   const internal: Internals = {
     racers: config.participants.map((p, i, arr) => {
       const r = rng.fork(`base:${p.id}`);
@@ -184,7 +196,9 @@ export function createRaceEngine(
         leg,
         phase,
         facing: 0,
-        skillCooldownUntil: Math.round(rng.range(...firstCooldown(config, p.characterId)) / DT_MS),
+        skillCooldownUntil: Math.round(
+          (rng.range(...firstCooldown(config, p.characterId)) * initialCooldownFactor) / DT_MS,
+        ),
         skill: {},
       } satisfies RacerState;
     }),
@@ -244,6 +258,53 @@ export function createRaceEngine(
     self.skill.effectUntil = undefined;
   }
 
+  /** True while `r` is in skill-activation i-frames (immune to incoming disruption). */
+  function isSkillInvuln(r: RacerState): boolean {
+    return (r.skill.skillInvulnUntil ?? 0) > frame;
+  }
+
+  /**
+   * Reactive catwalk just-dodge (replaces the old pre-armed dodge window). Called by
+   * a disruption (banana/roar/abduct/bristle/item) when it actually targets a racer.
+   * Only the cat reacts, and only while its catwalk cooldown is ready. The roll is
+   * deterministic + memoised per (cat id, frame) so every attacker in one frame
+   * agrees regardless of order; side effects (cooldown spend, forward slip, activate
+   * + dodge emit) are applied exactly once — on the first call that resolves the roll.
+   *
+   * Returns true iff the disruption is dodged. i-frame / star are handled by the
+   * caller BEFORE this (priority: star > i-frame > catwalk dodge > hit), so they
+   * never reach here.
+   */
+  function tryCatwalkDodge(cat: RacerState, events: SkillEvent[]): boolean {
+    const character = config.characters[cat.characterId];
+    if (character?.skill.type !== 'catwalk') return false;
+    // Already resolved this frame → reuse the decision (no re-roll, no double spend).
+    if (cat.skill.dodgeFrame === frame) return cat.skill.dodgeRoll === true;
+    // Cooldown gate: a worn-out catwalk can't dodge. Memoise the miss so later
+    // attackers this frame agree (no per-attacker re-check once decided).
+    if (frame < cat.skillCooldownUntil) {
+      cat.skill.dodgeFrame = frame;
+      cat.skill.dodgeRoll = false;
+      return false;
+    }
+    const chance = Number(character.skill.params.dodgeChance ?? 0);
+    const dodged = rollDodge(cat, frame, internal.skillRng.get(cat.id)!, chance);
+    if (!dodged) return false; // cooldown NOT spent on a whiff — may dodge a later hit
+    // Success: spend the cooldown (field-scaled, same as fireSkill), grant a small
+    // blockable forward slip, and emit activate + dodge (legacy dodge event preserved
+    // for the 냥펀치/캣워크 commentary; targetId = the cat).
+    const [min, max] = character.skill.cooldownMs;
+    const factor = fieldCooldownFactor(activeRunnerCount());
+    cat.skillCooldownUntil =
+      frame + Math.round((internal.skillRng.get(cat.id)!.range(min, max) * factor) / DT_MS);
+    cat.skill.burst = Number(character.skill.params.slipBoost ?? 0);
+    cat.skill.effectUntil = frame + Math.round(Number(character.skill.params.windowMs ?? 0) / DT_MS);
+    cat.phase = 'straying';
+    events.push({ frame, racerId: cat.id, type: 'catwalk', variant: 'activate', line: character.lines.skill });
+    events.push({ frame, racerId: cat.id, type: 'catwalk', variant: 'dodge', targetId: cat.id });
+    return true;
+  }
+
   /**
    * Single skill-firing entry point shared by cooldown-gated self-activation
    * AND the event-driven `onOvertaken` hook (TODO #7). Both paths pass the same
@@ -284,7 +345,7 @@ export function createRaceEngine(
       },
       // Pure check (no dispatch / RNG): copyable = registered tick handler, not mimic.
       canCopySkill: (copiedType: string) => copiedType !== 'mimic' && skills.get(copiedType) !== undefined,
-      tryDodge: (target: RacerState) => resolveDodge(target, frame, internal.skillRng.get(target.id)!),
+      tryDodge: (target: RacerState) => tryCatwalkDodge(target, events),
       addIceZone: (z: Parameters<SkillContext['addIceZone']>[0]) => {
         const start = ((z.startProgress % config.trackLength) + config.trackLength) % config.trackLength;
         internal.iceZones.push({
@@ -335,8 +396,14 @@ export function createRaceEngine(
 
     const activated = events.length > before;
     if (activated) {
+      // i-frames: the instant a racer activates its own skill it is briefly immune to
+      // incoming disruption (so it isn't interrupted mid-cast). Set on ANY successful
+      // activation — including a skill the alien copied via invokeSkill (same `self`).
+      self.skill.skillInvulnUntil = frame + SKILL_INVULN_FRAMES;
       const [min, max] = character.skill.cooldownMs;
-      self.skillCooldownUntil = frame + Math.round(internal.skillRng.get(self.id)!.range(min, max) / DT_MS);
+      const factor = fieldCooldownFactor(activeRunnerCount());
+      self.skillCooldownUntil =
+        frame + Math.round((internal.skillRng.get(self.id)!.range(min, max) * factor) / DT_MS);
     } else {
       self.skillCooldownUntil = frame + Math.round(RETRY_COOLDOWN_MS / DT_MS);
     }
@@ -413,6 +480,16 @@ export function createRaceEngine(
       return Math.max(CATCHUP.minBoost, 1 + (gapLaps + CATCHUP.deadZone) * CATCHUP.aheadDrag);
     }
     return 1;
+  }
+
+  /** Racers currently on track (relay `waiting`/`finished` excluded). */
+  function activeRunnerCount(): number {
+    let n = 0;
+    for (const r of internal.racers) {
+      if (r.phase === 'finished' || r.phase === 'waiting') continue;
+      n++;
+    }
+    return n;
   }
 
   /** Mean progress over racers currently on track (catch-up reference point). */
@@ -547,6 +624,10 @@ export function createRaceEngine(
     const zone = internal.iceZones.find((z) => frame < z.expire && inZone(lapPos, z));
     if (!zone) { self.skill.iceJumping = false; self.skill.iceZoneId = undefined; return; }
     if ((self.skill.starUntil ?? 0) > frame) return; // ⭐ star: immune to ice
+    // Airborne racers (e.g. the alien's UFO) float over the ice — no contact, so
+    // neither the penguin boost nor the runner slow applies. Trait-driven, not
+    // id-hardcoded.
+    if (config.characters[self.characterId]?.airborne) return;
 
     if (self.characterId === 'cat') {
       // Decide ONCE per zone entry: jump clear over the ice (no slow) with the cat's
@@ -570,7 +651,8 @@ export function createRaceEngine(
   function applyItemPickup(self: RacerState, order: RacerState[], events: SkillEvent[]): void {
     const irng = internal.itemRng.get(self.id)!;
     const active = (r: RacerState) => r.phase !== 'finished' && r.phase !== 'waiting' && r.phase !== 'stunned';
-    const starred = (r: RacerState) => (r.skill.starUntil ?? 0) > frame;
+    // Immune to this item's disruption: ⭐ star OR brief skill-activation i-frames.
+    const immune = (r: RacerState) => (r.skill.starUntil ?? 0) > frame || isSkillInvuln(r);
     const x = irng.range(0, 8); // weights: star 1 / lightning 2 / shell 2 / fart 3
 
     if (x < 1) {
@@ -585,7 +667,7 @@ export function createRaceEngine(
       // ⚡ lightning: every other racer slows briefly.
       const until = frame + Math.round(ITEM.lightningSlowMs / DT_MS);
       for (const r of order) {
-        if (r.id === self.id || !active(r) || starred(r)) continue;
+        if (r.id === self.id || !active(r) || immune(r)) continue;
         r.skill.slowUntil = until;
         r.skill.slowMul = ITEM.lightningMul;
       }
@@ -595,7 +677,7 @@ export function createRaceEngine(
       let leader: RacerState | undefined;
       for (const r of order) if (active(r) && (!leader || r.progress > leader.progress)) leader = r;
       events.push({ frame, racerId: self.id, type: 'item', variant: 'shell', line: '🐢 등껍질!' });
-      if (leader && !starred(leader)) {
+      if (leader && !immune(leader)) {
         leader.phase = 'stunned';
         leader.speed = 0;
         leader.skill.burst = 0;
@@ -606,7 +688,7 @@ export function createRaceEngine(
       // 💨 fart: racers behind the picker (within range) slow briefly.
       const until = frame + Math.round(ITEM.fartSlowMs / DT_MS);
       for (const r of order) {
-        if (r.id === self.id || !active(r) || starred(r)) continue;
+        if (r.id === self.id || !active(r) || immune(r)) continue;
         if (r.progress >= self.progress || self.progress - r.progress > ITEM.fartRange) continue;
         r.skill.slowUntil = until;
         r.skill.slowMul = ITEM.fartMul;
@@ -713,6 +795,9 @@ export function createRaceEngine(
         (a, b) => b.progress - a.progress || internal.procKey.get(b.id)! - internal.procKey.get(a.id)!,
       );
       internal.iceZones = internal.iceZones.filter((z) => frame < z.expire);
+      // Snapshot who is already stunned, so the post-frame pass can reset the cooldown
+      // ONLY for racers freshly stunned this frame (any source: banana/roar/shell).
+      const wasStunned = new Set(internal.racers.filter((r) => r.phase === 'stunned').map((r) => r.id));
       for (const self of order) resolveTimer(self);
       for (const self of order) fireSkill(self, events);
       internal.meanProgress = activeMeanProgress();
@@ -726,6 +811,19 @@ export function createRaceEngine(
       fireOvertakeHooks(prevProgress, events);
 
       updateBoxes(order, events);
+
+      // Stun → skill-cooldown reset: a racer freshly stunned this frame (any source)
+      // can't fire its skill the instant it recovers — its cooldown is pushed to the
+      // stun's end + a fresh (field-scaled) roll. Stable `order` so the rng draw order
+      // is deterministic; only racers that newly entered `stunned` this frame qualify.
+      const stunFactor = fieldCooldownFactor(activeRunnerCount());
+      for (const self of order) {
+        if (self.phase !== 'stunned' || wasStunned.has(self.id)) continue;
+        const [min, max] = config.characters[self.characterId].skill.cooldownMs;
+        const stunEnd = self.skill.effectUntil ?? frame;
+        const roll = Math.round((internal.skillRng.get(self.id)!.range(min, max) * stunFactor) / DT_MS);
+        self.skillCooldownUntil = Math.max(self.skillCooldownUntil, stunEnd) + roll;
+      }
 
       const f = snapshot(events);
       frame++;
@@ -741,6 +839,16 @@ export function createRaceEngine(
   };
 
   return engine;
+}
+
+/**
+ * Field-size cooldown factor (see COOLDOWN_FIELD). Gentle multiplier on every skill
+ * cooldown roll that grows with the number of racers actually on track, so a crowded
+ * field fires skills less often. Pure function of a deterministic count.
+ */
+function fieldCooldownFactor(activeRunners: number): number {
+  const over = Math.max(0, activeRunners - COOLDOWN_FIELD.kneeAt);
+  return Math.min(COOLDOWN_FIELD.maxFactor, 1 + over * COOLDOWN_FIELD.perRacer);
 }
 
 /**

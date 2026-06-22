@@ -2,6 +2,11 @@ import { test, expect } from '@playwright/test';
 
 const SHOTS = 'tests/e2e/__screens__';
 const SEED = 7;
+// Catwalk is now REACTIVE: the cat only fires it to dodge an incoming attack, so
+// it no longer activates in the seed-7 roster. Capture/assert it from a seed where
+// the cat actually reacts (activate + dodge in the same frame). Kept separate from
+// SEED so the seed-7 goldens (start/mid/finish/etc.) don't drift.
+const CATWALK_SEED = 8;
 
 // Deterministic visual verification (spec §13). Drives the engine headless to
 // find skill-activation frames, then renders the canvas at those exact frames.
@@ -23,7 +28,8 @@ test('capture key race states', async ({ page }, info) => {
     'finish': sim.totalFrames - 1,
     'busiest': sim.busiestFrame,
   };
-  for (const key of ['zoomies:activate', 'catwalk:activate', 'banana:activate', 'banana:hit', 'banana:dodge', 'divebomb:activate', 'divebomb:hit', 'roar:activate', 'icefield:activate']) {
+  // (catwalk is reactive → captured separately below from CATWALK_SEED.)
+  for (const key of ['zoomies:activate', 'banana:activate', 'banana:hit', 'banana:dodge', 'divebomb:activate', 'divebomb:hit', 'roar:activate', 'icefield:activate']) {
     if (key in sim.eventFrames) captures[key.replace(':', '-')] = sim.eventFrames[key];
   }
 
@@ -36,10 +42,21 @@ test('capture key race states', async ({ page }, info) => {
     await page.screenshot({ path: `${SHOTS}/race-${name}.png` });
   }
 
-  // At least the three signature skills must have fired in this seed.
+  // Signature skills that fire in the seed-7 roster.
   expect(sim.eventFrames).toHaveProperty('zoomies:activate');
-  expect(sim.eventFrames).toHaveProperty('catwalk:activate');
   expect(sim.eventFrames).toHaveProperty('banana:activate');
+
+  // Catwalk is reactive (cat dodges an incoming attack) → capture + assert it from
+  // a seed where the cat actually reacts, so we still prove the catwalk FX.
+  const catSim = await page.evaluate((seed) => window.__woodada.simulate({ seed }), CATWALK_SEED);
+  expect(catSim.eventFrames).toHaveProperty('catwalk:activate');
+  expect(catSim.eventFrames).toHaveProperty('catwalk:dodge'); // the dodge it reacted to
+  await page.evaluate(
+    ([f, seed]) => window.__woodada.showRaceAt(f as number, { seed: seed as number }),
+    [catSim.eventFrames['catwalk:activate'], CATWALK_SEED] as const,
+  );
+  await settle(page);
+  await page.screenshot({ path: `${SHOTS}/race-catwalk-activate.png` });
 });
 
 test('FX & facing proof shots (curve / icefield / roar / divebomb self-botch)', async ({ page }, info) => {

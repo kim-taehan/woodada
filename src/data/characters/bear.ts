@@ -27,7 +27,7 @@ export const bear: CharacterData = {
     // longer stagger + faster recharge so the tank's only offence actually bites
     // the pack over long races (was a near-dead char at laps=10).
     cooldownMs: [3000, 5200],
-    params: { range: 22, staggerMs: 430 },
+    params: { range: 28, staggerMs: 430 },
   },
   lines: { skill: '크아앙!!', win: '으르렁!', lose: '끄응…' },
 };

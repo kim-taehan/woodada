@@ -19,6 +19,7 @@ export const roarHandler: SkillHandler = (ctx) => {
     if (self.teamId !== undefined && r.teamId === self.teamId) continue;
     if (Math.abs(r.progress - self.progress) > range) continue;
     if ((r.skill.starUntil ?? 0) > frame) { ctx.emit({ variant: 'dodge', targetId: r.id }); continue; } // ⭐ star
+    if ((r.skill.skillInvulnUntil ?? 0) > frame) { ctx.emit({ variant: 'dodge', targetId: r.id }); continue; } // skill i-frames
     if (ctx.tryDodge(r)) {
       // catwalk slips the roar — dodge gag (renderer shows the target's line).
       ctx.emit({ variant: 'dodge', targetId: r.id });

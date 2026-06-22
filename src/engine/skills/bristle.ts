@@ -54,6 +54,10 @@ export const bristleHandler: SkillDef = {
       ctx.emit({ variant: 'dodge', targetId: passer.id });
       return;
     }
+    if ((passer.skill.skillInvulnUntil ?? 0) > frame) { // skill i-frames: spines glance off
+      ctx.emit({ variant: 'dodge', targetId: passer.id });
+      return;
+    }
     if (ctx.tryDodge(passer)) { // catwalk slips past the spines
       ctx.emit({ variant: 'dodge', targetId: passer.id });
       return;

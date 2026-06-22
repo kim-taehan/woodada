@@ -1,35 +1,22 @@
-import type { SkillHandler } from './types.ts';
-import { DT_MS } from '../types.ts';
+import type { SkillDef } from './types.ts';
 
 /**
- * 고양이 캣워크 (확률 회피 + 슬립): for a short window the cat gains a *chance* to
- * dodge incoming direct disruption (banana / roar / divebomb stun) — not
- * guaranteed immunity; each incoming hit is avoided only with probability
- * `dodgeChance` (resolved by the disruption source via ctx.tryDodge,
- * deterministic per (cat id, frame); a successful dodge emits a 'dodge' event
- * with targetId = the cat). During the window the cat also gets a small forward
- * slip (`slipBoost`) — a still-running, blockable burst, so it never plows ahead
- * like the dog's zoomies.
+ * 고양이 캣워크 (REACTIVE just-dodge). Catwalk has NO self-activation tick and NO
+ * overtake reaction — it is resolved entirely inside the engine's `tryDodge`
+ * (RaceEngine), the instant a direct disruption (banana / roar / abduct / bristle /
+ * item) actually targets the cat:
+ *
+ *   - if the cat's catwalk cooldown is ready, it rolls `dodgeChance`
+ *     (deterministic per (cat id, frame) via skills/dodge#rollDodge);
+ *   - on success the engine spends the cooldown, gives the cat a small forward
+ *     slip (`slipBoost`, a still-blockable burst), and emits `activate` + `dodge`
+ *     so the renderer plays catwalk + the attacker's whiff (the legacy dodge event,
+ *     targetId = cat, is preserved for the 냥펀치/캣워크 commentary).
+ *
+ * The old model pre-armed a dodge *window* on a cooldown tick (it appeared to flick
+ * on for no reason). This reactive model only ever reacts to a real incoming hit,
+ * so there is nothing to "see" until a dodge actually happens. params: { dodgeChance,
+ * slipBoost }. The ice-jump exemption (applyIce) reads `dodgeChance` directly and is
+ * unchanged. Registered as an empty SkillDef so `skills.has('catwalk')` stays true.
  */
-/** Disruptors catwalk is worth dodging — banana(monkey)/roar(bear)/divebomb(eagle). */
-const DISRUPTORS = new Set(['banana', 'roar', 'divebomb']);
-
-export const catwalkHandler: SkillHandler = (ctx) => {
-  const { self, all, params, frame } = ctx;
-  // Situational: only go nimble if a non-teammate disruptor is in the race —
-  // no point catwalking when nobody can stun you (e.g. a cats-only race).
-  const threatened = all.some((r) => {
-    if (r.id === self.id || r.phase === 'finished') return false;
-    if (self.teamId !== undefined && r.teamId === self.teamId) return false;
-    const type = ctx.skillTypeOf(r.id);
-    return type !== undefined && DISRUPTORS.has(type);
-  });
-  if (!threatened) return; // no emit ⇒ skill stays on retry-cooldown, never fires
-
-  const frames = Math.round(Number(params.windowMs) / DT_MS);
-  self.skill.dodgeUntil = frame + frames;
-  self.skill.dodgeChance = Number(params.dodgeChance);
-  self.skill.burst = Number(params.slipBoost);
-  self.skill.effectUntil = frame + frames;
-  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
-};
+export const catwalkHandler: SkillDef = {};

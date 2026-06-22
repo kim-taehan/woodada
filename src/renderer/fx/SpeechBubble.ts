@@ -35,6 +35,19 @@ function makeBubble(text: string, tint: number): Container {
 export class SpeechBubbleLayer {
   readonly root = new Container();
   private bubbles: ActiveBubble[] = [];
+  /**
+   * Cap on how many head bubbles may be on screen at once. In a small field
+   * (≤6 racers) this is Infinity so the look is unchanged; the renderer lowers it
+   * as the field crowds (16-up → only the few newest stay) so a wall of stacked
+   * bubbles doesn't mush the screen. Set via `setMaxConcurrent`. A fresh spawn
+   * always wins (newest first), evicting the oldest over the cap.
+   */
+  private maxConcurrent = Infinity;
+
+  /** Crowd-aware cap on simultaneous head bubbles (renderer sets it per race). */
+  setMaxConcurrent(n: number): void {
+    this.maxConcurrent = n;
+  }
 
   spawn(ownerId: string, text: string, tint: number, x: number, y: number, now: number): void {
     // Replace an existing bubble from the same owner.
@@ -49,6 +62,11 @@ export class SpeechBubbleLayer {
     root.position.set(x, y);
     this.root.addChild(root);
     this.bubbles.push({ root, bornAt: now, ttl: TTL, ownerId });
+    // Crowd cap: keep only the newest `maxConcurrent`, evicting the oldest so a
+    // burst of activations in a packed field doesn't pile into an unreadable wall.
+    while (this.bubbles.length > this.maxConcurrent) {
+      this.bubbles.shift()!.root.destroy();
+    }
   }
 
   /** Move a bubble to follow its owner; call each frame with owner positions. */

@@ -12,6 +12,19 @@ import { RaceController } from './RaceController.ts';
 import { createRaceRenderer, type RaceRenderer } from '../renderer/RaceRenderer.ts';
 import type { RaceConfig, RaceResult } from '../engine/types.ts';
 
+/**
+ * Lane-intro seam (athletics-style "who's in each lane" walk-on before GO).
+ * The renderer (introfx) owns the Pixi spotlight animation; the shell only
+ * inserts the step + skip button. These methods live on the renderer impl but
+ * not on the RaceRenderer interface (that file is owned elsewhere), so the
+ * shell reads them through this optional view and falls straight through to the
+ * countdown if they're absent.
+ */
+type LaneIntroRenderer = {
+  playLaneIntro?(onDone: () => void): void;
+  skipLaneIntro?(): void;
+};
+
 export class App {
   readonly store = new RoomStore();
   private renderer: RaceRenderer | null = null;
@@ -51,7 +64,13 @@ export class App {
     window.addEventListener('resize', this.onResize);
 
     const config = this.store.buildRaceConfig();
+    // Constructing the controller builds the scene + renders frame 0, so the
+    // starting-line tableau is on screen before anything else runs.
     this.controller = new RaceController(this.renderer, config, this.store.arenaId);
+
+    // Athletics-style lane intro over the (now visible) starting line, then the
+    // countdown. Skipped under reduced-motion to match the countdown's behavior.
+    await this.runLaneIntro(race);
 
     await this.runCountdown(countdown, skip);
     countdown.remove();
@@ -78,6 +97,40 @@ export class App {
       this.showResult(race, config, result);
     });
     race.append(gate);
+  }
+
+  /**
+   * Athletics-style lane introduction: the renderer spotlights each lane's
+   * racer in turn over the starting-line scene; meanwhile the shell shows a
+   * "건너뛰기 ⏭" overlay. Resolves when the intro finishes or is skipped — a
+   * single `done` guard ensures we advance to the countdown exactly once even
+   * if both the renderer's onDone and a skip click land. No-op (resolves at
+   * once) under reduced-motion or if the renderer lacks the intro seam.
+   */
+  private runLaneIntro(race: HTMLElement): Promise<void> {
+    const renderer = this.renderer as (RaceRenderer & LaneIntroRenderer) | null;
+    const playLaneIntro = renderer?.playLaneIntro;
+    if (this.reducedMotion || !playLaneIntro) return Promise.resolve();
+
+    return new Promise((resolve) => {
+      const intro = el('button', { class: 'skip intro-skip', textContent: '건너뛰기 ⏭' });
+      race.append(intro);
+
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        intro.remove();
+        resolve();
+      };
+      // onDone runs when the intro plays out naturally; skip cleans up the
+      // renderer's intro (idempotent) and also routes through `finish`.
+      playLaneIntro.call(renderer, finish);
+      intro.addEventListener('click', () => {
+        renderer.skipLaneIntro?.();
+        finish();
+      });
+    });
   }
 
   private runCountdown(host: HTMLElement, skip: HTMLButtonElement): Promise<void> {

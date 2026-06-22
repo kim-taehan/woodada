@@ -68,6 +68,51 @@ export function leadLine(name: string, seed: number): string {
   return pick(LEAD, seed).replace(/\{n\}/g, name);
 }
 
+/**
+ * Head-bubble text overrides for dodge outcomes that the engine/data can't tell
+ * apart (renderer-only; engine emits a bare `*:dodge`, data lines stay generic).
+ * Three branches, all keyed off the dodge event + who dodged:
+ *   • 원숭이 바나나가 빗나감 → 시전자(원숭이) 머리 위 '실패/빗나감' 버블.
+ *   • 고양이가 거미줄/바나나를 쳐냄 → 고양이 머리 위 '냥펀치!!' 버블.
+ *   • 고양이가 그 외(roar/bristle…)를 흘림 → 고양이 머리 위 '캣워크' 버블.
+ * (얼음/방구 등 환경효과는 회피 불가라 dodge 이벤트가 없으니 자연히 제외.)
+ */
+const BANANA_FAIL = ['어? 빗나갔다!', '에이~ 피했네 🍌', '아 깝다… 헛던졌다 ㅋㅋ', '으악 안 맞았어!'];
+const CAT_PUNCH = ['냥펀치!!', '냥펀치! 탁 쳐냈다 🐾', '그런 거 안 통해! 냥펀치!'];
+const CAT_WALK = ['냐옹~ 사뿐', '캣워크로 슉 흘림 😼', '냐옹, 안 맞지롱'];
+
+export function bananaFailBubble(seed: number): string {
+  return pick(BANANA_FAIL, seed);
+}
+
+/** 고양이가 막 회피한 공격 종류로 버블 갈래를 고른다. 거미줄/바나나는 냥펀치, 나머지는 캣워크. */
+export function catDodgeBubble(attackType: string, seed: number): string {
+  const pool = attackType === 'abduct' || attackType === 'banana' ? CAT_PUNCH : CAT_WALK;
+  return pick(pool, seed);
+}
+
+/**
+ * 하단 실황자막도 같은 갈래로. 고양이({t})가 막 회피했을 때, 거미줄/바나나는 '냥펀치로
+ * 쳐냄' 톤, 그 외는 '캣워크로 흘림' 톤. {n}=공격자, {t}=고양이.
+ */
+const CAT_PUNCH_BAR = [
+  '{t} 냥펀치! {n}의 공격을 탁 쳐냈다 ㅋㅋ',
+  '{n}가 노렸지만 {t} 냥펀치로 받아쳤다! 🐾',
+  '{t} 앞발 휙— {n} 공격 튕겨냈다 ㅋㅋㅋ',
+];
+const CAT_WALK_BAR = [
+  '{t} 캣워크로 {n}의 방해 사뿐히 흘렸다~ 😼',
+  '{n}가 흔들어도 {t}는 냐옹~ 끄떡없다 ㅋㅋ',
+  '{t} 우아하게 슥— {n} 공격 안 통한다!',
+];
+
+export function catDodgeLine(attackType: string, attacker: string, cat: string, seed: number): string {
+  const pool = attackType === 'abduct' || attackType === 'banana' ? CAT_PUNCH_BAR : CAT_WALK_BAR;
+  return pick(pool, seed)
+    .replace(/\{n\}/g, attacker)
+    .replace(/\{t\}/g, cat);
+}
+
 export function lastLapLine(seed: number): string {
   return pick(LASTLAP, seed);
 }
@@ -98,6 +143,29 @@ const MIMIC: string[] = [
   '🛸 {n} 의태 발동 — {o}의 {s} 똑같이 베꼈다 ㄷㄷ',
   '🛸 {n}가 {o} 스캔 완료! {s} 카피해서 발동 ㅋㅋㅋ',
 ];
+
+/**
+ * 의태 카피 머리 위 말풍선용 SHORT 라벨 ('거미 거미줄'→'거미줄'). SKILL_LABEL의
+ * 소유자 접두어를 뗀 기술명만. 외계인 머리 위에 "[기술명] copy" 로 띄운다.
+ */
+const SKILL_SHORT: Record<string, string> = {
+  zoomies: '폭주',
+  catwalk: '캣워크',
+  banana: '바나나',
+  divebomb: '박치기',
+  roar: '포효',
+  bristle: '가시',
+  icefield: '빙판',
+  nap: '낮잠',
+  brace: '버티기',
+  abduct: '거미줄',
+};
+
+/** 외계인 의태: 복사한 기술의 짧은 표시명 + " copy" (예: "바나나 copy!"). 머리 위 버블용. */
+export function mimicCopyBubble(copiedType: string): string {
+  const label = SKILL_SHORT[copiedType] ?? '스킬';
+  return `${label} copy!`;
+}
 
 export function mimicLine(name: string, owner: string, copiedType: string, seed: number): string {
   const label = SKILL_LABEL[copiedType] ?? '스킬';

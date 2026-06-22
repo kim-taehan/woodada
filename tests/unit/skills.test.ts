@@ -13,9 +13,17 @@ describe('skill behaviour', () => {
     // bristle is reaction-only (onOvertaken; no 'activate' emit) and mimic emits the
     // COPIED skill's type (not 'mimic'), so neither shows up as its own 'activate'
     // here — bristle is covered by its own hook test, mimic by the copy test below.
-    const expected = ['abduct', 'banana', 'catwalk', 'icefield', 'roar', 'zoomies'];
+    // catwalk is now REACTIVE too (no self-activation tick; it only emits 'activate'
+    // when it actually dodges an incoming hit) — covered by its own dodge test below.
+    const expected = ['abduct', 'banana', 'icefield', 'roar', 'zoomies'];
     const seen = new Set<string>();
-    for (let s = 0; s < 80 && seen.size < expected.length; s++) {
+    // Full roster ×2 (16 racers) so the spider's abduct has dense targets ahead. The
+    // field-size cooldown scaling (×2 at 16) thins skill density, so the seed budget is
+    // wider than before to still let the slowest skill (icefield) fire at least once.
+    // (catwalk/bristle also emit 'activate' now but aren't in `expected`, so we break
+    // only once every EXPECTED type is seen — not on raw set size.)
+    const allSeen = () => expected.every((t) => seen.has(t));
+    for (let s = 0; s < 200 && !allSeen(); s++) {
       const { frames } = simulateRace(makeConfig({ characterIds: [...allThree, ...allThree], seed: s }), skills, scoring);
       for (const f of frames) for (const e of f.events) if (e.variant === 'activate') seen.add(e.type);
     }
@@ -158,10 +166,12 @@ describe('skill behaviour', () => {
     expect(sawDodge).toBe(true);
   });
 
-  it('catwalk dodge: a cat that dodges in its window is not stunned that frame', () => {
-    // Probabilistic now (not guaranteed immunity). Whenever a roar (which has
-    // no dodgeChance of its own — a dodge there can only be catwalk's) hits
-    // a cat that is in its dodge window, the cat avoids it and is not stunned.
+  it('catwalk (reactive): a dodged roar lands no stun + the cat plays its own catwalk activate', () => {
+    // REACTIVE just-dodge: catwalk has no pre-armed window — it reacts the instant a
+    // disruption targets the cat (cooldown permitting). roar has no dodgeChance of its
+    // own, so a roar 'dodge' on a non-starred cat can only be catwalk's. When it
+    // happens: (1) no roar 'hit' lands on that cat this frame, and (2) the cat emits
+    // its OWN catwalk 'activate' the same frame (so the renderer can play catwalk).
     let sawCatDodge = false;
     for (let s = 0; s < 40; s++) {
       const cfg = makeConfig({ characterIds: ['cat', 'cat', 'monkey', 'penguin', 'bear'], seed: s });
@@ -169,36 +179,34 @@ describe('skill behaviour', () => {
       const { frames } = simulateRace(cfg, skills, scoring);
       for (const f of frames) {
         for (const e of f.events) {
-          if (e.variant !== 'dodge' || !e.targetId || !catIds.has(e.targetId)) continue;
-          if (!['roar'].includes(e.type)) continue;
+          if (e.variant !== 'dodge' || e.type !== 'roar' || !e.targetId || !catIds.has(e.targetId)) continue;
           const cat = f.racers.find((r) => r.id === e.targetId)!;
-          // roar has no self dodgeChance, so a dodge on a cat is either a
-          // catwalk dodge (cat in its dodge window) OR a ⭐ star deflect (cat has an
-          // active star). A starred cat may dodge without being in its catwalk window.
+          // A starred cat deflects without a catwalk dodge — skip those.
           if ((cat.skill.starUntil ?? 0) > f.frame) continue;
           sawCatDodge = true;
-          expect((cat.skill.dodgeUntil ?? 0) > f.frame).toBe(true);
-          // A dodge avoids *this* incoming disruption: no roar may also
-          // land a 'hit' on the same cat this frame. (We don't assert phase!=
-          // 'stunned' outright — a residual stun from an EARLIER frame can still
-          // be in effect; the dodge only guarantees no NEW stun lands now.)
+          // (1) No roar 'hit' may also land on the same cat this frame.
           const stunnedNow = f.events.some(
-            (ev) =>
-              ev.targetId === e.targetId &&
-              ev.variant === 'hit' &&
-              ['roar'].includes(ev.type),
+            (ev) => ev.targetId === e.targetId && ev.variant === 'hit' && ev.type === 'roar',
           );
           expect(stunnedNow).toBe(false);
+          // (2) The cat emitted its own catwalk activate this frame (reactive cue).
+          const catwalkActivate = f.events.some(
+            (ev) => ev.racerId === e.targetId && ev.type === 'catwalk' && ev.variant === 'activate',
+          );
+          expect(catwalkActivate).toBe(true);
         }
       }
     }
     expect(sawCatDodge).toBe(true);
   });
 
-  it('catwalk dodge roll is deterministic per (cat, frame) at 0/1 boundaries', () => {
-    // The roll is resolved by forking the cat's own sub-stream by frame, so the
-    // SAME cat/frame always yields the SAME outcome. With dodgeChance forced to 1
-    // every in-window hit on a cat dodges; with 0 every in-window hit lands.
+  it('catwalk (reactive): deterministic, and at chance=1 any cat that IS hit was on cooldown', () => {
+    // The roll forks the cat's own sub-stream by frame → SAME (cat, frame) ⇒ SAME
+    // outcome (determinism). With dodgeChance forced to 1, catwalk dodges every
+    // incoming hit IT IS ALLOWED TO (cooldown ready). So if a banana/roar/item ever
+    // lands a 'hit' on the cat, it can only be because catwalk was still on cooldown:
+    // in that frame's snapshot the cat must show skillCooldownUntil > frame. We must
+    // also actually SEE the cat dodge at least once (the mechanic is live).
     function run(dodgeChance: number) {
       const characters = structuredClone(characterCatalog);
       characters.cat.skill.params = { ...characters.cat.skill.params, dodgeChance };
@@ -206,25 +214,24 @@ describe('skill behaviour', () => {
       return simulateRace(cfg, skills, scoring);
     }
     const always = run(1);
-    // Same seed twice ⇒ identical event stream (determinism).
     const always2 = run(1);
     const ev = (r: ReturnType<typeof run>) =>
       r.frames.flatMap((f) => f.events.map((e) => `${f.frame}:${e.type}:${e.variant}:${e.targetId ?? ''}`));
-    expect(ev(always)).toEqual(ev(always2));
+    expect(ev(always)).toEqual(ev(always2)); // determinism
 
-    const catIds = new Set(['p0']); // first participant is the cat
-    // With chance=1, no disruption event whose target is the cat may be a 'hit'.
+    const catId = 'p0'; // first participant is the cat
+    let sawCatwalkDodge = false;
     for (const f of always.frames) {
       for (const e of f.events) {
-        if (!e.targetId || !catIds.has(e.targetId)) continue;
+        if (e.racerId === catId && e.type === 'catwalk' && e.variant === 'dodge') sawCatwalkDodge = true;
+        if (e.targetId !== catId || e.variant !== 'hit') continue;
         if (!['banana', 'roar', 'item'].includes(e.type)) continue;
-        // While in window, an attack on the cat must dodge, never hit.
-        const cat = f.racers.find((r) => r.id === e.targetId)!;
-        if ((cat.skill.dodgeUntil ?? 0) > f.frame && e.variant === 'hit') {
-          throw new Error(`cat was hit while dodgeChance=1 at frame ${f.frame}`);
-        }
+        // chance=1 ⇒ a hit only gets through while catwalk is on cooldown.
+        const cat = f.racers.find((r) => r.id === catId)!;
+        expect(cat.skillCooldownUntil).toBeGreaterThan(f.frame);
       }
     }
+    expect(sawCatwalkDodge).toBe(true);
   });
 
   it('icefield: penguins glide faster and non-penguins slip slower inside the zone', () => {
@@ -266,6 +273,86 @@ describe('skill behaviour', () => {
     }
     expect(sawZone).toBe(true);
     expect(sawBoost).toBe(true);
+    expect(sawSlow).toBe(true);
+  });
+
+  it('icefield: the airborne alien is exempt from the slow (floats over the ice)', () => {
+    // The alien rides a UFO (airborne trait) so a ground hazard can't slip it: no
+    // boost, no slow, just no contact. Two assertions:
+    //  (1) AGGREGATE A/B: re-run every seed with the alien grounded (airborne:false)
+    //      as the only change, and sum the alien's finish progress. Removing the slip
+    //      can only help, so the exempt total must be STRICTLY greater. To keep this a
+    //      clean test of the ICE mechanic (not of balance), we pin a local catalog
+    //      where the alien's mimic is disabled (huge cooldown) and stats fixed in BOTH
+    //      arms — so `airborne` is the sole difference and balance-tuner can retune the
+    //      real alien.skill.params freely without disturbing this gate. (Per-seed isn't
+    //      a valid invariant — flipping one racer's speed reshuffles traffic/overtakes/
+    //      items, so a single race can diverge either way; the sum isolates the effect.)
+    //  (2) LIVENESS: in the exempt run, a co-located non-penguin non-alien still
+    //      slips inside the zone (< 1.2), proving the zone is genuinely active — the
+    //      exemption is alien-only, not a blanket no-op. (We don't assert a per-frame
+    //      floor on the alien itself: its step can dip below cruise from traffic /
+    //      catch-up, unrelated to ice — only the ice multiplier is what's removed,
+    //      which the aggregate A/B in (1) measures.)
+    //
+    // Pinned alien: mimic effectively off (cooldown far past any race) + fixed stats,
+    // so this test is invariant to alien.skill.params / speed / power tuning.
+    const pinnedAlien = {
+      ...characterCatalog.alien,
+      speed: 3,
+      power: 3,
+      skill: { ...characterCatalog.alien.skill, cooldownMs: [1e9, 1e9] as [number, number] },
+    };
+    const exemptCat = { ...characterCatalog, alien: { ...pinnedAlien, airborne: true } };
+    const grounded = { ...characterCatalog, alien: { ...pinnedAlien, airborne: false } };
+    const roster = ['penguin', 'penguin', 'alien', 'dog', 'monkey'];
+    const trackLength = 1000;
+    let exemptTotal = 0;
+    let groundedTotal = 0;
+    let sawZone = false;
+    let sawSlow = false; // a non-penguin, non-alien still slips inside the zone
+    let sawAlienInZone = false; // the alien actually sat in a live zone
+    for (let s = 0; s < 40; s++) {
+      const exempt = simulateRace(
+        { ...makeConfig({ characterIds: roster, seed: s }), characters: exemptCat },
+        skills,
+        scoring,
+      );
+      const ctrl = simulateRace(
+        { ...makeConfig({ characterIds: roster, seed: s }), characters: grounded },
+        skills,
+        scoring,
+      );
+      exemptTotal += exempt.frames.at(-1)!.racers.find((r) => r.characterId === 'alien')!.progress;
+      groundedTotal += ctrl.frames.at(-1)!.racers.find((r) => r.characterId === 'alien')!.progress;
+
+      for (let i = 1; i < exempt.frames.length; i++) {
+        const f = exempt.frames[i];
+        if (f.iceZones.length === 0) continue;
+        sawZone = true;
+        for (const z of f.iceZones) {
+          for (const r of f.racers) {
+            if (r.phase === 'stunned' || r.phase === 'finished' || r.phase === 'waiting') continue;
+            const lap = r.progress % trackLength;
+            const end = z.startProgress + z.length;
+            const inside = end <= trackLength
+              ? lap >= z.startProgress && lap < end
+              : lap >= z.startProgress || lap < end - trackLength;
+            if (!inside) continue;
+            const prev = exempt.frames[i - 1].racers.find((p) => p.id === r.id)!;
+            const step = r.progress - prev.progress;
+            if (step <= 0) continue;
+            if (r.characterId === 'alien') sawAlienInZone = true;
+            // A grounded non-penguin still slips, so the zone is genuinely active.
+            if (r.characterId !== 'penguin' && r.characterId !== 'alien' && step < 1.2) sawSlow = true;
+          }
+        }
+      }
+    }
+    // (1) The exemption is a real, positive buff in aggregate.
+    expect(exemptTotal).toBeGreaterThan(groundedTotal);
+    expect(sawAlienInZone).toBe(true);
+    expect(sawZone).toBe(true);
     expect(sawSlow).toBe(true);
   });
 
@@ -337,5 +424,75 @@ describe('skill behaviour', () => {
     const evA = a.frames.flatMap((f) => f.events.map((e) => `${f.frame}:${e.type}:${e.variant}:${e.targetId ?? ''}`));
     const evB = b.frames.flatMap((f) => f.events.map((e) => `${f.frame}:${e.type}:${e.variant}:${e.targetId ?? ''}`));
     expect(evA).toEqual(evB);
+  });
+
+  it('banana throws BOTH forward and backward (target: either)', () => {
+    // The monkey now targets the nearest racer ahead OR behind (random each throw).
+    // Across many races we must see banana hits on a target BOTH ahead of and behind
+    // the thrower (proving bidirectional targeting, not just front).
+    let sawForward = false;
+    let sawBackward = false;
+    for (let s = 0; s < 60 && !(sawForward && sawBackward); s++) {
+      const cfg = makeConfig({ characterIds: ['monkey', 'dog', 'cat', 'bear', 'penguin'], seed: s });
+      const { frames } = simulateRace(cfg, skills, scoring);
+      for (const f of frames) {
+        for (const e of f.events) {
+          if (e.type !== 'banana' || e.variant !== 'hit' || !e.targetId) continue;
+          const thrower = f.racers.find((r) => r.id === e.racerId)!;
+          const target = f.racers.find((r) => r.id === e.targetId)!;
+          if (target.progress > thrower.progress) sawForward = true;
+          else if (target.progress < thrower.progress) sawBackward = true;
+        }
+      }
+    }
+    expect(sawForward).toBe(true);
+    expect(sawBackward).toBe(true);
+  });
+
+  it('skill i-frames: a racer is immune to disruption for ~0.3s after it activates', () => {
+    // The instant a racer activates its own skill it gets ~300ms of i-frames. While
+    // active, an incoming disruption (banana/roar/abduct/bristle/item) cannot land a
+    // 'hit' on it — at most a 'dodge' (shrug-off). We assert no 'hit' ever targets a
+    // racer whose skillInvulnUntil is still in the future that frame.
+    let sawInvuln = false;
+    for (let s = 0; s < 40; s++) {
+      const cfg = makeConfig({ characterIds: ['dog', 'monkey', 'bear', 'spider', 'hedgehog', 'cat'], seed: s });
+      const { frames } = simulateRace(cfg, skills, scoring);
+      for (const f of frames) {
+        for (const r of f.racers) if ((r.skill.skillInvulnUntil ?? 0) > f.frame) sawInvuln = true;
+        for (const e of f.events) {
+          if (e.variant !== 'hit' || !e.targetId) continue;
+          if (!['banana', 'roar', 'abduct', 'bristle', 'item'].includes(e.type)) continue;
+          const target = f.racers.find((r) => r.id === e.targetId)!;
+          // An i-framed racer must never be the victim of a landed disruption hit.
+          expect((target.skill.skillInvulnUntil ?? 0) > f.frame).toBe(false);
+        }
+      }
+    }
+    expect(sawInvuln).toBe(true); // the mechanic actually engaged
+  });
+
+  it('stun resets the victim\'s skill cooldown past the stun (no instant skill on recovery)', () => {
+    // When a racer is freshly stunned, its skill cooldown is pushed to (at least) the
+    // stun's end + a fresh roll, so it can't fire the instant it recovers. We capture
+    // the frame a racer ENTERS stunned and assert its cooldown now ends strictly after
+    // its stun ends (effectUntil).
+    let sawReset = false;
+    for (let s = 0; s < 40; s++) {
+      const cfg = makeConfig({ characterIds: ['monkey', 'bear', 'dog', 'penguin', 'hedgehog'], seed: s });
+      const { frames } = simulateRace(cfg, skills, scoring);
+      for (let i = 1; i < frames.length; i++) {
+        for (const r of frames[i].racers) {
+          if (r.phase !== 'stunned') continue;
+          const prev = frames[i - 1].racers.find((p) => p.id === r.id)!;
+          if (prev.phase === 'stunned') continue; // not freshly stunned this frame
+          const stunEnd = r.skill.effectUntil ?? frames[i].frame;
+          // Cooldown must extend past the stun end (reset applied = recovery delay).
+          expect(r.skillCooldownUntil).toBeGreaterThan(stunEnd);
+          sawReset = true;
+        }
+      }
+    }
+    expect(sawReset).toBe(true);
   });
 });

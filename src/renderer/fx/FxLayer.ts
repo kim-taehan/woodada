@@ -22,15 +22,33 @@ interface Particle {
   /** Scale growth over life (expanding ring). */
   grow?: number;
   fade: boolean;
+  /** Authored alpha at spawn; crowd intensity is multiplied onto this each frame. */
+  baseAlpha: number;
 }
 
 export class FxLayer {
   readonly root = new Container();
   private particles: Particle[] = [];
+  /**
+   * Global transient-FX alpha multiplier (1 = full). The renderer lowers it as the
+   * field crowds so 16 overlapping bursts (glow pops, sparkles, rings) don't sum
+   * into one white blob; it stays 1 for small fields so the look is unchanged. The
+   * baseline alpha is captured per particle at spawn (`baseAlpha`) and re-multiplied
+   * each frame, so changing intensity mid-life is consistent.
+   */
+  private intensity = 1;
+
+  /** Crowd-aware transient-FX alpha scale (renderer sets it per race). */
+  setIntensity(v: number): void {
+    this.intensity = Math.max(0, Math.min(1, v));
+  }
 
   private push(g: Container, p: Partial<Particle> & { bornAt: number; ttl: number }): void {
     this.root.addChild(g);
-    this.particles.push({ g, vx: 0, vy: 0, gravity: 0, fade: true, ...p });
+    // Capture the glyph's authored alpha so the per-frame fade can re-apply the
+    // crowd intensity on top of it without compounding.
+    this.particles.push({ g, vx: 0, vy: 0, gravity: 0, fade: true, baseAlpha: g.alpha, ...p });
+    g.alpha *= this.intensity;
   }
 
   dust(x: number, y: number, now: number): void {
@@ -603,7 +621,11 @@ export class FxLayer {
       }
       if (p.spin) p.g.rotation += p.spin * dt;
       if (p.grow) p.g.scale.set(1 + k * p.grow);
-      if (p.fade) p.g.alpha = 1 - k;
+      // Fading particles fade 1→0 over life (matching the original look at full
+      // intensity); non-fading hold their authored alpha. Either way the crowd
+      // intensity is re-applied each frame so a packed field stays legible.
+      if (p.fade) p.g.alpha = (1 - k) * this.intensity;
+      else p.g.alpha = p.baseAlpha * this.intensity;
       live.push(p);
     }
     this.particles = live;

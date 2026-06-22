@@ -423,6 +423,51 @@ export class PartsCharacter {
     else this.root.rotation = dir * (0.06 + o.speedNorm * 0.12);
   }
 
+  /**
+   * Lane-intro "hello!" pose (renderer-only; never simulation). A friendly
+   * greeting the renderer drives during playLaneIntro: an arm raised and waving
+   * if the character has one (alien/monkey/penguin), plus a universal cheerful
+   * body bob + sway so the front-facing chibis WITHOUT an arm part (bear/cat/
+   * dog/hedgehog/spider) still read as "waving hello". Fully sets the pose each
+   * call (snaps the stored transforms, so it doesn't fight the run cycle) — call
+   * it every tick with the intro clock.
+   *
+   * `t` is seconds since this racer's spotlight began; `intensity` 0→1 eases the
+   * wave in so the pop isn't abrupt. (Part `rot` is DEGREES; root.rotation RADIANS.)
+   */
+  greet(t: number, intensity = 1): void {
+    const wave = Math.sin(t * 7); // hand oscillation
+    const amp = Math.max(0, Math.min(1, intensity));
+    const hasArm = this.parts.has('armL') && this.parts.has('armR');
+    // Cheerful little bob so even arm-less chibis look like they're saying hi.
+    const bob = Math.abs(Math.sin(t * 3.5)) * 6 * amp;
+    this.inner.y = -55 - bob;
+
+    for (const [name, view] of this.parts) {
+      // Snap straight to the idle baseline (no run-cycle blend during the intro).
+      view.cur = { ...ZERO };
+      let { dx, dy, rot } = view.cur;
+      const scaleX = 1;
+      const scaleY = 1;
+      if (hasArm) {
+        // Raise the far arm up and wave the hand (degrees). The near arm rests.
+        if (name === 'armR') rot += (-118 + wave * 22) * amp;
+        else if (name === 'armL') rot += 6 * amp;
+      } else {
+        // No arm part: lift the head a touch + a friendly waggle of a front limb
+        // (legR / frontLegR) so the greeting still reads (degrees).
+        if (name === 'head') dy -= 2 * amp;
+        else if (name === 'legR' || name === 'frontLegR') rot += (-20 + wave * 14) * amp;
+      }
+      view.container.position.set(view.base.x + dx, view.base.y + dy);
+      view.container.rotation = rot * DEG;
+      view.container.scale.set(scaleX, scaleY);
+    }
+    // Eager little sway toward the crowd (root.rotation is RADIANS).
+    this.inner.scale.x = 1; // face the viewer
+    this.root.rotation = Math.sin(t * 3.5) * 0.06 * amp;
+  }
+
   destroy(): void {
     this.root.destroy({ children: true });
   }
