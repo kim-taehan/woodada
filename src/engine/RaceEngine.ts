@@ -109,6 +109,12 @@ interface Internals {
   teamsFinished: number;
   /** Mean progress of active racers this frame (catch-up reference). */
   meanProgress: number;
+  /**
+   * Field-size trailer-tailwind fade for this frame (see CATCHUP.spread): scales
+   * the catch-up tailwind down as the active-racer count grows so a crowd strings
+   * out front-to-back. Recomputed once per frame alongside meanProgress.
+   */
+  spreadBehind: number;
 }
 
 export function createRaceEngine(
@@ -217,6 +223,7 @@ export function createRaceEngine(
     teamLeg: new Map([...legQueues.keys()].map((t) => [t, 0])),
     teamsFinished: 0,
     meanProgress: 0,
+    spreadBehind: 1,
   };
   internal.nextBoxFrame = Math.round(internal.boxRng.range(...ITEM.firstSpawnMs) / DT_MS);
 
@@ -470,11 +477,21 @@ export function createRaceEngine(
    * the field mean (in laps) — no RNG, no character/lane term, so it is
    * deterministic and unbiased. Trailers are nudged up, runaway leaders down,
    * within a small clamped band that never overrides a skill burst outright.
+   *
+   * Field-size reshaping (CATCHUP.spread): in a crowded field the trailer
+   * tailwind is faded (let the pack string out front-to-back). The leader drag is
+   * left at its base value (amplifying it both re-bunches the field and skews
+   * slot fairness — see tuning note). The fade comes from `meanProgress`'s
+   * active-runner count, cached once per frame, so the result stays a
+   * deterministic function of the count.
    */
   function catchupFactor(self: RacerState): number {
     const gapLaps = (internal.meanProgress - self.progress) / config.trackLength;
     if (gapLaps > CATCHUP.deadZone) {
-      return Math.min(CATCHUP.maxBoost, 1 + (gapLaps - CATCHUP.deadZone) * CATCHUP.behindGain);
+      return Math.min(
+        CATCHUP.maxBoost,
+        1 + (gapLaps - CATCHUP.deadZone) * CATCHUP.behindGain * internal.spreadBehind,
+      );
     }
     if (gapLaps < -CATCHUP.deadZone) {
       return Math.max(CATCHUP.minBoost, 1 + (gapLaps + CATCHUP.deadZone) * CATCHUP.aheadDrag);
@@ -490,6 +507,17 @@ export function createRaceEngine(
       n++;
     }
     return n;
+  }
+
+  /**
+   * Field-size trailer-tailwind fade (see CATCHUP.spread). Pure function of the
+   * active-runner count: at/below the knee it is 1 (small-field feel preserved);
+   * above it the tailwind fades toward `behindMin` so a crowd strings out.
+   */
+  function spreadBehindFor(active: number): number {
+    const s = CATCHUP.spread;
+    const over = Math.max(0, active - s.kneeAt);
+    return Math.max(s.behindMin, 1 - over * s.behindFade);
   }
 
   /** Mean progress over racers currently on track (catch-up reference point). */
@@ -801,6 +829,10 @@ export function createRaceEngine(
       for (const self of order) resolveTimer(self);
       for (const self of order) fireSkill(self, events);
       internal.meanProgress = activeMeanProgress();
+      // Field-size trailer-tailwind fade for this frame (front-to-back spread in
+      // a crowd). Same active-runner count the cooldown knee uses; cached so
+      // catchupFactor stays a pure per-frame function of the count.
+      internal.spreadBehind = spreadBehindFor(activeRunnerCount());
 
       // Frame-boundary progress snapshot, taken AFTER self-activation skills (so
       // a shove this frame counts) but BEFORE advance, to detect real overtakes

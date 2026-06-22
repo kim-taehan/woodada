@@ -66,6 +66,19 @@ export const HOME_LANE = {
  * leaders a gentle drag — so the pack stays bunched and lead changes happen
  * without overriding skills (the band is small, a boosted leader still leads).
  * Gap is measured in laps (gap / trackLength) so it scales with track size.
+ *
+ * FIELD-SIZE SPREAD (see `spread`): the symmetric tailwind/drag above bunches a
+ * big field onto the same progress point (everyone gets yanked to the mean), so
+ * 16 racers read as a single blob. To let a crowd string out front-to-back
+ * WITHOUT a runaway, the correction is reshaped (not removed) as the active-racer
+ * count grows past a knee:
+ *   - the trailer tailwind (`behindGain`) is *weakened* → trailers aren't pulled
+ *     back to the pack, so the field stretches naturally; and
+ *   - the leader drag (`aheadDrag`) is *strengthened* → a front-runner is reined
+ *     in (a soft "leader rubber-band"), which holds the ceiling that the weaker
+ *     tailwind no longer does.
+ * Small fields (≤ `spread.kneeAt`) keep the tuned symmetric feel (factor 1).
+ * Pure function of a deterministic count — determinism holds.
  */
 export const CATCHUP = {
   /** Speed gain per lap of deficit behind the mean (trailers speed up). */
@@ -77,6 +90,27 @@ export const CATCHUP = {
   minBoost: 0.8,
   /** Dead-zone (laps) around the mean where no correction applies. */
   deadZone: 0.008,
+  /**
+   * Field-size reshaping (front-to-back spread for crowded races). Per active
+   * racer above `kneeAt`, the trailer tailwind is scaled by (1 − `behindFade`),
+   * clamped to `behindMin`. ≤ kneeAt racers → scale 1 (unchanged small-field
+   * feel). The over-knee count is the field-cooldown knee's sibling.
+   *
+   * The leader drag is deliberately NOT amplified here: measurement showed that
+   * reining the front-runner harder in a crowd both re-bunches the field (less
+   * spread) AND over-rewards the favoured inside start slots (it breaks the
+   * slot-fairness ceiling). The base `aheadDrag` is already a sufficient
+   * anti-runaway rein (the no-runaway gate holds), so spreading is done purely
+   * by fading the trailer tailwind — less catch-up pull, no extra leader brake.
+   */
+  spread: {
+    /** Active-racer count at/below which there is no reshaping. */
+    kneeAt: 6,
+    /** Trailer-tailwind fade per active racer above the knee. */
+    behindFade: 0.06,
+    /** Floor on the faded tailwind scale (keep *some* catch-up so trailers aren't lapped). */
+    behindMin: 0.4,
+  },
 } as const;
 
 /**

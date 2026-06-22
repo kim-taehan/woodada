@@ -7,6 +7,7 @@ import { simulateRace } from './engine/RaceEngine.ts';
 import { createDefaultSkillRegistry } from './engine/skills/index.ts';
 import { createDefaultScoringRegistry } from './engine/scoring/index.ts';
 import type { RaceConfig } from './engine/types.ts';
+import { TEAM_SCORING_TO_ID } from './data/schema.ts';
 import { el } from './shell/dom.ts';
 
 const root = document.getElementById('app')!;
@@ -31,7 +32,9 @@ function configFor(characterIds: string[], seed: number, laps = 1, teamIds?: str
     laps,
     trackLength: 1000,
     modeId: team ? 'team' : 'individual',
-    scoringId: relay ? 'teamRelay' : team ? 'teamRankSum' : 'individual',
+    // Team flavor mirrors the shell path; this capture hook only distinguishes
+    // relay vs rank-sum, so derive the flavor from `relay`.
+    scoringId: team ? TEAM_SCORING_TO_ID[relay ? 'relay' : 'rankSum'] : 'individual',
     teamMode: team,
     relay,
   };

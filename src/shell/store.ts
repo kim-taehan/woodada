@@ -7,6 +7,7 @@
 import { characterCatalog, defaultCharacterIds } from '../data/characters/index.ts';
 import { defaultModeId, gameModes } from '../data/modes.ts';
 import { teamOrder, type TeamId } from '../data/teams.ts';
+import { defaultTeamScoringId, TEAM_SCORING_TO_ID, type TeamScoringId } from '../data/schema.ts';
 import { createRng } from '../engine/prng.ts';
 import { randomName } from '../data/names.ts';
 import type { RaceConfig, RaceParticipant } from '../engine/types.ts';
@@ -42,8 +43,11 @@ export class RoomStore {
   arenaId = 'random';
   /** Number of active teams in team mode (range 2~4). */
   teamCount = 2;
-  /** Relay (이어달리기) toggle — Phase 2; kept here so config carries it. */
-  relay = false;
+  /**
+   * Selected team-mode flavor (#28): 1등보유 / 등수합 / 이어달리기. Single source
+   * of truth for team scoring; `relay` is derived (relay === 'relay').
+   */
+  teamScoringId: TeamScoringId = defaultTeamScoringId;
 
   addName(name: string, teamId?: TeamId): void {
     const trimmed = name.trim();
@@ -159,7 +163,8 @@ export class RoomStore {
       characters: characterCatalog,
       skins: {},
       modeId: this.modeId,
-      scoringId: mode.scoringId,
+      // Team mode: resolve the chosen flavor (#28); individual stays as-is.
+      scoringId: mode.team ? TEAM_SCORING_TO_ID[this.teamScoringId] : mode.scoringId,
       resultMapping: this.resultMapping,
       seed: this.seed,
       laps: this.laps,
@@ -170,7 +175,7 @@ export class RoomStore {
   buildRaceConfig(): RaceConfig {
     const room = this.buildRoomState();
     const mode = gameModes[room.modeId];
-    const relay = mode.team && this.relay;
+    const relay = mode.team && this.teamScoringId === 'relay';
     return {
       participants: room.participants,
       characters: room.characters,
@@ -178,8 +183,7 @@ export class RoomStore {
       laps: room.laps,
       trackLength: TRACK_LENGTH,
       modeId: room.modeId,
-      // Relay races score by anchor finish order (spec §5/§7).
-      scoringId: relay ? 'teamRelay' : room.scoringId,
+      scoringId: room.scoringId,
       teamMode: mode.team,
       relay,
     };

@@ -8,7 +8,7 @@
 import { el } from '../dom.ts';
 import type { RoomStore } from '../store.ts';
 import { defaultCharacterIds, characterCatalog } from '../../data/characters/index.ts';
-import { gameModes } from '../../data/modes.ts';
+import { gameModes, teamScoringOptions } from '../../data/modes.ts';
 import { teamOrder, teamPalette, type TeamId } from '../../data/teams.ts';
 import { randomName } from '../../data/names.ts';
 import { trackCatalog, defaultArenaIds } from '../../data/tracks/index.ts';
@@ -163,13 +163,17 @@ export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLEle
     refresh();
   });
 
-  const relayCheck = el('input', { type: 'checkbox', ariaLabel: 'relay' }) as HTMLInputElement;
-  relayCheck.checked = store.relay;
-  relayCheck.addEventListener('change', () => { store.relay = relayCheck.checked; });
-  const relayToggle = el('label', { class: 'relay-toggle' }, [relayCheck, '🔁 릴레이']);
+  // ---- Team scoring flavor (#28): 1등보유 / 등수합 / 이어달리기 ----
+  const scoringSelect = el('select', { ariaLabel: '팀 모드' }) as HTMLSelectElement;
+  for (const opt of teamScoringOptions) {
+    scoringSelect.append(el('option', { value: opt.id, textContent: opt.label }));
+  }
+  scoringSelect.value = store.teamScoringId;
+  scoringSelect.addEventListener('change', () => { store.teamScoringId = scoringSelect.value as typeof store.teamScoringId; });
 
   const teamGroup = el('span', { class: 'opt-group team-group' }, [
-    el('label', { textContent: '팀 수' }), teamCountSelect, relayToggle,
+    el('label', { textContent: '팀 수' }), teamCountSelect,
+    el('label', { textContent: '모드' }), scoringSelect,
   ]);
 
   function syncModeUI(): void {
