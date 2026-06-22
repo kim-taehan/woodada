@@ -16,6 +16,15 @@
  * function of how close the rival is (1 at point-blank, fading to 0 at the edge of
  * the window) so there is no on/off boundary to wobble against, and it never
  * touches speed — purely a positional drift so 1-on-1 races stop looking parallel.
+ *
+ * Lateral separation (자리경합): even between racers that aren't passing/jockeying,
+ * two that end up shoulder-to-shoulder (small forward gap AND overlapping lane band)
+ * push their lane targets apart so a crowd doesn't stack into one line. The push
+ * direction is decided by a STABLE per-pair key (racer id order) — the lower-id
+ * racer is nudged inside, the higher-id one outside — so it is symmetric and fully
+ * deterministic (no RNG, no array-order / draw-order dependence). Speed-neutral:
+ * it only moves the lane target; the existing blockDecel still owns the front-to-
+ * back "boxed in" slowdown, so the "lane ≠ speed" invariant holds.
  */
 
 import type { Rng } from './prng.ts';
@@ -107,7 +116,48 @@ export function applyOvertake(self: RacerState, all: RacerState[], rng: Rng, fra
     self.facing = target > self.lane ? 1 : target < self.lane ? -1 : 0;
   }
 
+  // Lateral separation: nudge the target away from the nearest shoulder-to-shoulder
+  // neighbour so a crowd spreads out instead of stacking. Deterministic direction
+  // (stable id-order key), speed-neutral (target only). Applied in every branch so
+  // even a weaving/jockeying racer still un-stacks; the weave's own target offset and
+  // this push compose into the final lane target before the single drift step.
+  const neighbour = nearestNeighbor(all, self);
+  if (neighbour) {
+    const overlap = Math.abs(neighbour.lane - self.lane);
+    if (overlap < OVERTAKE.sepLaneBand) {
+      // Stable side: lower id pushed inside (−), higher id outside (+). Tie on lane
+      // is impossible to leave undecided — id is unique, so the comparison is total.
+      const side = self.id < neighbour.id ? -1 : 1;
+      // Strength fades to 0 as the lane overlap reaches the band edge (smooth, no
+      // on/off boundary to wobble against).
+      const strength = 1 - overlap / OVERTAKE.sepLaneBand;
+      target = clamp(target + side * OVERTAKE.sepPush * OVERTAKE.laneStep * strength, 0.05, 0.95);
+    }
+  }
+
   self.lane = moveToward(self.lane, target, OVERTAKE.laneDrift);
+}
+
+/**
+ * Nearest racer running shoulder-to-shoulder with `self`: smallest |forward gap|
+ * within `sepRange` AND within `sepLaneBand` of self's lane. Looks both ahead and
+ * behind (it's a side-by-side contest, not a pass), ignoring inert racers. Pure
+ * scan, no RNG — used only for the deterministic lateral-separation push.
+ */
+function nearestNeighbor(all: RacerState[], self: RacerState): RacerState | undefined {
+  let best: RacerState | undefined;
+  let bestGap = Infinity;
+  for (const r of all) {
+    if (r.id === self.id || r.phase === 'finished' || r.phase === 'waiting' || r.phase === 'eliminated') continue;
+    const gap = Math.abs(r.progress - self.progress);
+    if (gap > OVERTAKE.sepRange) continue;
+    if (Math.abs(r.lane - self.lane) > OVERTAKE.sepLaneBand) continue;
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = r;
+    }
+  }
+  return best;
 }
 
 /**
@@ -118,7 +168,7 @@ function nearestRival(all: RacerState[], self: RacerState): RacerState | undefin
   let best: RacerState | undefined;
   let bestGap = Infinity;
   for (const r of all) {
-    if (r.id === self.id || r.phase === 'finished' || r.phase === 'waiting') continue;
+    if (r.id === self.id || r.phase === 'finished' || r.phase === 'waiting' || r.phase === 'eliminated') continue;
     const gap = r.progress - self.progress;
     if (gap <= 0 || gap > OVERTAKE.jockeyRange) continue;
     if (gap < bestGap) {
@@ -138,7 +188,7 @@ function nearestAhead(
   let best: RacerState | undefined;
   let bestGap = Infinity;
   for (const r of all) {
-    if (r.id === self.id || r.phase === 'finished' || r.phase === 'waiting') continue;
+    if (r.id === self.id || r.phase === 'finished' || r.phase === 'waiting' || r.phase === 'eliminated') continue;
     const gap = r.progress - self.progress;
     if (gap <= 0 || gap > OVERTAKE.nearAhead) continue;
     if (Math.abs(r.lane - lane) > laneBand) continue;

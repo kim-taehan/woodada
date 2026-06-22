@@ -279,15 +279,17 @@ describe('skill behaviour', () => {
   it('icefield: the airborne alien is exempt from the slow (floats over the ice)', () => {
     // The alien rides a UFO (airborne trait) so a ground hazard can't slip it: no
     // boost, no slow, just no contact. Two assertions:
-    //  (1) AGGREGATE A/B: re-run every seed with the alien grounded (airborne:false)
-    //      as the only change, and sum the alien's finish progress. Removing the slip
-    //      can only help, so the exempt total must be STRICTLY greater. To keep this a
-    //      clean test of the ICE mechanic (not of balance), we pin a local catalog
-    //      where the alien's mimic is disabled (huge cooldown) and stats fixed in BOTH
-    //      arms — so `airborne` is the sole difference and balance-tuner can retune the
-    //      real alien.skill.params freely without disturbing this gate. (Per-seed isn't
-    //      a valid invariant — flipping one racer's speed reshuffles traffic/overtakes/
-    //      items, so a single race can diverge either way; the sum isolates the effect.)
+    //  (1) IN-ZONE A/B: re-run every seed with the alien grounded (airborne:false)
+    //      as the only change, and compare the alien's MEAN per-frame step *while it is
+    //      inside a live ice zone*. Removing the slip raises that mean (gliding vs
+    //      slipping), so the exempt mean must be STRICTLY greater. We measure the buff
+    //      at its source (per-frame ice multiplier) rather than via finish progress:
+    //      catch-up rubberbanding equalizes finish totals across the two arms, so the
+    //      finish-progress aggregate sits in the noise floor and is not a stable signal.
+    //      To keep this a clean test of the ICE mechanic (not of balance), we pin a
+    //      local catalog where the alien's mimic is disabled (huge cooldown) and stats
+    //      fixed in BOTH arms — so `airborne` is the sole difference and balance-tuner
+    //      can retune the real alien.skill.params freely without disturbing this gate.
     //  (2) LIVENESS: in the exempt run, a co-located non-penguin non-alien still
     //      slips inside the zone (< 1.2), proving the zone is genuinely active — the
     //      exemption is alien-only, not a blanket no-op. (We don't assert a per-frame
@@ -307,11 +309,50 @@ describe('skill behaviour', () => {
     const grounded = { ...characterCatalog, alien: { ...pinnedAlien, airborne: false } };
     const roster = ['penguin', 'penguin', 'alien', 'dog', 'monkey'];
     const trackLength = 1000;
-    let exemptTotal = 0;
-    let groundedTotal = 0;
     let sawZone = false;
     let sawSlow = false; // a non-penguin, non-alien still slips inside the zone
     let sawAlienInZone = false; // the alien actually sat in a live zone
+
+    const lapPos = (p: number) => p % trackLength;
+    const inZone = (lap: number, z: { startProgress: number; length: number }): boolean => {
+      const end = z.startProgress + z.length;
+      return end <= trackLength
+        ? lap >= z.startProgress && lap < end
+        : lap >= z.startProgress || lap < end - trackLength;
+    };
+    // Sum the alien's forward step + the frames it spent inside a live zone, so we
+    // can compare the MEAN in-zone step between the two arms (the direct ice signal).
+    function alienInZone(race: ReturnType<typeof simulateRace>): { step: number; frames: number } {
+      let step = 0;
+      let frames = 0;
+      for (let i = 1; i < race.frames.length; i++) {
+        const f = race.frames[i];
+        if (f.iceZones.length === 0) continue;
+        for (const z of f.iceZones) {
+          for (const r of f.racers) {
+            if (r.phase === 'stunned' || r.phase === 'finished' || r.phase === 'waiting') continue;
+            if (!inZone(lapPos(r.progress), z)) continue;
+            const prev = race.frames[i - 1].racers.find((p) => p.id === r.id)!;
+            const ds = r.progress - prev.progress;
+            if (ds <= 0) continue;
+            if (r.characterId === 'alien') {
+              sawAlienInZone = true;
+              sawZone = true;
+              step += ds;
+              frames++;
+            }
+            // A grounded non-penguin still slips, so the zone is genuinely active.
+            if (r.characterId !== 'penguin' && r.characterId !== 'alien' && ds < 1.2) sawSlow = true;
+          }
+        }
+      }
+      return { step, frames };
+    }
+
+    let exemptStep = 0,
+      exemptFrames = 0,
+      groundedStep = 0,
+      groundedFrames = 0;
     for (let s = 0; s < 40; s++) {
       const exempt = simulateRace(
         { ...makeConfig({ characterIds: roster, seed: s }), characters: exemptCat },
@@ -323,34 +364,17 @@ describe('skill behaviour', () => {
         skills,
         scoring,
       );
-      exemptTotal += exempt.frames.at(-1)!.racers.find((r) => r.characterId === 'alien')!.progress;
-      groundedTotal += ctrl.frames.at(-1)!.racers.find((r) => r.characterId === 'alien')!.progress;
-
-      for (let i = 1; i < exempt.frames.length; i++) {
-        const f = exempt.frames[i];
-        if (f.iceZones.length === 0) continue;
-        sawZone = true;
-        for (const z of f.iceZones) {
-          for (const r of f.racers) {
-            if (r.phase === 'stunned' || r.phase === 'finished' || r.phase === 'waiting') continue;
-            const lap = r.progress % trackLength;
-            const end = z.startProgress + z.length;
-            const inside = end <= trackLength
-              ? lap >= z.startProgress && lap < end
-              : lap >= z.startProgress || lap < end - trackLength;
-            if (!inside) continue;
-            const prev = exempt.frames[i - 1].racers.find((p) => p.id === r.id)!;
-            const step = r.progress - prev.progress;
-            if (step <= 0) continue;
-            if (r.characterId === 'alien') sawAlienInZone = true;
-            // A grounded non-penguin still slips, so the zone is genuinely active.
-            if (r.characterId !== 'penguin' && r.characterId !== 'alien' && step < 1.2) sawSlow = true;
-          }
-        }
-      }
+      const e = alienInZone(exempt);
+      const g = alienInZone(ctrl);
+      exemptStep += e.step;
+      exemptFrames += e.frames;
+      groundedStep += g.step;
+      groundedFrames += g.frames;
     }
-    // (1) The exemption is a real, positive buff in aggregate.
-    expect(exemptTotal).toBeGreaterThan(groundedTotal);
+    // (1) The exemption is a real, positive buff: the alien glides faster per frame
+    // while inside the ice than when grounded (no slip vs slip). Measured at the
+    // source (per-frame step), so catch-up doesn't wash it out.
+    expect(exemptStep / exemptFrames).toBeGreaterThan(groundedStep / groundedFrames);
     expect(sawAlienInZone).toBe(true);
     expect(sawZone).toBe(true);
     expect(sawSlow).toBe(true);
