@@ -43,6 +43,10 @@ export const bananaHandler: SkillHandler = (ctx) => {
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;
   }
+  if ((target.skill.skillInvulnUntil ?? 0) > frame) { // skill i-frames: shrugs it off
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
   if (ctx.tryDodge(target)) {
     // catwalk slips the banana — dodge gag (renderer shows the target's line).
     ctx.emit({ variant: 'dodge', targetId: target.id });

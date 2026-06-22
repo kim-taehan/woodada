@@ -14,7 +14,7 @@ import type { RaceRenderer } from '../renderer/RaceRenderer.ts';
 const skills = createDefaultSkillRegistry();
 const scoring = createDefaultScoringRegistry();
 
-const PLAYBACK_SPEED = 0.8; // steady playback speed (0.8 = 80% real-time, gently slower)
+const PLAYBACK_SPEED = 0.6; // steady playback speed (0.6 = 60% real-time, gently slower)
 
 export class RaceController {
   private engine: RaceEngine;

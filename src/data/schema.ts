@@ -59,6 +59,13 @@ export interface CharacterData {
    */
   speed?: number;
   power?: number;
+  /**
+   * Flies/hovers above the track instead of touching ground. Read by the engine
+   * to exempt the racer from ground-borne environmental effects (e.g. the
+   * penguin icefield slows runners but can't touch something that floats — no
+   * boost either, just no contact). Default false.
+   */
+  airborne?: boolean;
   skill: SkillSpec;
   lines: CharacterLines;
 }

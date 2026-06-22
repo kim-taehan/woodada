@@ -56,22 +56,23 @@ export interface SkillRuntime {
   /** Extra forward speed applied while effectUntil is active. */
   burst?: number;
   /**
-   * catwalk (cat): frame index until which the cat is in its dodge window. While
-   * open, an incoming *direct* disruption (banana/roar/divebomb stun) is avoided
-   * with probability `dodgeChance`. Resolved per (cat id, frame) so every
-   * attacker in the same frame agrees; see skills/dodge.ts + RaceEngine#tryDodge.
-   */
-  dodgeUntil?: number;
-  /** catwalk: probability that an incoming disruption is avoided during the window. */
-  dodgeChance?: number;
-  /**
-   * catwalk: cached dodge roll for the current frame, keyed by frame index.
-   * `dodgeFrame` is the frame the roll was taken on; `dodgeRoll` is its result.
-   * Memoised so multiple attackers in one frame share a single deterministic
-   * decision (attacker-order independent).
+   * catwalk (cat) — REACTIVE just-dodge. There is no pre-opened window any more:
+   * when a direct disruption actually targets the cat (engine#tryDodge), and the
+   * cat's catwalk cooldown is ready, it rolls `dodgeChance`. On success the dodge
+   * consumes the cooldown, awards a small forward slip, and emits activate+dodge.
+   * `dodgeFrame`/`dodgeRoll` memoise the roll per (cat id, frame) so several
+   * attackers in one frame share one deterministic decision (attacker-order
+   * independent). The ice-jump path (applyIce) still reads `dodgeChance` directly.
    */
   dodgeFrame?: number;
   dodgeRoll?: boolean;
+  /**
+   * skill i-frames: frame index until which the racer is immune to incoming
+   * disruption (stun/slow/pushback/pull/web), granted for ~0.3s the instant it
+   * activates its own skill. Distinct from ⭐ star (longer + speed boost); this is
+   * a brief activation-protection so a racer isn't disrupted mid-cast.
+   */
+  skillInvulnUntil?: number;
   /** 🌟 star item: frame index until which the racer is fully immune + boosted. */
   starUntil?: number;
   /** ⚡/💨 item slow: speed is multiplied by `slowMul` until `slowUntil`. */

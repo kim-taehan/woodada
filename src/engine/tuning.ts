@@ -18,6 +18,27 @@ export const SPEED_JITTER = 0.08;
 /** ms to wait before re-checking a skill that declined to fire (no full cooldown). */
 export const RETRY_COOLDOWN_MS = 200;
 
+/**
+ * Field-size cooldown scaling (16-racer skill-density relief). Every skill cooldown
+ * roll (initial + each re-arm) is multiplied by a gentle factor that grows with the
+ * number of racers ACTUALLY ON TRACK (relay `waiting`/`finished` excluded — only
+ * concurrently-active runners count). Small fields fire at the tuned rate; big
+ * fields fire less often so the screen isn't a constant wall of FX.
+ *
+ *   factor = clamp( 1 + max(0, active - kneeAt) * perRacer , 1 , maxFactor )
+ *
+ * Pure function of a deterministic count, so determinism holds. Default curve:
+ * ≤6 racers → ×1, 16 racers → 1 + 10*0.10 = ×2 (capped at maxFactor).
+ */
+export const COOLDOWN_FIELD = {
+  /** Active-racer count at/below which there is no slowdown (factor stays 1). */
+  kneeAt: 6,
+  /** Added to the factor per active racer above the knee. */
+  perRacer: 0.1,
+  /** Hard cap on the multiplier. */
+  maxFactor: 2,
+} as const;
+
 /** Intrinsic cruise speed band (engine units/frame); tight band keeps it fair. */
 export const BASE_SPEED = {
   min: 1.3,

@@ -61,6 +61,10 @@ export const abductHandler: SkillHandler = (ctx) => {
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;
   }
+  if ((target.skill.skillInvulnUntil ?? 0) > frame) { // skill i-frames: the web glances off
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
   if (ctx.tryDodge(target)) { // catwalk slips the web — dodge gag
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;

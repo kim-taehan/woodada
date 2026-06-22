@@ -165,6 +165,8 @@ details.options summary { color: var(--muted); cursor: pointer; font-size: 14px;
   position: absolute; bottom: 18px; right: 18px; padding: 10px 16px; border: none;
   border-radius: 999px; background: rgba(0,0,0,.4); color: #fff; font-weight: 700;
 }
+/* Lane-intro skip sits above the spotlight (z) and invites a tap. */
+.intro-skip { z-index: 6; cursor: pointer; }
 
 /* ---- Finish gate ("시상식 보러가기") ---- */
 .finish-gate {

@@ -113,6 +113,22 @@ export class RoomStore {
     });
   }
 
+  /**
+   * Top up each active team to a minimum size with random-name members (spec §0:
+   * a team mode race is ready to start without manual filling). Same "only if
+   * short" spirit as seedDefaults — existing members and user-emptied counts
+   * above the floor are never overwritten. Call after entering team mode or
+   * raising the team count.
+   */
+  seedTeamDefaults(min = 2): void {
+    const counts = this.teamCounts();
+    for (const t of this.activeTeams()) {
+      for (let have = counts.get(t) ?? 0; have < min && this.drafts.length < 16; have++) {
+        this.addName(randomName(), t);
+      }
+    }
+  }
+
   clear(): void {
     this.drafts = [];
     this.resultMapping = { byRank: {}, byTeamRank: {} };

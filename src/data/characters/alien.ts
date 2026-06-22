@@ -8,12 +8,17 @@ export const alien: CharacterData = {
   partModelId: 'alien',
   proportions: { headBody: '2등신', bigEyes: true },
   palette: {
-    base: '#7FD98C', // classic little-green-man body
+    base: '#7FD98C', // classic little-green-man body (head + hands)
     point: '#C8F2CE', // lighter belly
     outline: '#2E5B36',
     cheek: '#E89AA0',
     eye: '#1C2233', // big black almond eyes
-    antenna: '#FFD45E', // antenna bulb glow
+    antenna: '#FFD45E', // antenna bulb + porthole glow
+    // Sleek neon glow-rim flying saucer (the alien rides a UFO).
+    hull: '#244A52', // dark teal low-profile hull
+    hullTop: '#356A74', // raised cockpit base
+    dome: '#9BE8FF', // tinted canopy glass
+    rim: '#3DF2E0', // luminous neon-cyan rim + underglow
   },
   // Glide runStyle: hovers/bobs along (UFO scout vibe). All-rounder build —
   // neutral on both axes; its identity comes from the variable copy skill.
@@ -21,8 +26,11 @@ export const alien: CharacterData = {
   renderScale: 0.88,
   // Variable copycat: balanced cruise + toughness; outcome swings with whoever
   // it scans.
-  speed: 3,
+  speed: 2,
   power: 3,
+  // Rides a UFO — floats above the track, so ground hazards like the penguin's
+  // icefield can't slip it (no boost either; nothing to skid on).
+  airborne: true,
   skill: {
     // Mimic scan (의태 스캔, 변수형 카피): copy & fire the nearest racer's skill
     // using THEIR character's params, sourced from the alien. New role: a
@@ -33,7 +41,7 @@ export const alien: CharacterData = {
     // Wider than divebomb's range (per engine-dev's mimic contract) so the wildcard
     // usually finds someone to copy; balance-tuner does the final tuning.
     type: 'mimic',
-    cooldownMs: [3000, 4600],
+    cooldownMs: [4000, 5500],
     params: { scanRange: 350 },
   },
   lines: {

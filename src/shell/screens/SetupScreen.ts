@@ -130,7 +130,11 @@ export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLEle
   const teamBtn = el('button', { class: 'mode-btn', textContent: '👥 팀전' });
   indivBtn.addEventListener('click', () => { store.modeId = 'individual'; refresh(); });
   teamBtn.addEventListener('click', () => {
-    if (!isTeamMode()) { store.modeId = 'team'; store.autoAssign(); } // spread existing names across teams
+    if (!isTeamMode()) {
+      store.modeId = 'team';
+      store.autoAssign(); // spread existing names across teams
+      store.seedTeamDefaults(); // top up each team to 2 so it's ready to start
+    }
     refresh();
   });
 
@@ -153,7 +157,11 @@ export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLEle
   const teamCountSelect = el('select', { ariaLabel: '팀 수' }) as HTMLSelectElement;
   for (const n of [2, 3, 4]) teamCountSelect.append(el('option', { value: String(n), textContent: `${n}팀` }));
   teamCountSelect.value = String(store.teamCount);
-  teamCountSelect.addEventListener('change', () => { store.setTeamCount(Number(teamCountSelect.value)); refresh(); });
+  teamCountSelect.addEventListener('change', () => {
+    store.setTeamCount(Number(teamCountSelect.value));
+    if (isTeamMode()) store.seedTeamDefaults(); // newly added teams start with 2 members
+    refresh();
+  });
 
   const relayCheck = el('input', { type: 'checkbox', ariaLabel: 'relay' }) as HTMLInputElement;
   relayCheck.checked = store.relay;
