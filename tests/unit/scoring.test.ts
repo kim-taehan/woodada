@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { individual } from '../../src/engine/scoring/individual.ts';
 import { teamRankSum, teamAce } from '../../src/engine/scoring/team.ts';
+import { teamFirstPlace } from '../../src/engine/scoring/firstPlace.ts';
 import { makeConfig } from './helpers.ts';
 
 describe('scoring strategies', () => {
@@ -36,6 +37,22 @@ describe('scoring strategies', () => {
   it('teamAce: compares fastest member', () => {
     // p1=1(B) p0=2(A) ... B's ace rank 1 beats A's ace rank 2
     const r = teamAce(['p1', 'p0', 'p2', 'p3'], cfg);
+    expect(r.order[0]).toBe('B');
+    expect(r.detail.B).toBe(1);
+  });
+
+  it('teamFirstPlace: team owning the 1st-place racer wins', () => {
+    // order p2(1,A) p1(2,B) p0(3,A) p3(4,B) → A holds 1st → A wins.
+    const r = teamFirstPlace(['p2', 'p1', 'p0', 'p3'], cfg);
+    expect(r.type).toBe('team');
+    expect(r.order[0]).toBe('A');
+    expect(r.detail).toEqual({ A: 1, B: 2 });
+  });
+
+  it('teamFirstPlace: losing the 1st flips the winner regardless of rank sum', () => {
+    // order p1(1,B) p0(2,A) p2(3,A) p3(4,B): B holds 1st so B wins, even though
+    // A's rank sum (2+3=5) beats B's (1+4=5 tie) — top placement is all here.
+    const r = teamFirstPlace(['p1', 'p0', 'p2', 'p3'], cfg);
     expect(r.order[0]).toBe('B');
     expect(r.detail.B).toBe(1);
   });

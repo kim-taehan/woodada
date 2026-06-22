@@ -73,7 +73,30 @@ export interface CharacterData {
 export type CharacterCatalog = Record<string, CharacterData>;
 
 /** Team winner determination strategy id (spec §4). */
-export type ScoringId = 'individual' | 'teamRankSum' | 'teamAce' | (string & {});
+export type ScoringId =
+  | 'individual'
+  | 'teamRankSum'
+  | 'teamAce'
+  | 'teamFirstPlace'
+  | 'teamRelay'
+  | (string & {});
+
+/**
+ * Selectable team-mode flavor (team-mode selector, #28). The shell offers these
+ * three at setup; each maps to a scoring id (relay also flips RaceConfig.relay).
+ * `firstPlace` = 1등 보유, `rankSum` = 등수합, `relay` = 이어달리기.
+ */
+export type TeamScoringId = 'firstPlace' | 'rankSum' | 'relay';
+
+/** Default team flavor when none is chosen (preserves the old fixed teamRankSum). */
+export const defaultTeamScoringId: TeamScoringId = 'rankSum';
+
+/** Maps a selectable team flavor to its engine scoring strategy id. */
+export const TEAM_SCORING_TO_ID: Record<TeamScoringId, ScoringId> = {
+  firstPlace: 'teamFirstPlace',
+  rankSum: 'teamRankSum',
+  relay: 'teamRelay',
+};
 
 export interface GameMode {
   id: string;
