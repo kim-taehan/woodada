@@ -6,7 +6,11 @@ const SEED = 7;
 // it no longer activates in the seed-7 roster. Capture/assert it from a seed where
 // the cat actually reacts (activate + dodge in the same frame). Kept separate from
 // SEED so the seed-7 goldens (start/mid/finish/etc.) don't drift.
-const CATWALK_SEED = 8;
+// (Was 8; the lane-spread/side-separation engine change shifted who ends up
+// shoulder-to-shoulder so the cat no longer gets attacked at seed 8 — repinned
+// to 4, the lowest seed that still has catwalk activate+dodge in the DEFAULT_IDS
+// roster.)
+const CATWALK_SEED = 4;
 
 // Deterministic visual verification (spec §13). Drives the engine headless to
 // find skill-activation frames, then renders the canvas at those exact frames.
@@ -173,6 +177,40 @@ test('post-finish coast → free scatter → emote by rank (#33)', async ({ page
   );
   await settle(page);
   await page.screenshot({ path: `${SHOTS}/race-finish-scatter.png` });
+});
+
+test('death-match: centre knock-out pile + first/last emotion', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'capture once on desktop');
+  await page.goto('/');
+  // Death-match eliminates one racer per lap boundary, so it needs several laps.
+  const LAPS = 5;
+  for (const mode of ['first', 'last'] as const) {
+    const sim = await page.evaluate(
+      ([m, l]) => window.__woodada.simulate({ elimination: m as 'first' | 'last', laps: l as number, seed: 7 }),
+      [mode, LAPS] as const,
+    );
+    // The first knock-out fires at the first lap boundary → an `eliminate:out`
+    // event. seek() stops one frame before its target (renders frameIndex-1), so
+    // seek to outFrame + a few frames to actually render the knock-out frame and
+    // let the impact FX (환호/좌절), head bubble, and elimination subtitle develop.
+    const outFrame = sim.eventFrames['eliminate:out'];
+    expect(outFrame, `${mode} should produce an eliminate:out event`).toBeGreaterThan(0);
+    await page.evaluate(
+      ([f, m, l]) => window.__woodada.showRaceAt((f as number) + 6, { elimination: m as 'first' | 'last', laps: l as number, seed: 7 }),
+      [outFrame, mode, LAPS] as const,
+    );
+    await settle(page);
+    await page.screenshot({ path: `${SHOTS}/race-deathmatch-${mode}-knockout.png` });
+
+    // Near the end: most of the field is knocked out and settled into the centre
+    // horizontal row (ordered by eliminationOrder), holding the mode's emotion.
+    await page.evaluate(
+      ([f, m, l]) => window.__woodada.showRaceAt(f as number, { elimination: m as 'first' | 'last', laps: l as number, seed: 7 }),
+      [sim.totalFrames - 2, mode, LAPS] as const,
+    );
+    await settle(page);
+    await page.screenshot({ path: `${SHOTS}/race-deathmatch-${mode}-pile.png` });
+  }
 });
 
 test('reduced-motion renders without particles but same field', async ({ page }, info) => {

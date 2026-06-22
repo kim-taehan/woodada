@@ -8,7 +8,7 @@
 import { el } from '../dom.ts';
 import type { RoomStore } from '../store.ts';
 import { defaultCharacterIds, characterCatalog } from '../../data/characters/index.ts';
-import { gameModes, teamScoringOptions } from '../../data/modes.ts';
+import { eliminationOptions, gameModes, teamScoringOptions } from '../../data/modes.ts';
 import { teamOrder, teamPalette, type TeamId } from '../../data/teams.ts';
 import { randomName } from '../../data/names.ts';
 import { trackCatalog, defaultArenaIds } from '../../data/tracks/index.ts';
@@ -176,11 +176,24 @@ export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLEle
     el('label', { textContent: '모드' }), scoringSelect,
   ]);
 
+  // ---- Deathmatch (개인전): 일반전 / 선두탈락 / 꼴찌탈락 ----
+  const elimSelect = el('select', { ariaLabel: '탈락 방식' }) as HTMLSelectElement;
+  for (const opt of eliminationOptions) {
+    elimSelect.append(el('option', { value: opt.id, textContent: opt.label }));
+  }
+  elimSelect.value = store.eliminationKind;
+  elimSelect.addEventListener('change', () => { store.eliminationKind = elimSelect.value as typeof store.eliminationKind; });
+
+  const elimGroup = el('span', { class: 'opt-group elim-group' }, [
+    el('label', { textContent: '탈락' }), elimSelect,
+  ]);
+
   function syncModeUI(): void {
     const team = isTeamMode();
     indivBtn.classList.toggle('active', !team);
     teamBtn.classList.toggle('active', team);
     teamGroup.style.display = team ? '' : 'none';
+    elimGroup.style.display = team ? 'none' : ''; // deathmatch is individual-only
   }
 
   resetBtn.addEventListener('click', () => { store.clear(); refresh(); });
@@ -209,6 +222,7 @@ export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLEle
       el('span', { class: 'opt-group' }, [el('label', { textContent: '바퀴 수' }), lapsSelect]),
       el('span', { class: 'opt-group' }, [el('label', { textContent: '경기장' }), arenaSelect]),
       teamGroup,
+      elimGroup,
     ]),
     participantsArea,
     el('div', { class: 'list-actions' }, [resetBtn]),

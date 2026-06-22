@@ -39,6 +39,9 @@ describe('engine determinism', () => {
     expect(three.frames.length).toBeGreaterThan(one.frames.length * 2.4);
   });
 
+  // Non-elimination only: death-match breaks the "everyone crosses the line"
+  // assumption (most racers end `eliminated`, not `finished`). See
+  // engine-deathmatch.test.ts for the elimination-mode invariants.
   it('every racer finishes with a unique rank', () => {
     const ids = [...allThree, ...allThree];
     const { frames, result } = simulateRace(makeConfig({ characterIds: ids, seed: 5 }), skills, scoring);

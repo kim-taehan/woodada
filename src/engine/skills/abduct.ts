@@ -42,6 +42,7 @@ export const abductHandler: SkillHandler = (ctx) => {
         r.id !== self.id &&
         r.phase !== 'finished' &&
         r.phase !== 'waiting' &&
+        r.phase !== 'eliminated' &&
         frame >= (Number(r.skill.abductImmuneUntil ?? 0)) && // still web-immune from a recent grab
         (self.teamId === undefined || r.teamId !== self.teamId) &&
         r.progress > self.progress &&

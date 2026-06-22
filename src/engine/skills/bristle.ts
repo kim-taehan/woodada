@@ -43,7 +43,13 @@ export const bristleHandler: SkillDef = {
     // Team-exclusion: never counter a teammate that pulls ahead.
     if (self.teamId !== undefined && passer.teamId === self.teamId) return;
     // Inert passers (finished/waiting/stunned) aren't a real threat → hold.
-    if (passer.phase === 'finished' || passer.phase === 'waiting' || passer.phase === 'stunned') return;
+    if (
+      passer.phase === 'finished' ||
+      passer.phase === 'waiting' ||
+      passer.phase === 'stunned' ||
+      passer.phase === 'eliminated'
+    )
+      return;
 
     // Probabilistic counter: only roll once a real passer exists (stable draw order).
     if (!rng.bool(Number(params.triggerChance))) return; // the pass slipped by — hold

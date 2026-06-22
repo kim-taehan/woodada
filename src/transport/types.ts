@@ -37,6 +37,12 @@ export interface RoomState {
    * for backward-compatible deserialization (absent = 'random').
    */
   arenaId?: string;
+  /**
+   * Individual-mode deathmatch (#dm): 'first' = 선두탈락, 'last' = 꼴찌탈락.
+   * Mirrors `RaceConfig.elimination`; undefined = classic race. Part of the
+   * serializable state so a replayed room reproduces the same eliminations.
+   */
+  elimination?: 'first' | 'last';
 }
 
 export type RoomEvent =

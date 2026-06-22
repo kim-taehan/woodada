@@ -27,6 +27,7 @@ export const bananaHandler: SkillHandler = (ctx) => {
         r.phase !== 'finished' &&
         r.phase !== 'waiting' &&
         r.phase !== 'stunned' &&
+        r.phase !== 'eliminated' &&
         frame >= (r.skill.bananaImmuneUntil ?? 0) && // still immune from a recent banana
         (self.teamId === undefined || r.teamId !== self.teamId) &&
         (dir === 1 ? r.progress > self.progress : r.progress < self.progress),
