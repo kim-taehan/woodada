@@ -326,7 +326,11 @@ export function createRaceRenderer(): RaceRenderer {
 
   // Victory podium state.
   let podiumScene: Container | null = null;
-  let podiumChars: { char: PartsCharacter; winner: boolean }[] = [];
+  // `winner` drives the bigger bounce (1st block / winning anchor). `celebrates`
+  // gates the happy 깝치기 itself: in team mode only the 1st-place team celebrates;
+  // a non-winning team stands on the podium WITHOUT the victory jig. Individual
+  // mode celebrates everyone on the podium (unchanged).
+  let podiumChars: { char: PartsCharacter; winner: boolean; celebrates: boolean }[] = [];
   let podiumClock = 0;
   let podiumTick: ((ticker: { deltaMS: number }) => void) | null = null;
 
@@ -841,8 +845,15 @@ export function createRaceRenderer(): RaceRenderer {
     fieldCount: number,
     frameIdx: number,
     posById: Map<string, Pos>,
+    winningTeamId?: string,
   ): void {
     const rank = r.rank ?? fieldCount;
+    // Team mode: only the WINNING team is allowed to be happy. A non-winning team
+    // member still coasts + settles but stays neutral (no celebrate pose, no
+    // hearts/jump) regardless of its individual rank. Individual mode (no
+    // winningTeamId) keeps every placement's own emote. `teamGated` = "in team
+    // mode AND not on the winning team" → suppress the happy tier.
+    const teamGated = winningTeamId !== undefined && r.teamId !== winningTeamId;
     // Where it crossed: the live track point at the finish corner.
     const cross = track.place(r.progress, config!.trackLength, r.lane);
 
@@ -878,14 +889,19 @@ export function createRaceRenderer(): RaceRenderer {
 
     // Emote tier by placement (only once settled, so the coast reads as a glide,
     // not an instant jig). Top 3 cheer; the very back slumps; the rest idle.
+    // In team mode the celebrate tier is reserved for the WINNING team — a
+    // non-winning member (teamGated) never jumps for joy, it just stands neutral
+    // ('finished' win-stance, no bounce). Individual mode is unchanged.
     const settled = k > 0.85;
+    const celebrates = (rank <= 3) && !teamGated; // happy tier (winning team only in team mode)
     let phase: string = 'finished'; // win pose, standing tall while gliding in
-    const top3 = rank <= 3;
     const lastish = rank >= fieldCount; // dead last
-    if (settled) phase = top3 ? 'celebrate' : lastish ? 'dejected' : 'finished';
+    // A team-gated (non-winning) member stays neutral 'finished' even if last —
+    // no dejected slump piling onto the "your team lost" read; keep it tidy.
+    if (settled) phase = celebrates ? 'celebrate' : (lastish && !teamGated) ? 'dejected' : 'finished';
     v.character.update({
       phase,
-      speedNorm: top3 ? 1 : 0.4,
+      speedNorm: celebrates ? 1 : 0.4,
       clock,
       facing: 0,
       heading: 1,
@@ -895,14 +911,15 @@ export function createRaceRenderer(): RaceRenderer {
     v.tag.root.zIndex = 100000 + y;
     v.glow.visible = false;
 
-    // Celebration sparkle/heart shower for the podium-bound; a sad sweat-drop for
+    // Celebration sparkle/heart shower for the happy tier; a sad sweat-drop for
     // the back-marker. Throttled + deterministic-ish via clock phase; suppressed
-    // under reduced motion.
+    // under reduced motion. In team mode only the winning team (celebrates) gets
+    // the hearts/sparkles; a non-winning member shows neither cheer nor sweat.
     if (settled && !reducedMotion) {
-      if (top3) {
+      if (celebrates) {
         if (Math.sin(clock * 9 + rank) > 0.7) fx.sparkle(x + hx * 18, y - 70 + hy * 8, clock);
         if (Math.sin(clock * 5 + rank * 1.7) > 0.85) fx.heart(x, y - 78, clock);
-      } else if (lastish && Math.sin(clock * 3) > 0.9) {
+      } else if (lastish && !teamGated && Math.sin(clock * 3) > 0.9) {
         fx.sweat(x + 14, y - 52, clock);
       }
     }
@@ -1189,6 +1206,20 @@ export function createRaceRenderer(): RaceRenderer {
       // standing on the racing line. Drawn after the main loop, by team.
       const waiting: RacerState[] = [];
       const fieldCount = frame.racers.length;
+      // Team mode (on-track finish): only the WINNING team gets the happy emote
+      // (hearts/jump/cheer). The winning team = the team of the best-ranked
+      // finisher (rank 1). Other teams still coast + settle but stay neutral.
+      // undefined in individual mode (every placement keeps its own emote).
+      let winningTeamId: string | undefined;
+      if (config.teamMode) {
+        let bestRank = Infinity;
+        for (const r of frame.racers) {
+          if (r.rank !== undefined && r.teamId !== undefined && r.rank < bestRank) {
+            bestRank = r.rank;
+            winningTeamId = r.teamId;
+          }
+        }
+      }
       for (const r of frame.racers) {
         const v = views.get(r.id);
         if (!v) continue;
@@ -1199,9 +1230,13 @@ export function createRaceRenderer(): RaceRenderer {
         // ── Post-finish: coast past the line → free-scatter → emote by rank (#33).
         // Display-only: positions are interpolated by (frame - finishedAt) and a
         // deterministic id-hash, so the tableau is reproducible and never feeds
-        // back into the simulation (relay finals still queue via `waiting` above).
-        if (r.phase === 'finished' && r.finishedAt !== undefined && !config.relay) {
-          placeFinished(r, v, fieldCount, frame.frame, posById);
+        // back into the simulation. Relay's WAITING runners are already split off
+        // above (line ~1195); a relay ANCHOR that has actually FINISHED must coast
+        // off the line too — otherwise the `!config.relay` guard left it frozen on
+        // the finish tape (the relay "결승 멈춤" bug). So the only exclusion here is
+        // waiting runners, handled above; finished racers (relay or not) all coast.
+        if (r.phase === 'finished' && r.finishedAt !== undefined) {
+          placeFinished(r, v, fieldCount, frame.frame, posById, winningTeamId);
           continue;
         }
         const tp = track.place(r.progress, config.trackLength, r.lane);
@@ -1555,6 +1590,16 @@ export function createRaceRenderer(): RaceRenderer {
       const blockColor = [0xffd23f, 0xc8cbd0, 0xcd8b53];
       const bw = 120;
 
+      // Team mode: only the 1st-place team 깝친다. The winning team is the team of
+      // the 1st-place finisher (top[0]). A podium occupant celebrates iff it is on
+      // that team. Individual mode (no team) → everyone on the podium celebrates
+      // (unchanged). `celebratesId(id)` answers per-racer.
+      const winTeamId = config.teamMode ? config.participants.find((p) => p.id === top[0])?.teamId : undefined;
+      const celebratesId = (id: string): boolean => {
+        if (!config!.teamMode) return true; // individual: all podium chars cheer (unchanged)
+        return config!.participants.find((p) => p.id === id)?.teamId === winTeamId;
+      };
+
       top.forEach((id, rank) => {
         const x = slotX[rank];
         const h = blockH[rank];
@@ -1574,7 +1619,7 @@ export function createRaceRenderer(): RaceRenderer {
         v.tag.root.visible = true;
         v.tag.setPosition(x, baseY - h - 92);
         v.tag.root.zIndex = 200000;
-        podiumChars.push({ char: v.character, winner: rank === 0 });
+        podiumChars.push({ char: v.character, winner: rank === 0, celebrates: celebratesId(id) });
       });
 
       // Relay: the WHOLE winning team celebrates, not just its anchor. The top-3
@@ -1607,7 +1652,7 @@ export function createRaceRenderer(): RaceRenderer {
           v.character.root.scale.set(0.6 * v.size);
           v.character.root.zIndex = 990 + i; // behind/around the raised anchor
           v.tag.root.visible = false; // keep the huddle uncluttered (anchor tag shows the team)
-          podiumChars.push({ char: v.character, winner: true });
+          podiumChars.push({ char: v.character, winner: true, celebrates: true }); // winning team → 깝치기
         });
       }
 
@@ -1623,9 +1668,11 @@ export function createRaceRenderer(): RaceRenderer {
       podiumTick = (ticker) => {
         podiumClock += ticker.deltaMS / 1000;
         for (const pc of podiumChars) {
+          // Winning team 깝친다 (celebrate jig); a non-winning team stands tall on
+          // its block in a neutral win-stance ('finished') — present, but not joyful.
           pc.char.update({
-            phase: 'celebrate',
-            speedNorm: pc.winner ? 1 : 0.5,
+            phase: pc.celebrates ? 'celebrate' : 'finished',
+            speedNorm: pc.celebrates ? (pc.winner ? 1 : 0.5) : 0.4,
             clock: podiumClock,
             facing: 0,
             heading: 1,
