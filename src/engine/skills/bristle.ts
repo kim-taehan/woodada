@@ -64,6 +64,10 @@ export const bristleHandler: SkillDef = {
       ctx.emit({ variant: 'dodge', targetId: passer.id });
       return;
     }
+    if (ctx.tryDecoyGuard(passer)) { // gumiho decoy eats the shove instead (퐁!)
+      ctx.emit({ variant: 'dodge', targetId: passer.id });
+      return;
+    }
     if (ctx.tryDodge(passer)) { // catwalk slips past the spines
       ctx.emit({ variant: 'dodge', targetId: passer.id });
       return;

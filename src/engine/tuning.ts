@@ -15,6 +15,20 @@
 /** ±per-frame speed noise (fraction of baseSpeed). */
 export const SPEED_JITTER = 0.08;
 
+/**
+ * Per-lap "condition" (form). Each time a racer crosses the lap line it rolls a fresh
+ * condition 1..`steps` from its own seeded sub-stream (deterministic — replays identically),
+ * which scales its cruise speed for that lap: `× (1 + (roll − mid) · gain)`. Centred on `mid`
+ * so it nets out (good laps and bad laps, no average inflation → win-rate fairness holds), it
+ * gives every racer a luck-of-the-lap swing — so a field of the SAME animal still trades the
+ * lead, and the race has the draw-game randomness. Tunable: raise `gain` for wilder form swings.
+ */
+export const CONDITION = {
+  steps: 10, // roll 1..10
+  mid: 5.5, // centre (roll 5/6 ≈ neutral)
+  gain: 0.03, // speed swing per step from centre (±~13.5% at the 1/10 extremes)
+} as const;
+
 /** ms to wait before re-checking a skill that declined to fire (no full cooldown). */
 export const RETRY_COOLDOWN_MS = 200;
 
@@ -34,15 +48,29 @@ export const COOLDOWN_FIELD = {
   /** Active-racer count at/below which there is no slowdown (factor stays 1). */
   kneeAt: 6,
   /** Added to the factor per active racer above the knee. */
-  perRacer: 0.1,
+  perRacer: 0.05,
   /** Hard cap on the multiplier. */
-  maxFactor: 2,
+  maxFactor: 1.5,
 } as const;
 
 /** Intrinsic cruise speed band (engine units/frame); tight band keeps it fair. */
 export const BASE_SPEED = {
   min: 1.3,
   max: 1.5,
+} as const;
+
+/**
+ * Lane → DISTANCE model (인코스 우위). The inner rail (lane 0) is the short arc; the
+ * outer rail (lane 1) is longer, so the SAME speed converts to LESS forward progress
+ * out wide. `distLoss` is the fraction of progress an outer-rail racer forfeits per
+ * frame vs the inner rail: progress += speed * (1 - distLoss*lane). This makes
+ * `progress` itself a *corrected* distance metric (distance actually travelled), so
+ * ranking / finish / death-match read it directly and stay fair across lanes.
+ * Reverses the old "lane never affects speed" rule → "lane affects distance, not
+ * speed". Deterministic (pure function of lane).
+ */
+export const LANE = {
+  distLoss: 0.12, // outer rail covers 12% less distance per frame than the inner
 } as const;
 
 /**
@@ -125,8 +153,14 @@ export const CATCHUP = {
  * when boxed in. Lane no longer affects speed.
  */
 export const OVERTAKE = {
-  /** Forward proximity window that counts as "blocked by" / "occupied". */
-  nearAhead: 4.0,
+  /**
+   * Forward proximity window that counts as "blocked by" / "occupied" (triggers weave /
+   * decel). Kept ≥ ZONE.minGap so a racer held one personal-zone behind another still
+   * registers it as a blocker and weaves out to pass, instead of single-filing nose-to-tail.
+   * Sized a few units past minGap so there's an approach zone (decelerate/weave) before the
+   * hard collision floor — gives a readable "bumping" feel rather than a snap.
+   */
+  nearAhead: 16.0,
   /** Lateral closeness (lane units) that counts as the same lane band. */
   laneNear: 0.16,
   /** How far sideways to step when attempting a pass. */
@@ -135,34 +169,53 @@ export const OVERTAKE = {
   laneDrift: 0.05,
   /** Chance to commit to a pass when a side is open. */
   switchChance: 0.78,
+  /**
+   * Weave-hold latch length (frames). Once a racer commits to a weave side, it keeps
+   * weaving that way for this many frames even if the immediate blocker momentarily
+   * clears — so it completes the pass instead of snapping back home and re-blocking
+   * every frame (the ±laneDrift square-wave jitter). ≈0.2s at 60fps.
+   */
+  weaveHoldFrames: 12,
   /** Speed multiplier while boxed in. */
   blockDecel: 0.5,
-  /** Gentle lane wander amplitude + frequency. */
-  wanderAmp: 0.14,
+  /**
+   * Inner rail the whole field seeks (rule 2: close the distance). The `base` lane target for
+   * every racer that has no one to pass — replaces the old per-racer `homeLane` cruise anchor,
+   * so an outer-starting racer actually migrates to the rail instead of settling at the
+   * homeLane/(1+inPull) equilibrium (which pinned it outside and locked the inside). Everyone
+   * scrambles for this rail; the no-pass clamp + inside-first weave turn that into the jostle.
+   */
+  innerGoal: 0.05,
+  /**
+   * Scramble fan-out (난투 분산). Everyone seeks the inner rail (innerGoal), so without this the
+   * field stacks into one or two lines. This fans a racer OUTWARD in proportion to how packed the
+   * field is AHEAD of it and on/inside its own line — the more rivals queued ahead-inside, the
+   * wider it spreads to find racing room. Result: a graded pack across the ~3-lane width (leaders
+   * inside, the pack fanning back-and-out), constant jostling, and an open lane to swing into when
+   * a rival ahead stalls/stuns. Continuous congestion sum → no toggle/jitter; deterministic.
+   * Tunable by eye: raise to spread wider / more chaotic, lower to bunch toward the rail.
+   */
+  scrambleGain: 0.25,
+  /** Gentle lane wander amplitude + frequency (small — decorrelates the pack, not an anchor). */
+  wanderAmp: 0.04,
   wanderFreq: 0.05,
-  /**
-   * Lateral separation ("자리경합" / position contest). Two racers running
-   * shoulder-to-shoulder — small forward gap AND within `sepLaneBand` of each
-   * other's lane — push their lane targets apart so they stop overlapping. This
-   * only nudges the lane target (speed-neutral; the existing blockDecel still
-   * handles the front-to-back "boxed in" slowdown). The direction is decided
-   * deterministically by a stable per-pair key (racer id order), never RNG —
-   * the inner-keyed racer is pushed inside, the outer-keyed one outside — so the
-   * push is symmetric and draw-order / array-order independent.
-   */
-  sepRange: 3.0, // |progress gap| window (units) that counts as side-by-side
-  sepLaneBand: 0.14, // lane closeness (units) that counts as overlapping
-  sepPush: 0.5, // max fraction of laneStep added to the target at point-blank
-  /**
-   * Jockeying (low-traffic position contest). When not lane-blocked, a racer
-   * leans its lane target toward a rival ahead within `jockeyRange` (progress
-   * units, wider than nearAhead so the lean engages *before* the rival becomes a
-   * lane blocker and the weave/block logic takes over). `jockeyLean` is the max
-   * fraction of the way to the rival's lane (at point-blank); it fades linearly to
-   * 0 at the edge of the range. Speed-neutral — moves the lane target only.
-   */
-  jockeyRange: 9.0,
-  jockeyLean: 0.6,
+} as const;
+
+/**
+ * Forward personal-zone spacing (정면 통과 불가). After everyone advances, a racer may not
+ * pass THROUGH another on the same lane band — overtaking must go around (a different lane,
+ * paying the distLoss). Each frame, a racer that started the frame BEHIND another on its lane
+ * is clamped to sit at most `minGap` behind it (and never shoved back past where it began the
+ * frame, so it just halts rather than reversing). Kept below `OVERTAKE.nearAhead` so a clamped
+ * trailer still registers the blocker and weaves out to pass instead of single-filing. Pure
+ * position math, no RNG → deterministic. Tunable by eye in dev: raise for wider nose-to-tail
+ * gaps, lower to let racers run closer.
+ */
+export const ZONE = {
+  // ≈ one body-length (engine body ≈ 15 progress units; cf. DECOY.collideDist 10 ≈ ⅔ body),
+  // so each racer keeps a clear personal bubble and can't be overlapped — a solid collision
+  // feel rather than nose-on-nose. Raise for wider gaps, lower to pack tighter.
+  minGap: 12,
 } as const;
 
 /**
@@ -172,6 +225,14 @@ export const OVERTAKE = {
 export const STATS = {
   /** baseSpeed bias at full speed deviation (band is 0.2 wide; this is <10% of it). */
   speedGain: 0.018,
+  /**
+   * Cornering speed swing at full `cornering` deviation (engine units). MUCH larger than
+   * speedGain — this is the deliberately VISIBLE per-section pace split that trades the lead
+   * every straight↔curve transition. Applied distance-weighted (curve boost × straightFrac,
+   * straight boost × curveFrac) so the lap-average nets to zero and win-rate fairness holds.
+   * Tunable by eye: raise for more dramatic sprint/corner swings & lead changes.
+   */
+  corneringGain: 0.35,
   /** Fraction by which a full power deviation scales an incoming effect's magnitude. */
   powerResist: 0.15,
   /** Fraction by which a full power deviation eases block deceleration toward 1. */

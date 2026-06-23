@@ -7,11 +7,12 @@ import { penguin } from './penguin.ts';
 import { hedgehog } from './hedgehog.ts';
 import { spider } from './spider.ts';
 import { alien } from './alien.ts';
+import { fox } from './fox.ts';
 
 /** Active characters. */
-export const characterCatalog: CharacterCatalog = { dog, cat, monkey, bear, penguin, hedgehog, spider, alien };
+export const characterCatalog: CharacterCatalog = { dog, cat, monkey, bear, penguin, hedgehog, spider, alien, fox };
 
 /** Ids available for random assignment + selection in the shell. */
-export const defaultCharacterIds = ['dog', 'cat', 'monkey', 'bear', 'penguin', 'hedgehog', 'spider', 'alien'] as const;
+export const defaultCharacterIds = ['dog', 'cat', 'monkey', 'bear', 'penguin', 'hedgehog', 'spider', 'alien', 'fox'] as const;
 
-export { dog, cat, monkey, bear, penguin, hedgehog, spider, alien };
+export { dog, cat, monkey, bear, penguin, hedgehog, spider, alien, fox };

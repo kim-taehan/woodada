@@ -279,6 +279,13 @@ export function createRaceRenderer(): RaceRenderer {
   let theme: TrackTheme = grassland;
   let trackLayer = new Container();
   const charLayer = new Container();
+  // Gumiho illusionClone decoys (분신): translucent ghost chibis drawn from
+  // EngineFrame.decoys. They use the SAME PartsCharacter as the owning fox so the
+  // run animation matches, wrapped in a half-alpha container so they read as
+  // see-through illusions. Built/destroyed per decoy id (decoys come and go).
+  const decoyLayer = new Container();
+  decoyLayer.sortableChildren = true;
+  const decoyViews = new Map<string, { char: PartsCharacter }>();
   const fx = new FxLayer();
   const bubbles = new SpeechBubbleLayer();
   const boxLayer = new Container();
@@ -299,6 +306,9 @@ export function createRaceRenderer(): RaceRenderer {
   // into a "star shield" and renderFrame can draw the ongoing rainbow shimmer.
   const starUntilById = new Map<string, number>();
   let curFrameIdx = 0;
+  // Live decoys for the CURRENT frame (set at the top of renderFrame), so playEvent
+  // can find an owner's freshly-spawned decoys to poof on an illusionClone:clone.
+  let curDecoys: EngineFrame['decoys'] = [];
   let scoreboard: Scoreboard | null = null;
   let topHud: TopRankHud | null = null;
   const views = new Map<string, RacerView>();
@@ -511,6 +521,64 @@ export function createRaceRenderer(): RaceRenderer {
         drawSeg(start / trackLength, (trackLength - start) / trackLength, alpha);
         drawSeg(0, (end - trackLength) / trackLength, alpha);
       }
+    }
+  }
+
+  /**
+   * 🦊 Gumiho illusionClone decoys (분신): draw each live decoy from
+   * EngineFrame.decoys as a translucent ghost of the owning fox. Each decoy gets
+   * its OWN PartsCharacter (same model/palette as the owner) so the run cycle
+   * matches the body; the whole thing is wrapped in a half-alpha container with a
+   * faint blue tint so it reads as a see-through illusion next to the opaque
+   * original. The decoy moves with `progress`/`lane` like a racer (placed on the
+   * oval, faces its travel direction, bobs with the run pose). Built/destroyed by
+   * id as decoys spawn/expire. Display-only — never touches the simulation.
+   */
+  function drawDecoys(decoys: EngineFrame['decoys'], posById: Map<string, Pos>): void {
+    if (!config) return;
+    const present = new Set(decoys.map((d) => d.id));
+    // Drop ghosts whose decoy is gone (expired / popped).
+    for (const [id, dv] of [...decoyViews]) {
+      if (!present.has(id)) {
+        dv.char.destroy();
+        decoyViews.delete(id);
+      }
+    }
+    for (const d of decoys) {
+      const ownerCid = charIdById.get(d.ownerId);
+      const ownerView = views.get(d.ownerId);
+      if (!ownerCid || !ownerView) continue; // owner not in this scene — skip
+      let dv = decoyViews.get(d.id);
+      if (!dv) {
+        const char = characterCatalog[ownerCid];
+        const model = partModels[char.partModelId ?? ownerCid];
+        const ghost = new PartsCharacter(model, char.palette, char.runStyle);
+        // Half-alpha so the illusion reads as see-through next to the opaque body
+        // (co-fox 인계 메모: container.alpha ≈ 0.4). A slow flicker is layered
+        // per-frame below to make it shimmer like a ghost.
+        ghost.root.alpha = 0.4;
+        decoyLayer.addChild(ghost.root);
+        dv = { char: ghost };
+        decoyViews.set(d.id, dv);
+      }
+      const tp = track.place(d.progress, config.trackLength, d.lane);
+      const heading = track.travelDir(d.progress, config.trackLength, d.lane).x;
+      const baseScale = CHAR_SCALE * tp.scale * ownerView.size * fieldScale;
+      dv.char.root.scale.set(baseScale);
+      dv.char.root.position.set(tp.x, tp.y);
+      dv.char.root.zIndex = tp.z - 1; // sit just behind the real field at the same depth
+      // Subtle ghostly flicker (0.30..0.46) so the illusion shimmers; reduced
+      // motion holds a steady half-alpha.
+      dv.char.root.alpha = reducedMotion ? 0.4 : 0.38 + 0.08 * Math.sin(clock * 6 + d.progress * 0.02);
+      dv.char.update({
+        phase: 'running',
+        speedNorm: 0.8,
+        clock,
+        facing: 0,
+        heading,
+        reducedMotion,
+      });
+      posById.set(d.id, { x: tp.x, y: tp.y, heading });
     }
   }
 
@@ -822,6 +890,46 @@ export function createRaceRenderer(): RaceRenderer {
         if (v2g) v2g.glowUntil = clock + 1.6;
         break;
       }
+      case 'illusionClone:clone': {
+        // 🦊 Decoys conjured: a magic poof on the gumiho (the activate beat already
+        // raised its glow/pop + "허허…" bubble), plus a conjure poof landing on EACH
+        // freshly-spawned decoy's spot so the two illusions visibly pop into being.
+        const tint = v.tint;
+        fx.smoke(self.x, self.y, tint, clock);
+        if (config) {
+          for (const d of curDecoys) {
+            if (d.ownerId !== e.racerId) continue;
+            const dp = posById.get(d.id);
+            if (dp) fx.smoke(dp.x, dp.y, tint, clock);
+          }
+        }
+        break;
+      }
+      case 'illusionClone:clonehit':
+        // 🦊 A decoy bumped this racer → brief stun + confusion. Stars + a dizzy
+        // swirl on the victim (the "어?" bubble is spawned by the e.line path above),
+        // plus a lavender pop where the decoy struck (it's consumed on contact).
+        fx.stars(self.x, self.y, clock);
+        fx.dizzy(self.x, self.y, clock);
+        fx.cloudPop(self.x, self.y, 0xb07bd6, clock);
+        break;
+      case 'illusionClone:clonepop':
+        // 🦊 A decoy intercepted an incoming disruption for the gumiho and popped:
+        // a soft "퐁!" magical pop on the protected fox (its "퐁!" bubble comes from
+        // the e.line path above). Reads as "a clone took the hit", not a stun.
+        fx.cloudPop(self.x, self.y, 0xb07bd6, clock);
+        fx.sparkle(self.x, self.y, clock);
+        break;
+      case 'illusionClone:teleport':
+        // 🦊 The clones expired and the fox blinked forward to its lead decoy's spot
+        // (the engine already moved its progress, so `self` is the arrival spot): a
+        // conjure poof + ⭐ glints + glow on the fox where it reappears. The
+        // "스르르…퐁!" bubble comes from the e.line path above.
+        fx.smoke(self.x, self.y, v.tint, clock);
+        fx.cloudPop(self.x, self.y, 0xb07bd6, clock);
+        fx.sparkle(self.x, self.y, clock);
+        v.glowUntil = clock + 1.6;
+        break;
       case 'eliminate:out': {
         // 💀 Death-match knock-out at a lap boundary. Branch the emotion on the
         // mode: 선두탈락(first)이면 탈락=환호(sparkle/heart + 신난 버블), 꼴찌탈락(last)이면
@@ -1188,7 +1296,7 @@ export function createRaceRenderer(): RaceRenderer {
         autoDensity: true,
       });
       parent.appendChild(app.canvas);
-      app.stage.addChild(iceLayer, boxLayer, charLayer, bubbles.root, fx.root, commentary.root);
+      app.stage.addChild(iceLayer, boxLayer, decoyLayer, charLayer, bubbles.root, fx.root, commentary.root);
       commentary.root.position.set(width / 2, height - 40);
     },
 
@@ -1214,6 +1322,10 @@ export function createRaceRenderer(): RaceRenderer {
       boxLayer.visible = true;
       iceLayer.removeChildren();
       iceLayer.visible = true;
+      for (const dv of decoyViews.values()) dv.char.destroy();
+      decoyViews.clear();
+      decoyLayer.removeChildren();
+      decoyLayer.visible = true;
       commentary.hide();
       leaderPrev = null;
       lastLeadSay = -100;
@@ -1313,6 +1425,7 @@ export function createRaceRenderer(): RaceRenderer {
       lastTime = frame.time;
       clock += dt;
       curFrameIdx = frame.frame;
+      curDecoys = frame.decoys;
       // Roll last frame's body positions into prevScreenPos (lagging one frame) so
       // an abduct:hit this frame can read the target's pre-yank screen spot.
       prevScreenPos.clear();
@@ -1583,6 +1696,10 @@ export function createRaceRenderer(): RaceRenderer {
       });
 
       drawIce(frame.iceZones, config.trackLength, frame.frame);
+      // Gumiho decoys: drawn AFTER the racers (so posById holds the owner's spot)
+      // and BEFORE the event loop (so a clone/teleport poof can land on a decoy's
+      // freshly-placed spot). Adds each live decoy's screen spot to posById.
+      drawDecoys(frame.decoys, posById);
 
       for (const e of frame.events) playEvent(e, posById);
       drainPendingFx();
@@ -1724,6 +1841,7 @@ export function createRaceRenderer(): RaceRenderer {
       }
       boxLayer.visible = false;
       iceLayer.visible = false;
+      decoyLayer.visible = false;
       commentary.hide();
       fx.root.visible = false;
       bubbles.root.visible = false;
@@ -2075,6 +2193,8 @@ export function createRaceRenderer(): RaceRenderer {
       clearPodium();
       for (const v of views.values()) v.character.destroy();
       views.clear();
+      for (const dv of decoyViews.values()) dv.char.destroy();
+      decoyViews.clear();
       app.destroy(true, { children: true });
     },
   };

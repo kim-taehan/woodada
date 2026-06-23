@@ -22,6 +22,8 @@ export const spider: CharacterData = {
   // Web-trapping disruptor: low cruise speed, sturdy (resists shoves/traffic).
   speed: 2,
   power: 4,
+  cornering: 5, // curve specialist — hangs back on the straights, reels them in through the bends
+
   skill: {
     // Web abduct (단일표적 위치강등): grab the nearest racer meaningfully ahead
     // and yank them behind the spider (progress demotion), then leave them

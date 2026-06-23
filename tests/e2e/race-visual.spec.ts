@@ -9,8 +9,10 @@ const SEED = 7;
 // (Was 8; the lane-spread/side-separation engine change shifted who ends up
 // shoulder-to-shoulder so the cat no longer gets attacked at seed 8 — repinned
 // to 4, the lowest seed that still has catwalk activate+dodge in the DEFAULT_IDS
-// roster.)
-const CATWALK_SEED = 4;
+// roster. Then adding fox to DEFAULT_IDS shifted seed-4's collision geometry so
+// the cat no longer reacts there either — repinned to 2, now the lowest seed
+// with catwalk activate+dodge in the fox-inclusive roster.)
+const CATWALK_SEED = 2;
 
 // Deterministic visual verification (spec §13). Drives the engine headless to
 // find skill-activation frames, then renders the canvas at those exact frames.

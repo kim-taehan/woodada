@@ -135,7 +135,12 @@ export class PartsCharacter {
     // zone, it springs into a graceful airborne bound (vs. everyone else slipping).
     // `hop01` arcs 0→1→0 over the cycle for the parabolic jump height.
     const catJumping = this.model.id === 'cat' && !o.reducedMotion && !!o.iceJumping && moving;
-    const style = o.reducedMotion ? 'biped' : this.runStyle;
+    // Locomotion style. The fox's 'sly' is a SIDE-PROFILE four-legged runner (like
+    // the dog's 'gallop'): same leg cycle + travel-direction mirror, so normalise
+    // it to 'gallop' for the animation branches below. The mirror itself keys off
+    // `sideView` (computed from runStyle), so a fox still faces the way it travels
+    // even under reduced motion (when `style` collapses to 'biped' for a still pose).
+    const style = o.reducedMotion ? 'biped' : this.runStyle === 'sly' ? 'gallop' : this.runStyle;
     // Glide (eagle): side-profile flyer. Mirrored to travel direction (like the
     // gallop runners) but with NO leg cycle — it flies. A small steady lift +
     // gentle bob + a forward tilt (set below) read as "leaning into a glide";
@@ -396,11 +401,14 @@ export class PartsCharacter {
 
     // Whole-body pose: face the running direction, lean, tumble when knocked.
     const dir = o.heading >= 0 ? 1 : -1;
-    // Side-profile characters (gallop: dog/cat; glide: eagle) are drawn looking
-    // +x, so mirror them to face the direction of travel — left on the top
-    // straight & curves. Front-facing chibis (biped/scamper) always face the
-    // viewer, so they must NOT mirror (it would flip their face on the far side).
-    this.inner.scale.x = this.runStyle === 'gallop' || this.runStyle === 'glide' ? dir : 1;
+    // Side-profile characters (gallop: dog/cat; glide: eagle; sly: fox/구미호) are
+    // drawn looking +x, so mirror them to face the direction of travel — left on
+    // the top straight & curves, right on the bottom. Front-facing chibis (biped/
+    // scamper) always face the viewer, so they must NOT mirror (it would flip their
+    // face on the far side). Keyed off the raw runStyle (not the reduced-motion
+    // collapsed `style`) so a still frame still faces the right way.
+    const sideView = this.runStyle === 'gallop' || this.runStyle === 'glide' || this.runStyle === 'sly';
+    this.inner.scale.x = sideView ? dir : 1;
     if (o.reducedMotion) this.root.rotation = 0;
     else if (dejected) this.root.rotation = Math.sin(o.clock * 1.6) * 0.05; // small defeated sway, slumped
     else if (celebrating) this.root.rotation = Math.sin(t * 0.7) * 0.16 * amp; // cocky sway

@@ -18,6 +18,7 @@
  */
 
 import { STATS } from './tuning.ts';
+import { SECTION } from './track.ts';
 
 /** Neutral stat → no bias/resistance. */
 const NEUTRAL = 3;
@@ -50,6 +51,22 @@ export function powerBlockDecel(base: number, power: number | undefined): number
 /** baseSpeed bias (engine units) from the speed stat. */
 export function speedBias(speed: number | undefined): number {
   return STATS.speedGain * statDev(speed);
+}
+
+/**
+ * Per-section speed bias (engine units) from the `cornering` stat. A curve specialist
+ * (cornering > 3 → dev > 0) is faster on curves, slower on straights; a straight sprinter
+ * (dev < 0) the reverse. Distance-weighted by the OPPOSITE section's lap-share so the boost
+ * and the cut cancel over a full lap (lap-average pace unchanged → win-rate fairness holds):
+ *   curve   bias = +gain · dev · straightFrac
+ *   straight bias = −gain · dev · curveFrac
+ * → curveBias·curveFrac + straightBias·straightFrac = 0. Pure, no RNG.
+ */
+export function sectionSpeedBias(cornering: number | undefined, onCurve: boolean): number {
+  const dev = statDev(cornering);
+  return onCurve
+    ? STATS.corneringGain * dev * SECTION.straightFrac
+    : -STATS.corneringGain * dev * SECTION.curveFrac;
 }
 
 /**

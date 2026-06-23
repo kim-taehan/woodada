@@ -15,7 +15,8 @@ describe('skill behaviour', () => {
     // here — bristle is covered by its own hook test, mimic by the copy test below.
     // catwalk is now REACTIVE too (no self-activation tick; it only emits 'activate'
     // when it actually dodges an incoming hit) — covered by its own dodge test below.
-    const expected = ['abduct', 'banana', 'icefield', 'roar', 'zoomies'];
+    // illusionClone is a standard tick-driven self-activating skill (eng-fox confirmed).
+    const expected = ['abduct', 'banana', 'icefield', 'illusionClone', 'roar', 'zoomies'];
     const seen = new Set<string>();
     // Full roster ×2 (16 racers) so the spider's abduct has dense targets ahead. The
     // field-size cooldown scaling (×2 at 16) thins skill density, so the seed budget is
@@ -79,10 +80,35 @@ describe('skill behaviour', () => {
     // attributed to the alien (racerId = alien). Same (config, seed) must replay the
     // alien's emitted event stream identically (alien-only sub-stream, stable order).
     const roster = ['alien', 'dog', 'monkey', 'bear', 'spider', 'penguin'];
-    const cfg = () => makeConfig({ characterIds: roster, seed: 21 });
+    const alienId = 'p0';
+    const alienCopies = (r: ReturnType<typeof simulateRace>) =>
+      r.frames.some((f) =>
+        f.events.some((e) => e.racerId === alienId && e.type === 'mimic' && e.variant === 'activate'),
+      );
+
+    // ROBUSTNESS (seed-stable, not a single hand-picked seed): the alien must copy in the
+    // large majority of seeds — whether any ONE seed yields a copy depends on whether a
+    // copyable racer drifts into scan range, which shifts with engine tuning. Sampling
+    // avoids the test going red just because the chosen seed stops producing a copy.
+    const SAMPLE = 20;
+    let copySeeds = 0;
+    for (let s = 0; s < SAMPLE; s++) {
+      if (alienCopies(simulateRace(makeConfig({ characterIds: roster, seed: s }), skills, scoring))) copySeeds++;
+    }
+    expect(copySeeds).toBeGreaterThanOrEqual(15); // mimic reliably fires (≈17/20 in practice)
+
+    // Detailed structural + determinism checks run on the FIRST sampled seed that copies,
+    // so they always have a real mimic activation to assert against (no fixed-seed brittleness).
+    let detailSeed = 0;
+    for (let s = 0; s < SAMPLE; s++) {
+      if (alienCopies(simulateRace(makeConfig({ characterIds: roster, seed: s }), skills, scoring))) {
+        detailSeed = s;
+        break;
+      }
+    }
+    const cfg = () => makeConfig({ characterIds: roster, seed: detailSeed });
     const a = simulateRace(cfg(), skills, scoring);
     const b = simulateRace(cfg(), skills, scoring);
-    const alienId = 'p0';
     const ev = (r: ReturnType<typeof simulateRace>) =>
       r.frames.flatMap((f) =>
         f.events
@@ -112,9 +138,11 @@ describe('skill behaviour', () => {
       expect(copiedBeforeMarker).toBe(false);
     }
 
-    // Every alien event is either the mimic marker, or a copied effect stamped with a
-    // real copyable (self-activating) type — never the alien firing 'bristle'
-    // (reaction-only) or recursively copying 'mimic'.
+    // Every alien event is either the mimic marker, an 'item' event (the alien can pick up
+    // item boxes like anyone — orthogonal to mimic), or a copied effect stamped with a real
+    // copyable (self-activating) type — never the alien firing 'bristle' (reaction-only) or
+    // recursively copying 'mimic'. illusionClone is also excluded from mimic's copy target
+    // (eng-fox confirmed: canCopySkill rejects 'illusionClone').
     const copyable = ['zoomies', 'catwalk', 'banana', 'roar', 'icefield', 'abduct'];
     for (const s of evA) {
       const type = s.split(':')[1];
@@ -123,7 +151,10 @@ describe('skill behaviour', () => {
         expect(variant).toBe('activate'); // the only 'mimic'-typed event is the marker
         continue;
       }
+      if (type === 'item') continue; // item-box pickup — not a mimic copy
       expect(copyable).toContain(type);
+      // mimic must never emit an illusionClone event (copy-blocked in engine).
+      expect(type).not.toBe('illusionClone');
     }
   });
 
@@ -207,28 +238,32 @@ describe('skill behaviour', () => {
     // lands a 'hit' on the cat, it can only be because catwalk was still on cooldown:
     // in that frame's snapshot the cat must show skillCooldownUntil > frame. We must
     // also actually SEE the cat dodge at least once (the mechanic is live).
-    function run(dodgeChance: number) {
+    function run(dodgeChance: number, seed: number) {
       const characters = structuredClone(characterCatalog);
       characters.cat.skill.params = { ...characters.cat.skill.params, dodgeChance };
-      const cfg = { ...makeConfig({ characterIds: ['cat', 'monkey', 'bear', 'penguin'], seed: 11 }), characters };
+      const cfg = { ...makeConfig({ characterIds: ['cat', 'monkey', 'bear', 'penguin'], seed }), characters };
       return simulateRace(cfg, skills, scoring);
     }
-    const always = run(1);
-    const always2 = run(1);
     const ev = (r: ReturnType<typeof run>) =>
       r.frames.flatMap((f) => f.events.map((e) => `${f.frame}:${e.type}:${e.variant}:${e.targetId ?? ''}`));
-    expect(ev(always)).toEqual(ev(always2)); // determinism
+    expect(ev(run(1, 11))).toEqual(ev(run(1, 11))); // determinism (same seed ⇒ same race)
 
+    // Robust over a sample of seeds: whether a given seed even lands a dodgeable hit on the
+    // cat is brittle (lane/overtake dynamics decide it), so the INVARIANT — a hit only lands
+    // while catwalk is on cooldown — is checked in every seed, and we require the dodge
+    // mechanic to be seen live in at least one.
     const catId = 'p0'; // first participant is the cat
     let sawCatwalkDodge = false;
-    for (const f of always.frames) {
-      for (const e of f.events) {
-        if (e.racerId === catId && e.type === 'catwalk' && e.variant === 'dodge') sawCatwalkDodge = true;
-        if (e.targetId !== catId || e.variant !== 'hit') continue;
-        if (!['banana', 'roar', 'item'].includes(e.type)) continue;
-        // chance=1 ⇒ a hit only gets through while catwalk is on cooldown.
-        const cat = f.racers.find((r) => r.id === catId)!;
-        expect(cat.skillCooldownUntil).toBeGreaterThan(f.frame);
+    for (let seed = 0; seed < 20; seed++) {
+      for (const f of run(1, seed).frames) {
+        for (const e of f.events) {
+          if (e.racerId === catId && e.type === 'catwalk' && e.variant === 'dodge') sawCatwalkDodge = true;
+          if (e.targetId !== catId || e.variant !== 'hit') continue;
+          if (!['banana', 'roar', 'item'].includes(e.type)) continue;
+          // chance=1 ⇒ a hit only gets through while catwalk is on cooldown.
+          const cat = f.racers.find((r) => r.id === catId)!;
+          expect(cat.skillCooldownUntil).toBeGreaterThan(f.frame);
+        }
       }
     }
     expect(sawCatwalkDodge).toBe(true);
@@ -406,27 +441,43 @@ describe('skill behaviour', () => {
     // hook's event stream identically (order-stable across simultaneous overtakes),
     // and a hedgehog must never counter (shove/slow) a teammate that passes it.
     const roster = ['hedgehog', 'hedgehog', 'dog', 'monkey', 'penguin', 'bear'];
-    const cfg = () =>
+    const cfgFor = (seed: number) =>
       makeConfig({
         characterIds: roster,
-        seed: 13,
+        seed,
         teamMode: true,
         scoringId: 'teamRankSum',
         teamIds: ['A', 'A', 'B', 'B', 'C', 'C'],
       });
-    const a = simulateRace(cfg(), skills, scoring);
-    const b = simulateRace(cfg(), skills, scoring);
     const ev = (r: ReturnType<typeof simulateRace>) =>
       r.frames.flatMap((f) =>
         f.events
           .filter((e) => e.type === 'bristle')
           .map((e) => `${f.frame}:${e.variant}:${e.racerId}:${e.targetId ?? ''}`),
       );
-    const evA = ev(a);
-    expect(evA).toEqual(ev(b)); // hook order is deterministic
+    const bristleHits = (r: ReturnType<typeof simulateRace>) => ev(r).some((s) => s.includes(':hit:'));
 
-    // Bristle must have actually engaged via the hook (real overtake counters).
-    expect(evA.some((s) => s.includes(':hit:'))).toBe(true);
+    // ROBUSTNESS (seed-stable, not a single hand-picked seed): whether bristle lands a
+    // 'hit' on a given seed depends on whether a non-teammate actually overtakes the
+    // hedgehog, which shifts with engine tuning. Sample many seeds so the test asserts the
+    // mechanic works *in general* rather than going red when one seed stops producing a hit.
+    const SAMPLE = 20;
+    let hitSeeds = 0;
+    let detailSeed = -1;
+    for (let s = 0; s < SAMPLE; s++) {
+      if (bristleHits(simulateRace(cfgFor(s), skills, scoring))) {
+        hitSeeds++;
+        if (detailSeed < 0) detailSeed = s;
+      }
+    }
+    expect(hitSeeds).toBeGreaterThanOrEqual(8); // bristle engages in most seeds (≈11/20 in practice — overtakes are rarer once the inner-rail pull clusters the field)
+
+    // Detailed determinism + team-exclusion checks run on the first sampled seed that hits,
+    // so they always have a real bristle hit to assert against (no fixed-seed brittleness).
+    const cfg = () => cfgFor(detailSeed);
+    const a = simulateRace(cfg(), skills, scoring);
+    const b = simulateRace(cfg(), skills, scoring);
+    expect(ev(a)).toEqual(ev(b)); // hook order is deterministic
 
     // Team-exclusion: a bristle 'hit' target must never be the hedgehog's teammate.
     const part = cfg().participants;

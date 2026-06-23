@@ -601,6 +601,62 @@ export class FxLayer {
     this.push(tag, { bornAt: now, ttl: 0.8, vx: 0, vy: -30 });
   }
 
+  /**
+   * 🦊 Gumiho conjure smoke: a puff of pale purple-grey smoke billowing up off a
+   * spot, so a decoy "poofing into being" (clone spawn) and the owner's teleport
+   * arrival ("스르르…퐁!") both read as a magical poof. A few ⭐ glints ride the
+   * smoke so it feels fox-magic, not just dust. `tint` accents the magic glow.
+   * Decorative only.
+   */
+  smoke(x: number, y: number, tint: number, now: number): void {
+    // A bright magic flash at the source.
+    const flash = new Graphics().circle(0, 0, 18).fill({ color: 0xffffff, alpha: 0.85 });
+    flash.position.set(x, y - 14);
+    flash.blendMode = 'add';
+    this.push(flash, { bornAt: now, ttl: 0.28, grow: 1.6 });
+    // Billowing smoke puffs drifting up + out (pale lavender-grey).
+    for (let i = 0; i < 9; i++) {
+      const r = 10 + (i % 4) * 5;
+      const shade = i % 2 ? 0xc9b8e0 : 0xe2d6f2;
+      const g = new Graphics().circle(0, 0, r).fill({ color: shade, alpha: 0.7 });
+      g.position.set(x + (i - 4) * 6, y - 4);
+      this.push(g, { bornAt: now, ttl: 0.8, vx: (i - 4) * 26, vy: -40 - (i % 3) * 14, grow: 1.6 });
+    }
+    // ⭐ magic glints riding the poof so it reads as fox illusion, not dust.
+    for (let i = 0; i < 6; i++) {
+      const g = new Text({ text: i % 2 ? '⭐' : '✨', style: { fontSize: 18 + (i % 2) * 6 } });
+      g.anchor.set(0.5);
+      const a = (i / 6) * Math.PI * 2;
+      g.position.set(x + Math.cos(a) * 18, y - 14 + Math.sin(a) * 16);
+      g.tint = tint;
+      this.push(g, { bornAt: now, ttl: 0.8, vx: Math.cos(a) * 40, vy: Math.sin(a) * 40 - 24, spin: i % 2 ? 5 : -5 });
+    }
+  }
+
+  /**
+   * 🦊 Decoy pop: a quick "퐁!" burst when a clone absorbs a disruption (clonepop)
+   * or is consumed. A small lavender ring snapping out + a couple of smoke wisps +
+   * a "퐁!" tag, so the decoy vanishing reads as a soft magical pop (distinct from
+   * a stun's dizzy stars). Decorative only.
+   */
+  cloudPop(x: number, y: number, tint: number, now: number): void {
+    const ring = new Graphics().circle(0, 0, 14).stroke({ color: tint, width: 7, alpha: 1 });
+    ring.position.set(x, y - 16);
+    ring.blendMode = 'add';
+    this.push(ring, { bornAt: now, ttl: 0.4, grow: 2.6 });
+    for (let i = 0; i < 6; i++) {
+      const r = 7 + (i % 3) * 4;
+      const g = new Graphics().circle(0, 0, r).fill({ color: 0xddd0ef, alpha: 0.7 });
+      g.position.set(x, y - 12);
+      const a = (i / 6) * Math.PI * 2;
+      this.push(g, { bornAt: now, ttl: 0.5, vx: Math.cos(a) * 70, vy: Math.sin(a) * 70 - 18, grow: 1.2 });
+    }
+    const tag = new Text({ text: '퐁!', style: { fontSize: 24, fontWeight: '900', fill: 0xb07bd6, stroke: { color: 0xffffff, width: 4 } } });
+    tag.anchor.set(0.5);
+    tag.position.set(x, y - 40);
+    this.push(tag, { bornAt: now, ttl: 0.7, vx: 0, vy: -28 });
+  }
+
   update(now: number, dt: number): void {
     const live: Particle[] = [];
     for (const p of this.particles) {

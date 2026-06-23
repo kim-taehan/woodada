@@ -34,9 +34,17 @@ describe('engine determinism', () => {
   });
 
   it('more laps make a proportionally longer race', () => {
-    const one = simulateRace(makeConfig({ characterIds: allThree, seed: 3, laps: 1 }), skills, scoring);
-    const three = simulateRace(makeConfig({ characterIds: allThree, seed: 3, laps: 3 }), skills, scoring);
-    expect(three.frames.length).toBeGreaterThan(one.frames.length * 2.4);
+    // Summed over several seeds so the per-lap "condition"/jitter variance in any single seed
+    // can't flip this scale-sanity check (a 3-lap race runs ~2.6× a 1-lap one). Reproducibility
+    // itself is covered by the same-seed determinism tests above; this only asserts the rough
+    // proportionality holds in aggregate.
+    let oneTot = 0;
+    let threeTot = 0;
+    for (let seed = 0; seed < 6; seed++) {
+      oneTot += simulateRace(makeConfig({ characterIds: allThree, seed, laps: 1 }), skills, scoring).frames.length;
+      threeTot += simulateRace(makeConfig({ characterIds: allThree, seed, laps: 3 }), skills, scoring).frames.length;
+    }
+    expect(threeTot).toBeGreaterThan(oneTot * 2.4);
   });
 
   // Non-elimination only: death-match breaks the "everyone crosses the line"

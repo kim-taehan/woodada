@@ -72,6 +72,30 @@ export interface SkillContext {
    * BEFORE running the copied handler, only for a target it can actually copy.
    */
   canCopySkill(copiedType: string): boolean;
+  /**
+   * Gumiho illusionClone: ask the engine to spawn non-scoring decoys for `self`.
+   * Each spec is an absolute progress offset from the owner (positive = ahead,
+   * negative = behind) and a `lead` flag (the forward-most decoy = teleport
+   * reference). `durationMs` sets the despawn timer. The engine owns the decoy
+   * list (decoys are NOT racers) — the handler only declares them. No-op /
+   * returns 0 when the owner already has live decoys (one set at a time).
+   * Returns the number of decoys actually created.
+   *
+   * `laneOffset` is the decoy's lane delta from the owner (0 = inline, directly in
+   * front/behind on the same lane; the engine re-anchors lane = owner.lane +
+   * laneOffset every frame and clamps into [0,1]). The progress `offset` (and thus
+   * the lead decoy's teleport distance) is independent of the lane offset, so
+   * collision-reach and teleport strength tune separately.
+   */
+  spawnDecoys(specs: { offset: number; laneOffset: number; lead: boolean }[], durationMs: number): number;
+  /**
+   * Gumiho illusionClone defence: if `target` is a gumiho with ≥1 live decoy,
+   * consume the nearest one (it pops, emitting `clonepop`) and return true — the
+   * disruption is absorbed and should NOT land on the owner. Returns false when
+   * the target has no decoy to sacrifice (the disruption proceeds normally).
+   * Mirrors `tryDodge`'s call-site shape so each disruption handler adds one line.
+   */
+  tryDecoyGuard(target: RacerState): boolean;
 }
 
 export type SkillHandler = (ctx: SkillContext) => void;

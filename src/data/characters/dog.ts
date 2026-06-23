@@ -23,6 +23,8 @@ export const dog: CharacterData = {
   // Zoomies mascot: fastest cruise, but flimsy in traffic (easy to block/shove).
   speed: 5,
   power: 1,
+  cornering: 1, // straight sprinter — surges down the straights, drops back through the bends
+
   skill: {
     type: 'zoomies',
     cooldownMs: [3000, 6000],

@@ -48,6 +48,10 @@ export const bananaHandler: SkillHandler = (ctx) => {
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;
   }
+  if (ctx.tryDecoyGuard(target)) { // gumiho decoy takes the hit instead (퐁!)
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
   if (ctx.tryDodge(target)) {
     // catwalk slips the banana — dodge gag (renderer shows the target's line).
     ctx.emit({ variant: 'dodge', targetId: target.id });

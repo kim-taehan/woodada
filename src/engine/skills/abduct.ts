@@ -66,6 +66,10 @@ export const abductHandler: SkillHandler = (ctx) => {
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;
   }
+  if (ctx.tryDecoyGuard(target)) { // gumiho decoy takes the web instead (퐁!)
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
   if (ctx.tryDodge(target)) { // catwalk slips the web — dodge gag
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;

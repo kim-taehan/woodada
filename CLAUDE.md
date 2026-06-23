@@ -75,3 +75,4 @@ tests/unit/    Vitest   tests/e2e/  Playwright(스크린샷은 __screens__/)
 | 2026-06-17 | 초기 구성 (4 에이전트 + 오케스트레이터) | 전체 | 하네스 신규 구축 |
 | 2026-06-18 | shell-dev 에이전트 추가 | agents/shell-dev.md, woodada-build | 셸/DOM UI 경계 담당 부재(팀전 UI 작업 중 발견) |
 | 2026-06-18 | balance-tuner 에이전트 추가 | agents/balance-tuner.md, woodada-build | 밸런스를 engine-dev에서 분리, 개인/팀/릴레이 교차 조율 전담 요청 |
+| 2026-06-22 | 모델 분배 규칙 도입 (기계적=Sonnet, 복잡·위험=Opus) | woodada-build | 주간 사용 한도(특히 Opus 캡) 절약, 기계적 작업은 품질차 미미 |

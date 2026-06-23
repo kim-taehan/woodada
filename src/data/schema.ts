@@ -60,6 +60,15 @@ export interface CharacterData {
   speed?: number;
   power?: number;
   /**
+   * Cornering specialty on the same 1–5 scale (midpoint 3 = no preference). Splits a racer's
+   * pace between track sections: a low `cornering` is a STRAIGHT sprinter (faster on the
+   * straights, slower through the bends), a high one is a CURVE specialist (the reverse). The
+   * boost on one section is mirrored by an equal cut on the other (weighted by section length),
+   * so the lap-average pace — and thus win-rate fairness — is unchanged; it just makes the lead
+   * trade hands every straight↔curve transition. Default 3 (omitted) → no section preference.
+   */
+  cornering?: number;
+  /**
    * Flies/hovers above the track instead of touching ground. Read by the engine
    * to exempt the racer from ground-borne environmental effects (e.g. the
    * penguin icefield slows runners but can't touch something that floats — no

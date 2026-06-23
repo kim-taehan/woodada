@@ -128,6 +128,12 @@ export interface RacerState {
    */
   power?: number;
   /**
+   * Cornering specialty (1..5, median 3) copied from CharacterData at init. Read each frame to
+   * bias speed by track section — fast on straights & slow on curves (low) or vice-versa (high),
+   * netting to zero over a lap (see engine/stats.ts sectionSpeedBias). Undefined → no preference.
+   */
+  cornering?: number;
+  /**
    * Relay-only: this racer's leg index within its team (0-based, participation
    * order; anchor = last). The renderer reads this on the team's active
    * (`running`) racer to show "n/total 주자". Undefined in non-relay races.
@@ -172,7 +178,15 @@ export interface SkillEvent {
     | 'activate' | 'hit' | 'dodge' | 'wake' | 'boost' | 'slip' | 'handoff'
     | 'star' | 'lightning' | 'shell' | 'shellhit' | 'fart'
     /** Death-match: this racer was just eliminated at a lap boundary. */
-    | 'out';
+    | 'out'
+    /** Gumiho illusionClone: decoys spawned (racerId = the gumiho). */
+    | 'clone'
+    /** A decoy bumped a racer → that racer is stunned (racerId = the victim, line "어?"). */
+    | 'clonehit'
+    /** A decoy absorbed an incoming disruption for the gumiho → it pops ("퐁!"). */
+    | 'clonepop'
+    /** Gumiho teleports forward to the lead decoy when the clones expire ("스르르…퐁!"). */
+    | 'teleport';
   targetId?: RacerId;
   /** Speech-bubble text (from character.lines). */
   line?: string;
@@ -204,6 +218,44 @@ export interface IceZoneState {
   ownerId: RacerId;
 }
 
+/**
+ * Gumiho illusionClone decoy (분신). A NON-scoring entity: it is never a racer,
+ * never enters the rank/scoring/overtake/item systems, and only carries
+ * progress + lane so the renderer can draw it. A decoy holds a fixed forward
+ * `offset` from its owner (re-anchored each frame) but a fixed SPREAD `lane`
+ * deliberately fanned off the owner's lane so it sweeps into side-traffic. Decoys
+ * bump rivals (a brief stun), absorb incoming disruptions aimed at the owner, and
+ * despawn after `cloneDuration` (the owner may teleport to the lead decoy at that
+ * moment). Position is absolute progress (not lap-wrapped), matching
+ * RacerState.progress.
+ */
+export interface DecoyState {
+  id: string;
+  /** The gumiho this decoy belongs to. */
+  ownerId: RacerId;
+  /** Fixed progress offset from the owner (+ ahead / − behind); held for life. */
+  offset: number;
+  /**
+   * Fixed LANE offset from the owner, held for life. 0 = inline (the decoy tracks
+   * the owner's lane every frame, sitting directly in front/behind on the same
+   * line — the default). >0/<0 keeps the decoy laterally fanned off the owner onto
+   * side-traffic while still following the owner's lane drift.
+   */
+  laneOffset: number;
+  /** Absolute forward distance (owner.progress + offset, clamped ≥ 0). */
+  progress: number;
+  /** 0 = inside .. 1 = outside, continuous. Re-anchored to owner.lane + laneOffset. */
+  lane: number;
+  /** Frame the decoy was spawned. */
+  spawnedAt: number;
+  /** Frame index at which the decoy auto-despawns. */
+  expireFrame: number;
+  /** The forward-most decoy (the teleport reference point on expiry). */
+  lead: boolean;
+  /** Cleared to false the moment a collision / absorption consumes the decoy. */
+  alive: boolean;
+}
+
 export interface EngineFrame {
   frame: number;
   /** ms since race start (frame * dtMs). */
@@ -216,6 +268,8 @@ export interface EngineFrame {
   boxes: ItemBoxState[];
   /** Active ice zones this frame (penguin icefield; for the renderer to draw). */
   iceZones: IceZoneState[];
+  /** Live illusionClone decoys this frame (gumiho; for the renderer to draw). */
+  decoys: DecoyState[];
   /** True once every racer has finished. */
   finished: boolean;
 }

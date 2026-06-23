@@ -5,12 +5,14 @@
  */
 
 import { createRng, type Rng } from './prng.ts';
-import { applyOvertake } from './overtake.ts';
-import { speedBias, powerEaseSlow } from './stats.ts';
-import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD } from './tuning.ts';
+import { applyOvertake, laneDistanceFactor } from './overtake.ts';
+import { speedBias, powerEaseSlow, sectionSpeedBias } from './stats.ts';
+import { isCurve, lapPhase } from './track.ts';
+import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION } from './tuning.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
+  type DecoyState,
   type EngineFrame,
   type RaceConfig,
   type RaceResult,
@@ -45,6 +47,18 @@ const ITEM = {
 // instant a racer activates its own skill (so it isn't interrupted mid-cast).
 const SKILL_INVULN_FRAMES = Math.round(300 / DT_MS);
 
+// Gumiho illusionClone decoys (NON-scoring). A decoy bumps a rival within this
+// progress + lane proximity, stunning it once (then the decoy pops). Collision is
+// purely geometric (no RNG): same (config, seed) → identical bumps.
+const DECOY = {
+  collideDist: 10, // progress units (≈ ⅔ body-length; reaches adjacent traffic)
+  collideLane: 0.18, // lane proximity (≈ OVERTAKE.laneNear)
+  // A bumped racer is briefly immune to *further* decoy bumps, so one gumiho's
+  // clones can't chain-stun the same victims lap after lap (anti-accumulation,
+  // mirrors banana's bananaImmuneUntil). Keeps the field from over-rebunching.
+  rebumpImmuneMs: 1200,
+} as const;
+
 interface ItemBox {
   id: string;
   progress: number;
@@ -78,6 +92,8 @@ interface Internals {
   racers: RacerState[];
   racerRng: Map<RacerId, Rng>;
   skillRng: Map<RacerId, Rng>;
+  /** Per-racer stream for the per-lap "condition" (form) roll. */
+  conditionRng: Map<RacerId, Rng>;
   /** Stable random key per racer to break processing-order ties fairly. */
   procKey: Map<RacerId, number>;
   /** Per-racer RNG stream for item-box effects. */
@@ -92,6 +108,9 @@ interface Internals {
   /** Active penguin ice zones (icefield). */
   iceZones: IceZone[];
   iceCounter: number;
+  /** Live gumiho illusionClone decoys (NON-scoring — never racers). */
+  decoys: DecoyState[];
+  decoyCounter: number;
   finishedCount: number;
   /**
    * Relay member queues (spec §5): teamId → member racerIds in participation
@@ -207,6 +226,7 @@ export function createRaceEngine(
         speed: 0,
         baseSpeed,
         power: stats?.power,
+        cornering: stats?.cornering,
         leg,
         phase,
         facing: 0,
@@ -218,6 +238,7 @@ export function createRaceEngine(
     }),
     racerRng: new Map(),
     skillRng: new Map(),
+    conditionRng: new Map(),
     procKey: new Map(),
     itemRng: new Map(),
     boxRng: rng.fork('boxes'),
@@ -226,6 +247,8 @@ export function createRaceEngine(
     boxCounter: 0,
     iceZones: [],
     iceCounter: 0,
+    decoys: [],
+    decoyCounter: 0,
     finishedCount: 0,
     legQueues,
     teamLeg: new Map([...legQueues.keys()].map((t) => [t, 0])),
@@ -241,6 +264,7 @@ export function createRaceEngine(
     internal.racerRng.set(p.id, rng.fork(`racer:${p.id}`));
     internal.skillRng.set(p.id, rng.fork(`skill:${p.id}`));
     internal.itemRng.set(p.id, rng.fork(`item:${p.id}`));
+    internal.conditionRng.set(p.id, rng.fork(`condition:${p.id}`));
     internal.procKey.set(p.id, rng.next());
   }
 
@@ -367,7 +391,10 @@ export function createRaceEngine(
         return cid ? config.characters[cid]?.skill.params : undefined;
       },
       // Pure check (no dispatch / RNG): copyable = registered tick handler, not mimic.
-      canCopySkill: (copiedType: string) => copiedType !== 'mimic' && skills.get(copiedType) !== undefined,
+      // illusionClone is banned from being mimicked (the decoy kit is too strong to
+      // hand the alien) — treated like 'mimic' itself (uncopyable).
+      canCopySkill: (copiedType: string) =>
+        copiedType !== 'mimic' && copiedType !== 'illusionClone' && skills.get(copiedType) !== undefined,
       tryDodge: (target: RacerState) => tryCatwalkDodge(target, events),
       addIceZone: (z: Parameters<SkillContext['addIceZone']>[0]) => {
         const start = ((z.startProgress % config.trackLength) + config.trackLength) % config.trackLength;
@@ -381,6 +408,36 @@ export function createRaceEngine(
           slowFactor: z.slowFactor,
         });
       },
+      // Gumiho illusionClone: register non-scoring decoys for `self`. One set per
+      // owner at a time — refuse (return 0) while live decoys remain.
+      spawnDecoys: (specs: { offset: number; laneOffset: number; lead: boolean }[], durationMs: number) => {
+        if (internal.decoys.some((d) => d.ownerId === self.id && d.alive)) return 0;
+        const expireFrame = frame + Math.round(durationMs / DT_MS);
+        for (const s of specs) {
+          internal.decoys.push({
+            id: `decoy:${self.id}:${internal.decoyCounter++}`,
+            ownerId: self.id,
+            offset: s.offset,
+            laneOffset: s.laneOffset,
+            progress: Math.max(0, self.progress + s.offset),
+            lane: Math.max(0, Math.min(1, self.lane + s.laneOffset)), // inline (0) or fanned
+            spawnedAt: frame,
+            expireFrame,
+            lead: s.lead,
+            alive: true,
+          });
+        }
+        return specs.length;
+      },
+      // Gumiho illusionClone defence: a live decoy of `target` intercepts an
+      // incoming disruption (pops, emitting clonepop) instead of the owner.
+      tryDecoyGuard: (target: RacerState) => {
+        const shield = internal.decoys.find((d) => d.ownerId === target.id && d.alive);
+        if (!shield) return false;
+        shield.alive = false;
+        events.push({ frame, racerId: target.id, type: 'illusionClone', variant: 'clonepop', line: '퐁!' });
+        return true;
+      },
     };
     const ctx: SkillContext = {
       ...shared,
@@ -393,6 +450,7 @@ export function createRaceEngine(
       // returns whether the copied handler actually fired (emitted an event).
       invokeSkill: (copiedType, paramsOverride) => {
         if (copiedType === 'mimic') return false; // recursion guard
+        if (copiedType === 'illusionClone') return false; // banned: too strong to mimic
         const copiedTick = skills.get(copiedType);
         if (!copiedTick) return false; // reaction-only (e.g. 'bristle') or unknown → uncopyable
         const copiedBefore = events.length;
@@ -548,6 +606,43 @@ export function createRaceEngine(
     return n > 0 ? sum / n : 0;
   }
 
+  /**
+   * Forward personal-zone clamp (정면 통과 불가): after every racer has advanced, no racer may
+   * end the frame having passed THROUGH another on the same lane band that it STARTED the frame
+   * behind — it is pulled back to sit at most `ZONE.minGap` behind that rival (and never shoved
+   * back past where it began the frame, so a fully-boxed racer just halts rather than reversing).
+   * Overtaking therefore requires going around (a different lane, paying the distLoss), never
+   * clipping straight through. `prev` is the pre-advance progress snapshot. Iterates the stable
+   * racer array; pure position math, no RNG → deterministic.
+   */
+  function resolveForwardZones(prev: Map<RacerId, number>): void {
+    for (const self of internal.racers) {
+      if (
+        self.phase === 'finished' ||
+        self.phase === 'waiting' ||
+        self.phase === 'eliminated' ||
+        self.phase === 'stunned'
+      ) {
+        continue;
+      }
+      const selfPrev = prev.get(self.id)!;
+      let cap = Infinity;
+      for (const other of internal.racers) {
+        if (other.id === self.id) continue;
+        if (other.phase === 'finished' || other.phase === 'waiting' || other.phase === 'eliminated') continue;
+        // Only rivals self was genuinely BEHIND at frame start are "blockers" it must not pass
+        // through (so the straight start line, where everyone is level, produces no clamp).
+        if (prev.get(other.id)! <= selfPrev) continue;
+        // Same lane band only — a racer on a different lane is going around (the legal pass).
+        if (Math.abs(other.lane - self.lane) > OVERTAKE.laneNear) continue;
+        const c = other.progress - ZONE.minGap;
+        if (c < cap) cap = c;
+      }
+      if (cap < selfPrev) cap = selfPrev; // halt short, never reverse past the frame start
+      if (self.progress > cap) self.progress = cap;
+    }
+  }
+
   function advance(self: RacerState, events: SkillEvent[]): void {
     if (self.phase === 'finished' || self.phase === 'waiting' || self.phase === 'eliminated') return;
     if (self.phase === 'stunned') {
@@ -555,8 +650,20 @@ export function createRaceEngine(
       return;
     }
 
+    // Track section (straight vs curve) at the racer's current lap position. Drives the
+    // cornering speed split AND the curve-only inside advantage below.
+    const onCurve = isCurve(lapPhase(self.progress, config.trackLength));
+    // Per-lap "condition" (form): on each new lap, roll a fresh 1..steps from the racer's own
+    // seeded stream and scale this lap's cruise speed by it (centred, so it nets out → fair).
+    const lapIdx = Math.floor(self.progress / config.trackLength);
+    if (lapIdx !== Number(self.skill.conditionLap ?? -1)) {
+      self.skill.conditionLap = lapIdx;
+      const roll = 1 + internal.conditionRng.get(self.id)!.int(CONDITION.steps); // 1..steps
+      self.skill.condition = 1 + (roll - CONDITION.mid) * CONDITION.gain;
+    }
+    const condition = Number(self.skill.condition ?? 1);
     const jitter = 1 + internal.racerRng.get(self.id)!.range(-SPEED_JITTER, SPEED_JITTER);
-    self.speed = self.baseSpeed * jitter + (self.skill.burst ?? 0);
+    self.speed = (self.baseSpeed + sectionSpeedBias(self.cornering, onCurve)) * jitter * condition + (self.skill.burst ?? 0);
 
     self.speed *= catchupFactor(self);
 
@@ -568,7 +675,12 @@ export function createRaceEngine(
       self.speed *= powerEaseSlow(Number(self.skill.slowMul ?? 1), self.power);
     }
 
-    self.progress += self.speed;
+    // Lane → distance, CURVE-ONLY: the outer rail is a longer arc only through the bends, so
+    // the distance penalty applies on curves and the straights are lane-neutral (passing out
+    // wide there is free — a natural overtaking zone). `progress` accumulates the speed scaled
+    // by this factor, staying a *corrected* distance metric (real path travelled) that ranking /
+    // finish / death-match read directly and fairly across lanes.
+    self.progress += self.speed * laneDistanceFactor(self.lane, onCurve);
 
     // Death-match: nobody "finishes" by crossing a goal line — the race ends only
     // by elimination (handled in applyEliminations / isRaceFinished). Racers keep
@@ -701,6 +813,140 @@ export function createRaceEngine(
 
       internal.elimLapTarget++;
     }
+  }
+
+  /**
+   * Gumiho illusionClone decoy update (runs once per frame, AFTER advance so the
+   * owner's progress is final). Pure + deterministic (no RNG here — offsets were
+   * drawn at spawn time):
+   *   1. Re-anchor each live decoy to its owner (decoys move in lock-step, holding
+   *      their spawn-time offset). A finished/eliminated/waiting owner kills its
+   *      decoys instantly.
+   *   2. Collision stun: a live decoy within (progress + lane) proximity of a
+   *      non-owner active racer stuns that racer for `collisionStun` ("어?"), then
+   *      the decoy pops. star / skill i-frames are respected (no stun, no pop).
+   *      Decoys are scanned in list (spawn) order; victims in stable procKey order.
+   *   3. Expiry: at `expireFrame`, if the LEAD decoy is still alive AND ahead of the
+   *      owner, the owner teleports up to it (a gentle forward hop, "스르르…퐁!").
+   *      Then every one of that owner's decoys despawns.
+   * Dead/expired decoys are pruned at the end.
+   */
+  function updateDecoys(events: SkillEvent[]): void {
+    if (internal.decoys.length === 0) return;
+
+    for (const d of internal.decoys) {
+      if (!d.alive) continue;
+      const owner = internal.racers.find((r) => r.id === d.ownerId);
+      // Owner gone / parked / out → decoys vanish (no teleport from a dead owner).
+      if (
+        !owner ||
+        owner.phase === 'finished' ||
+        owner.phase === 'waiting' ||
+        owner.phase === 'eliminated'
+      ) {
+        d.alive = false;
+        continue;
+      }
+      // Forward progress. While the owner runs normally the decoy re-anchors to the
+      // owner (owner.progress + spawn offset), keeping the formation tight. But a
+      // STUNNED owner is frozen — the decoy must keep running on its OWN, so it instead
+      // advances by the owner's cruise speed (baseSpeed). The front decoy thus pulls
+      // further ahead during the stun; the expiry teleport (to the lead decoy) then lets
+      // the body catch up — an intended stun-escape synergy. The decoy NEVER moves
+      // backward: re-anchoring is clamped to its current progress, so a decoy that
+      // pulled ahead during a stun keeps that lead after the owner recovers (no snap
+      // back) until the owner's own advance catches the formation up to it.
+      // Deterministic: baseSpeed is fixed per racer, no RNG.
+      const anchored = owner.phase === 'stunned' ? d.progress + owner.baseSpeed : owner.progress + d.offset;
+      d.progress = Math.max(d.progress, anchored, 0);
+      // Lane always tracks the owner's lane (+ fixed offset), even during a stun.
+      d.lane = Math.max(0, Math.min(1, owner.lane + d.laneOffset));
+    }
+
+    // Collision stun: each live decoy bumps EXACTLY ONE racer — the single nearest
+    // qualifying rival (NOT an AoE / multi-target pulse). The decoy is consumed on
+    // that one bump. "Nearest" = smallest progress gap; procKey tie-break (stable,
+    // draw-order independent, no RNG) so the pick is deterministic.
+    const stunFrames = (ms: number) => Math.round(ms / DT_MS);
+    for (const d of internal.decoys) {
+      if (!d.alive) continue;
+      const owner = internal.racers.find((r) => r.id === d.ownerId);
+      if (!owner) continue;
+      const collisionMs = Number(config.characters[owner.characterId]?.skill.params.collisionStun ?? 500);
+      let victim: RacerState | undefined;
+      let victimGap = Infinity;
+      for (const v of internal.racers) {
+        if (v.id === d.ownerId) continue;
+        if (
+          v.phase === 'finished' ||
+          v.phase === 'waiting' ||
+          v.phase === 'stunned' ||
+          v.phase === 'eliminated'
+        )
+          continue;
+        const gap = Math.abs(v.progress - d.progress);
+        if (gap > DECOY.collideDist) continue;
+        if (Math.abs(v.lane - d.lane) > DECOY.collideLane) continue;
+        // Respect invulnerability (consistent with every other disruption source).
+        if ((v.skill.starUntil ?? 0) > frame) continue;
+        if ((v.skill.skillInvulnUntil ?? 0) > frame) continue;
+        // Anti-accumulation: a recently-bumped racer is briefly immune to further
+        // decoy bumps (mirrors banana's anti-stack) so a gumiho's clones can't
+        // chain-stun the same victims lap after lap and over-rebunch the field.
+        if (frame < Number(v.skill.decoyImmuneUntil ?? 0)) continue;
+        // Keep the nearest qualifying rival (procKey tie-break for determinism).
+        if (
+          gap < victimGap ||
+          (gap === victimGap && victim && internal.procKey.get(v.id)! < internal.procKey.get(victim.id)!)
+        ) {
+          victim = v;
+          victimGap = gap;
+        }
+      }
+      if (victim) {
+        // Bump! Stun the single nearest victim and consume this decoy (one bump).
+        victim.phase = 'stunned';
+        victim.speed = 0;
+        victim.skill.burst = 0;
+        victim.skill.effectUntil = frame + stunFrames(collisionMs);
+        victim.skill.decoyImmuneUntil = frame + stunFrames(collisionMs) + stunFrames(DECOY.rebumpImmuneMs);
+        events.push({ frame, racerId: victim.id, type: 'illusionClone', variant: 'clonehit', line: '어?' });
+        d.alive = false; // decoy spent — it can't bump a second racer
+      }
+    }
+
+    // Expiry → teleport: when an owner's decoys reach expireFrame, the owner hops up
+    // to its LEAD decoy if that decoy is still alive and ahead. Group by owner so the
+    // teleport happens once per owner set.
+    const expiringOwners = new Set<RacerId>();
+    for (const d of internal.decoys) {
+      if (frame >= d.expireFrame) expiringOwners.add(d.ownerId);
+    }
+    for (const ownerId of expiringOwners) {
+      const owner = internal.racers.find((r) => r.id === ownerId);
+      const lead = internal.decoys.find(
+        (d) => d.ownerId === ownerId && d.lead && d.alive && frame >= d.expireFrame,
+      );
+      if (
+        owner &&
+        lead &&
+        owner.phase !== 'finished' &&
+        owner.phase !== 'waiting' &&
+        owner.phase !== 'eliminated' &&
+        lead.progress > owner.progress
+      ) {
+        // Hop all the way to the lead decoy's position. With inline 1-body-length
+        // spacing the lead sits ≈1 body-length ahead, so the body advances by that
+        // gap (≈57u ≈ 7 마디) — the confirmed "lead-decoy teleport" forward jump.
+        owner.progress = lead.progress;
+        events.push({ frame, racerId: owner.id, type: 'illusionClone', variant: 'teleport', line: '스르르…퐁!' });
+      }
+      // Despawn the whole expiring set for this owner.
+      for (const d of internal.decoys) if (d.ownerId === ownerId && frame >= d.expireFrame) d.alive = false;
+    }
+
+    // Prune dead / despawned decoys.
+    internal.decoys = internal.decoys.filter((d) => d.alive);
   }
 
   /** True if `lapPos` (0..trackLength) lies inside the zone, accounting for wrap. */
@@ -865,6 +1111,8 @@ export function createRaceEngine(
       events,
       boxes: boxStates(),
       iceZones: iceStates(),
+      // Immutable copy of live decoys (safe to retain for replay; renderer-facing).
+      decoys: internal.decoys.filter((d) => d.alive).map((d) => ({ ...d })),
       finished: isRaceFinished(),
     };
   }
@@ -951,10 +1199,15 @@ export function createRaceEngine(
       const prevProgress = new Map<RacerId, number>();
       for (const self of order) prevProgress.set(self.id, self.progress);
       for (const self of order) advance(self, events);
+      resolveForwardZones(prevProgress);
       fireOvertakeHooks(prevProgress, events);
 
       // Death-match: knock out one racer at each lap boundary the leader crosses.
       applyEliminations(events);
+
+      // Gumiho illusionClone: move decoys with their owner, bump rivals (stun),
+      // and run expiry teleport. After advance/elimination so progress is final.
+      updateDecoys(events);
 
       updateBoxes(order, events);
 

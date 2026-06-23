@@ -8,6 +8,7 @@ import { icefieldHandler } from './icefield.ts';
 import { bristleHandler } from './bristle.ts';
 import { abductHandler } from './abduct.ts';
 import { mimicHandler } from './mimic.ts';
+import { illusionCloneHandler } from './illusionClone.ts';
 
 /** Register skill handlers (spec §2.4 pool). */
 export function registerDefaultSkills(r: SkillRegistry): void {
@@ -19,6 +20,7 @@ export function registerDefaultSkills(r: SkillRegistry): void {
   r.register('bristle', bristleHandler);
   r.register('abduct', abductHandler);
   r.register('mimic', mimicHandler);
+  r.register('illusionClone', illusionCloneHandler);
 }
 
 export function createDefaultSkillRegistry(): SkillRegistry {
