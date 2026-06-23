@@ -213,10 +213,15 @@ export function buildSetupScreen(store: RoomStore, onStart: () => void): HTMLEle
   const guideBtn = el('button', { class: 'guide-btn', textContent: '📖 게임 가이드 (캐릭터·아이템)' });
   guideBtn.addEventListener('click', () => openGuide('characters'));
 
+  const previewBtn = el('button', { class: 'preview-btn', textContent: '📸 캐릭터 미리보기' });
+  previewBtn.addEventListener('click', () => {
+    window.__woodadaPreview?.open();
+  });
+
   const setupEl = el('div', { class: 'setup' }, [
     el('h1', { class: 'title' }, [el('span', { class: 'emoji', textContent: '🐾 ' }), '우다다']),
     el('p', { class: 'subtitle', textContent: '모드 고르고 → 이름 넣고 → 출발!' }),
-    el('div', { class: 'guide-row' }, [guideBtn]),
+    el('div', { class: 'guide-row' }, [previewBtn, guideBtn]),
     el('div', { class: 'mode-row' }, [indivBtn, teamBtn]),
     el('div', { class: 'opts-row' }, [
       el('span', { class: 'opt-group' }, [el('label', { textContent: '바퀴 수' }), lapsSelect]),

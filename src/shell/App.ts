@@ -179,10 +179,32 @@ export class App {
     race.append(overlay);
   }
 
+  private previewOverlay: HTMLElement | null = null;
+
   private onResize = (): void => {
     if (!this.renderer) return;
     this.renderer.resize(this.root.clientWidth, this.root.clientHeight);
   };
+
+  showCharacterPreview(): void {
+    if (this.previewOverlay) return;
+
+    import('./screens/CharacterPreviewScreen').then(({ buildCharacterPreviewScreen }) => {
+      const preview = buildCharacterPreviewScreen(() => {
+        this.hideCharacterPreview();
+      });
+
+      this.previewOverlay = preview.element;
+      this.root.appendChild(this.previewOverlay);
+    });
+  }
+
+  hideCharacterPreview(): void {
+    if (this.previewOverlay) {
+      this.previewOverlay.remove();
+      this.previewOverlay = null;
+    }
+  }
 
   private teardownRace(): void {
     window.removeEventListener('resize', this.onResize);
@@ -192,3 +214,30 @@ export class App {
     this.renderer = null;
   }
 }
+
+// 전역 API (Playwright 캡처용)
+let appInstance: App | null = null;
+
+export function setAppInstance(app: App) {
+  appInstance = app;
+}
+
+export function setAppInstanceForPreview() {
+  // 이미 설정되어 있으면 무시
+  if (appInstance) return;
+  // 현재 실행 중인 App 인스턴스를 찾음 (main.ts 에서 호출됨)
+}
+
+declare global {
+  interface Window {
+    __woodadaPreview?: {
+      open: () => void;
+      close: () => void;
+    };
+  }
+}
+
+window.__woodadaPreview = {
+  open: () => appInstance?.showCharacterPreview(),
+  close: () => appInstance?.hideCharacterPreview()
+};

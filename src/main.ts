@@ -1,6 +1,7 @@
 import './shell/styles.css';
-import { App } from './shell/App.ts';
+import { App, setAppInstance } from './shell/App.ts';
 import { characterCatalog } from './data/characters/index.ts';
+import { partModels } from './data/partmodels/index.ts';
 import { createRaceRenderer } from './renderer/RaceRenderer.ts';
 import { RaceController } from './shell/RaceController.ts';
 import { simulateRace } from './engine/RaceEngine.ts';
@@ -12,6 +13,11 @@ import { el } from './shell/dom.ts';
 
 const root = document.getElementById('app')!;
 const app = new App(root);
+setAppInstance(app);
+
+// 전역으로 partModels 등록 (캐릭터 미리보기용)
+(window as any).__partModels = partModels;
+
 app.start();
 
 // ---- Deterministic hooks for Playwright visual verification (spec §13) ----
