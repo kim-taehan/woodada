@@ -24,10 +24,8 @@ export const alien: CharacterData = {
   // neutral on both axes; its identity comes from the variable copy skill.
   runStyle: 'glide',
   renderScale: 0.88,
-  // Variable copycat: balanced cruise + toughness; outcome swings with whoever
-  // it scans.
-  speed: 2,
-  power: 3,
+  // Variable copycat: UFO hover — neutral cornering, outcome swings with whoever it scans.
+  cornering: 3,
   // Rides a UFO — floats above the track, so ground hazards like the penguin's
   // icefield can't slip it (no boost either; nothing to skid on).
   airborne: true,

@@ -1,15 +1,15 @@
 /**
- * In-game guide overlay. Renders docs/character-guide.md, docs/item-guide.md,
- * docs/arena-guide.md, and docs/mode-guide.md (single source of truth — edit
+ * In-game guide overlay. Renders docs/guide/character-guide.md, docs/guide/item-guide.md,
+ * docs/guide/arena-guide.md, and docs/guide/mode-guide.md (single source of truth — edit
  * the docs and the in-game guide updates) into a modal with four tabs. Opened
  * from the setup screen's 📖 가이드 button.
  */
 import { el } from '../dom.ts';
 import { renderMarkdown } from '../markdown.ts';
-import characterGuide from '../../../docs/character-guide.md?raw';
-import itemGuide from '../../../docs/item-guide.md?raw';
-import arenaGuide from '../../../docs/arena-guide.md?raw';
-import modeGuide from '../../../docs/mode-guide.md?raw';
+import characterGuide from '../../../docs/guide/character-guide.md?raw';
+import itemGuide from '../../../docs/guide/item-guide.md?raw';
+import arenaGuide from '../../../docs/guide/arena-guide.md?raw';
+import modeGuide from '../../../docs/guide/mode-guide.md?raw';
 
 type Tab = 'characters' | 'items' | 'arena' | 'modes';
 

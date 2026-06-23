@@ -29,7 +29,6 @@
 
 import type { Rng } from './prng.ts';
 import type { RacerState } from './types.ts';
-import { powerBlockDecel } from './stats.ts';
 // OVERTAKE constants live in the central tuning module; re-exported here so the
 // existing `import { OVERTAKE } from './overtake.ts'` sites keep working.
 import { OVERTAKE, LANE } from './tuning.ts';
@@ -120,10 +119,8 @@ export function applyOvertake(self: RacerState, all: RacerState[], _rng: Rng, fr
       self.weaveSide = side;
       self.skill.weaveHold = frame + OVERTAKE.weaveHoldFrames; // (re)arm the hold
     } else if (blocker) {
-      // Both sides blocked (or the hold lapsed onto traffic) — decelerate behind the blocker
-      // (high power shoulders through → less deceleration).
-      const decel = powerBlockDecel(OVERTAKE.blockDecel, self.power);
-      self.speed = Math.min(self.speed, blocker.speed) * decel;
+      // Both sides blocked (or the hold lapsed onto traffic) — decelerate behind the blocker.
+      self.speed = Math.min(self.speed, blocker.speed) * OVERTAKE.blockDecel;
       self.phase = 'blocked';
       self.facing = 0;
       self.weaveSide = 0;
@@ -135,8 +132,7 @@ export function applyOvertake(self: RacerState, all: RacerState[], _rng: Rng, fr
     }
   } else if (blocker) {
     // Blocked by a racer we're NOT faster than — queue behind it (decelerate), don't weave.
-    const decel = powerBlockDecel(OVERTAKE.blockDecel, self.power);
-    self.speed = Math.min(self.speed, blocker.speed) * decel;
+    self.speed = Math.min(self.speed, blocker.speed) * OVERTAKE.blockDecel;
     self.phase = 'blocked';
     self.facing = 0;
     self.weaveSide = 0;

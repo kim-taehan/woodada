@@ -122,12 +122,6 @@ export interface RacerState {
   /** Intrinsic cruise speed (jittered per racer, unbiased in expectation). */
   baseSpeed: number;
   /**
-   * Contact/resistance stat (1..5, median 3) copied from CharacterData at init.
-   * Read at effect time to resist incoming slow/pushback/stun and ease block
-   * deceleration (see engine/stats.ts). Undefined → neutral (no effect).
-   */
-  power?: number;
-  /**
    * Cornering specialty (1..5, median 3) copied from CharacterData at init. Read each frame to
    * bias speed by track section — fast on straights & slow on curves (low) or vice-versa (high),
    * netting to zero over a lap (see engine/stats.ts sectionSpeedBias). Undefined → no preference.

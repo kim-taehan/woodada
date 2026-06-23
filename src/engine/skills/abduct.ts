@@ -1,6 +1,5 @@
 import type { SkillHandler } from './types.ts';
 import { DT_MS } from '../types.ts';
-import { powerEffectScale } from '../stats.ts';
 
 /**
  * 거미 거미줄 납치 (abduct): the spider flings a web at the nearest racer *just
@@ -12,11 +11,7 @@ import { powerEffectScale } from '../stats.ts';
  *
  * Mechanic mirrors divebomb's targeting (same minRange..range band, id tie-break,
  * no RNG during the sort) but is fully DETERMINISTIC — no gamble, no rng draw at
- * all (substream untouched). Resistance is consistent with the rest of the engine:
- *   - the pull *distance* is eased by the target's power (powerEffectScale), like
- *     bristle's shove,
- *   - the tangle *slow magnitude* is eased centrally at the speed-application site
- *     (RaceEngine, via powerEaseSlow on slowMul), like bristle/lightning/fart.
+ * all (substream untouched).
  *
  * - No target ahead in range (spider leading, or next racer too far / too close)
  *     → hold: emit NOTHING so the engine reads 'declined to fire' and retries on
@@ -75,10 +70,8 @@ export const abductHandler: SkillHandler = (ctx) => {
     return;
   }
 
-  // Yank the target back behind the spider. High-power targets resist some of the
-  // pull distance (consistent with bristle's shove resistance).
-  const resist = powerEffectScale(target.power);
-  const desired = self.progress - Number(params.pullGap) * resist;
+  // Yank the target back behind the spider.
+  const desired = self.progress - Number(params.pullGap);
   // Only ever pull BACKWARD (the target is ahead, so desired < target.progress;
   // clamp ≥ 0 so a near-start grab can't send it negative).
   target.progress = Math.max(0, Math.min(target.progress, desired));

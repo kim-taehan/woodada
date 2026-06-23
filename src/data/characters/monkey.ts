@@ -16,9 +16,8 @@ export const monkey: CharacterData = {
   },
   runStyle: 'scamper',
   renderScale: 0.82,
-  // Prankster all-rounder: balanced cruise and toughness.
-  speed: 3,
-  power: 3,
+  // Prankster all-rounder: neutral on both straights and bends.
+  cornering: 3,
   skill: {
     type: 'banana',
     cooldownMs: [2100, 3800],

@@ -219,22 +219,28 @@ export const ZONE = {
 } as const;
 
 /**
- * Per-character speed/power stat coefficients (see engine/stats.ts for the maps).
- * Kept small so the fairness gates still hold — flavor, not a power ladder.
+ * Per-character `cornering` stat coefficient (see engine/stats.ts for the map).
+ * Kept so the fairness gates still hold — flavor, not a power ladder.
  */
 export const STATS = {
-  /** baseSpeed bias at full speed deviation (band is 0.2 wide; this is <10% of it). */
-  speedGain: 0.018,
   /**
-   * Cornering speed swing at full `cornering` deviation (engine units). MUCH larger than
-   * speedGain — this is the deliberately VISIBLE per-section pace split that trades the lead
-   * every straight↔curve transition. Applied distance-weighted (curve boost × straightFrac,
-   * straight boost × curveFrac) so the lap-average nets to zero and win-rate fairness holds.
-   * Tunable by eye: raise for more dramatic sprint/corner swings & lead changes.
+   * Cornering speed swing at full `cornering` deviation (engine units). This is the
+   * deliberately VISIBLE per-section pace split that trades the lead every straight↔curve
+   * transition. Applied distance-weighted (curve boost × straightFrac, straight boost ×
+   * curveFrac) so the lap-average nets to zero and win-rate fairness holds. Tunable by eye:
+   * raise for more dramatic sprint/corner swings & lead changes.
    */
   corneringGain: 0.35,
-  /** Fraction by which a full power deviation scales an incoming effect's magnitude. */
-  powerResist: 0.15,
-  /** Fraction by which a full power deviation eases block deceleration toward 1. */
-  powerBlockEase: 0.2,
+} as const;
+
+/**
+ * Bear-only passive "몸통 밀치기" (body shove). When the bear is in contact with another
+ * racer (same lane band + just ahead, within the personal-zone clamp window), the bear
+ * nudges that rival OUTWARD (lane += `lanePush`, clamped) while keeping its own pace — a
+ * small ever-present advantage in a brawl pack, the live opposite of the (nearly-dead)
+ * block-decel mechanic. Pure position math, no RNG → deterministic. Small by design.
+ */
+export const BEAR_SHOVE = {
+  /** Lateral nudge applied to a shoved rival, per contact frame (lane units, outward). */
+  lanePush: 0.03,
 } as const;

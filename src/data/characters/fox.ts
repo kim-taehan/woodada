@@ -17,8 +17,8 @@ export const fox: CharacterData = {
   },
   runStyle: 'sly',
   renderScale: 1.0,
-  speed: 3,
-  power: 2,
+  // Sly dasher: sharp through bends, trades straight-line pace for agility.
+  cornering: 4,
   skill: {
     type: 'illusionClone',
     cooldownMs: [5000, 7000],

@@ -111,7 +111,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .guide-body h1 { font-size: 22px; margin: 18px 0 8px; }
 .guide-body h2 { font-size: 18px; margin: 22px 0 8px; }
 .guide-body p { line-height: 1.6; margin: 8px 0; }
-.guide-body img { display: block; width: 96px; height: auto; margin: 6px 0; image-rendering: -webkit-optimize-contrast; }
+.guide-body img { display: block; width: 160px; height: auto; margin: 6px 0; image-rendering: -webkit-optimize-contrast; }
 .guide-body hr { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .guide-body ul { margin: 8px 0; padding-left: 20px; line-height: 1.6; }
 .guide-body blockquote {

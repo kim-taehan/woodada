@@ -18,9 +18,8 @@ export const hedgehog: CharacterData = {
   // (front pair + rear pair), spikes bristling along the back.
   runStyle: 'gallop',
   renderScale: 0.95,
-  // Prickly defender: slow scurry, but tough — spikes shrug off shoves + traffic.
-  speed: 2,
-  power: 4,
+  // Prickly defender: tiny body hugs the bends — corner specialist.
+  cornering: 5,
   skill: {
     // Bristle (반응형 카운터 연출): on a short cooldown, if a racer is chasing just
     // behind within `range`, the hedgehog flares its spikes — `triggerChance` to

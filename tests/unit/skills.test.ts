@@ -332,12 +332,10 @@ describe('skill behaviour', () => {
     //      catch-up, unrelated to ice — only the ice multiplier is what's removed,
     //      which the aggregate A/B in (1) measures.)
     //
-    // Pinned alien: mimic effectively off (cooldown far past any race) + fixed stats,
-    // so this test is invariant to alien.skill.params / speed / power tuning.
+    // Pinned alien: mimic effectively off (cooldown far past any race), so this test is
+    // invariant to alien.skill.params tuning.
     const pinnedAlien = {
       ...characterCatalog.alien,
-      speed: 3,
-      power: 3,
       skill: { ...characterCatalog.alien.skill, cooldownMs: [1e9, 1e9] as [number, number] },
     };
     const exemptCat = { ...characterCatalog, alien: { ...pinnedAlien, airborne: true } };

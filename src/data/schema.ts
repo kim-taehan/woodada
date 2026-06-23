@@ -50,16 +50,6 @@ export interface CharacterData {
   /** Per-character render size multiplier (default 1). */
   renderScale?: number;
   /**
-   * Flavor stats on a 1–5 integer scale, midpoint 3 = neutral. Per character
-   * `speed + power ≈ 6` (inverse): speed biases cruise/early pace, power resists
-   * disruption + traffic (shorter slow/pushback/stun, less block slowdown). The
-   * engine reads these (default 3 if omitted) and applies small deltas only —
-   * win rates stay fair (engine-bias gate + balance-tuner). A fast animal is the
-   * easier to block/shove (low power), which naturally offsets its head start.
-   */
-  speed?: number;
-  power?: number;
-  /**
    * Cornering specialty on the same 1–5 scale (midpoint 3 = no preference). Splits a racer's
    * pace between track sections: a low `cornering` is a STRAIGHT sprinter (faster on the
    * straights, slower through the bends), a high one is a CURVE specialist (the reverse). The

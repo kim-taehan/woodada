@@ -6,9 +6,9 @@
 
 import { createRng, type Rng } from './prng.ts';
 import { applyOvertake, laneDistanceFactor } from './overtake.ts';
-import { speedBias, powerEaseSlow, sectionSpeedBias } from './stats.ts';
+import { sectionSpeedBias } from './stats.ts';
 import { isCurve, lapPhase } from './track.ts';
-import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION } from './tuning.ts';
+import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE } from './tuning.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
@@ -200,8 +200,7 @@ export function createRaceEngine(
     racers: config.participants.map((p, i, arr) => {
       const r = rng.fork(`base:${p.id}`);
       const stats = config.characters[p.characterId];
-      // Small speed-stat bias on top of the fair jitter band (catch-up reins it).
-      const baseSpeed = r.range(BASE_SPEED.min, BASE_SPEED.max) + speedBias(stats?.speed);
+      const baseSpeed = r.range(BASE_SPEED.min, BASE_SPEED.max);
       // Personal cruising lane, spread across the track + a little jitter. The
       // spread is inside-weighted (exponent > 1) so more racers home toward the
       // inner lanes — purely a positional skew; lane never affects speed.
@@ -225,7 +224,6 @@ export function createRaceEngine(
         homeLane,
         speed: 0,
         baseSpeed,
-        power: stats?.power,
         cornering: stats?.cornering,
         leg,
         phase,
@@ -643,6 +641,30 @@ export function createRaceEngine(
     }
   }
 
+  /**
+   * Bear passive "몸통 밀치기" (body shove). Every frame, each bear in CONTACT with a rival
+   * just ahead on its lane band — same window the personal-zone clamp uses (forward gap within
+   * ZONE.minGap, lateral within OVERTAKE.laneNear) — nudges that rival OUTWARD by BEAR_SHOVE
+   * .lanePush (clamped), while keeping its own pace. Unlike the (nearly-dead) block-decel, this
+   * fires on contact rather than only when fully boxed in, so it pays off in a brawl pack.
+   * Pure position math, no RNG → deterministic. Runs after progress is final for the frame.
+   */
+  function applyBearShove(): void {
+    for (const bear of internal.racers) {
+      if (bear.characterId !== 'bear') continue;
+      if (bear.phase === 'finished' || bear.phase === 'waiting' || bear.phase === 'eliminated') continue;
+      for (const other of internal.racers) {
+        if (other.id === bear.id) continue;
+        if (other.phase === 'finished' || other.phase === 'waiting' || other.phase === 'eliminated') continue;
+        const gap = other.progress - bear.progress;
+        if (gap < 0 || gap > ZONE.minGap) continue; // only a rival in front-contact
+        if (Math.abs(other.lane - bear.lane) > OVERTAKE.laneNear) continue; // same lane band
+        // Shove outward (toward lane 1), clamped to the racing band the overtake model uses.
+        other.lane = Math.min(0.95, other.lane + BEAR_SHOVE.lanePush);
+      }
+    }
+  }
+
   function advance(self: RacerState, events: SkillEvent[]): void {
     if (self.phase === 'finished' || self.phase === 'waiting' || self.phase === 'eliminated') return;
     if (self.phase === 'stunned') {
@@ -670,9 +692,9 @@ export function createRaceEngine(
     applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame);
 
     applyIce(self);
-    // slowMul (bristle / lightning / fart) — eased toward 1 by the racer's power.
+    // slowMul (bristle / lightning / fart).
     if ((self.skill.slowUntil ?? 0) > frame) {
-      self.speed *= powerEaseSlow(Number(self.skill.slowMul ?? 1), self.power);
+      self.speed *= Number(self.skill.slowMul ?? 1);
     }
 
     // Lane → distance, CURVE-ONLY: the outer rail is a longer arc only through the bends, so
@@ -989,11 +1011,11 @@ export function createRaceEngine(
           .bool(Number(config.characters.cat.skill.params.dodgeChance ?? 0));
       }
       if (self.skill.iceJumping) return; // jumped clear — no slow
-      self.speed *= powerEaseSlow(zone.slowFactor, self.power);
+      self.speed *= zone.slowFactor;
       return;
     }
     self.speed *=
-      self.characterId === 'penguin' ? zone.boostFactor : powerEaseSlow(zone.slowFactor, self.power);
+      self.characterId === 'penguin' ? zone.boostFactor : zone.slowFactor;
   }
 
   /** A gamble box, on pickup, rolls one of four effects (weighted). */
@@ -1200,6 +1222,7 @@ export function createRaceEngine(
       for (const self of order) prevProgress.set(self.id, self.progress);
       for (const self of order) advance(self, events);
       resolveForwardZones(prevProgress);
+      applyBearShove();
       fireOvertakeHooks(prevProgress, events);
 
       // Death-match: knock out one racer at each lap boundary the leader crosses.

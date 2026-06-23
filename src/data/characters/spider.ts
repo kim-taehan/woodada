@@ -19,10 +19,8 @@ export const spider: CharacterData = {
   // tough; it doesn't sprint, it yanks the leader back into the pack.
   runStyle: 'skitter',
   renderScale: 0.9,
-  // Web-trapping disruptor: low cruise speed, sturdy (resists shoves/traffic).
-  speed: 2,
-  power: 4,
-  cornering: 5, // curve specialist — hangs back on the straights, reels them in through the bends
+  // Web-trapping disruptor: curve specialist — hangs back on the straights, reels them in through the bends.
+  cornering: 5,
 
   skill: {
     // Web abduct (단일표적 위치강등): grab the nearest racer meaningfully ahead

@@ -1,6 +1,5 @@
 import type { SkillHandler } from './types.ts';
 import { DT_MS } from '../types.ts';
-import { powerEffectScale } from '../stats.ts';
 
 /**
  * 원숭이 바나나 던지기 (spec §2.1): targets the nearest racer in front or behind
@@ -63,8 +62,7 @@ export const bananaHandler: SkillHandler = (ctx) => {
     return;
   }
 
-  // High-power targets shrug off some of the freeze (resistance).
-  const stunFrames = Math.round((Number(params.hitStunMs) / DT_MS) * powerEffectScale(target.power));
+  const stunFrames = Math.round(Number(params.hitStunMs) / DT_MS);
   target.phase = 'stunned';
   target.speed = 0;
   target.skill.burst = 0;
