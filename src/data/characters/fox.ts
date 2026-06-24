@@ -17,8 +17,10 @@ export const fox: CharacterData = {
   },
   runStyle: 'sly',
   renderScale: 1.0,
-  speed: 3,
-  power: 2,
+  // Sly dasher: sharp through bends, trades straight-line pace for agility.
+  cornering: 4,
+  // 구미호 본능: 선두와 거리 멀수록 최대 14% 속도 부스트 (역전 특화).
+  catchupBoost: 0.14,
   skill: {
     type: 'illusionClone',
     cooldownMs: [5000, 7000],

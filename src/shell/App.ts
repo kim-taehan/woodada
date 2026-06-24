@@ -54,9 +54,72 @@ export class App {
     const host = el('div', { class: 'canvas-host' });
     const countdown = el('div', { class: 'countdown' });
     const skip = el('button', { class: 'skip', textContent: '건너뛰기' });
-    const race = el('div', { class: 'race' }, [host, countdown, skip]);
+    const settingsBtn = el('button', { class: 'settings', textContent: '⚙️ 설정' });
+    const race = el('div', { class: 'race' }, [host, countdown, skip, settingsBtn]);
     clear(this.root);
     this.root.append(race);
+
+    let settingsMenu: HTMLElement | null = null;
+    let pauseBtn: HTMLButtonElement | null = null;
+
+    const updatePauseButton = () => {
+      if (!pauseBtn) return;
+      if (this.controller?.isPaused()) {
+        pauseBtn.textContent = '▶️ 경기 계속하기';
+        pauseBtn.classList.remove('pause');
+        pauseBtn.classList.add('resume');
+      } else {
+        pauseBtn.textContent = '⏸ 일시정지';
+        pauseBtn.classList.remove('resume');
+        pauseBtn.classList.add('pause');
+      }
+    };
+
+    const showSettingsMenu = () => {
+      if (settingsMenu) return;
+
+      settingsMenu = el('div', { class: 'settings-menu' });
+
+      pauseBtn = el('button', { class: 'menu-btn pause', textContent: '⏸ 일시정지' });
+      const setupBtn = el('button', { class: 'menu-btn', textContent: '⚙️ 설정 화면' });
+      const restartBtn = el('button', { class: 'menu-btn restart', textContent: '🔄 경기 재시작' });
+      const closeBtn = el('button', { class: 'menu-close', textContent: '✕' });
+
+      settingsMenu.append(closeBtn, pauseBtn, setupBtn, restartBtn);
+      race.append(settingsMenu);
+
+      pauseBtn.addEventListener('click', () => {
+        if (this.controller?.isPaused()) {
+          this.controller?.resume();
+          settingsMenu?.remove();
+          settingsMenu = null;
+          pauseBtn = null;
+        } else {
+          this.controller?.pause();
+          updatePauseButton();
+        }
+      });
+
+      setupBtn.addEventListener('click', () => {
+        settingsMenu?.remove();
+        settingsMenu = null;
+        this.showSetup();
+      });
+
+      restartBtn.addEventListener('click', () => {
+        settingsMenu?.remove();
+        settingsMenu = null;
+        void this.startRace();
+      });
+
+      closeBtn.addEventListener('click', () => {
+        settingsMenu?.remove();
+        settingsMenu = null;
+        pauseBtn = null;
+      });
+    };
+
+    settingsBtn.addEventListener('click', showSettingsMenu);
 
     this.renderer = createRaceRenderer();
     this.renderer.setReducedMotion(this.reducedMotion);
@@ -81,6 +144,7 @@ export class App {
     // scatter/emote (#33) and offer a big "시상식 보러가기" button (Feature C).
     this.controller.coast();
     this.showFinishGate(race, config, result);
+    settingsBtn.remove();
   }
 
   /**

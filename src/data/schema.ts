@@ -50,16 +50,6 @@ export interface CharacterData {
   /** Per-character render size multiplier (default 1). */
   renderScale?: number;
   /**
-   * Flavor stats on a 1–5 integer scale, midpoint 3 = neutral. Per character
-   * `speed + power ≈ 6` (inverse): speed biases cruise/early pace, power resists
-   * disruption + traffic (shorter slow/pushback/stun, less block slowdown). The
-   * engine reads these (default 3 if omitted) and applies small deltas only —
-   * win rates stay fair (engine-bias gate + balance-tuner). A fast animal is the
-   * easier to block/shove (low power), which naturally offsets its head start.
-   */
-  speed?: number;
-  power?: number;
-  /**
    * Cornering specialty on the same 1–5 scale (midpoint 3 = no preference). Splits a racer's
    * pace between track sections: a low `cornering` is a STRAIGHT sprinter (faster on the
    * straights, slower through the bends), a high one is a CURVE specialist (the reverse). The
@@ -75,6 +65,43 @@ export interface CharacterData {
    * boost either, just no contact). Default false.
    */
   airborne?: boolean;
+  /**
+   * Immune to AREA-OF-EFFECT disruption skills (e.g. the bear's roar stagger). Read by
+   * AOE skill handlers to skip this racer (a dodge gag). A trait, not an id check, so any
+   * future AOE skill can honour it. Distinct from `airborne` (ground-hazard exemption like
+   * the icefield) — don't double-cover the ice here. Default false.
+   */
+  aoeImmune?: boolean;
+  /**
+   * Wall-crawl grip (벽타기): the fraction of the CURVE outer-rail distance penalty
+   * (LANE.distLoss) this racer shrugs off — 0 = full penalty (normal), 1 = no penalty
+   * (runs the outside arc for free). Read by the engine's laneDistanceFactor so a gripper
+   * loses less ground swinging wide through the bends. Trait, not an id check. Speed-neutral
+   * (only the lane→distance conversion is eased; the "lane never affects speed" rule holds).
+   * Default 0 (omitted) → normal outer-rail penalty.
+   */
+  outerGrip?: number;
+  /**
+   * Small-target ranged evasion (작은 표적): probability (0..1) that an incoming RANGED
+   * disruption simply misses this racer — the banana throw, the spider's web, the shell.
+   * Read by those handlers (a trait, not an id check) to whiff the hit and emit a dodge.
+   * Resolved deterministically per (target id, frame) like the catwalk dodge, so multiple
+   * attackers in one frame agree. Default 0 (omitted) → no evasion.
+   */
+  rangedEvade?: number;
+  /**
+   * Head start (빠른 출발): how many ms earlier than the rest of the field this racer begins
+   * running. At the gun, every racer is held in place (progress 0, speed 0) for
+   * `max(headStartMs across the field) − ownHeadStartMs`, so the racer with the largest head
+   * start launches first and the others follow once their hold lapses. A field with no head-start
+   * racer (all 0) is held 0ms = the classic simultaneous start. Trait, not an id check. Default 0.
+   */
+  headStartMs?: number;
+  /**
+   * 구미호 본능 (역전 특화): 선두와 거리가 멀수록 속도가 증가한다. 값은 최대 속도 배율 보너스
+   * (0..1). 선두와의 거리가 trackLength * 0.5 이상이면 최대 보너스 적용. Trait, not an id check.
+   */
+  catchupBoost?: number;
   skill: SkillSpec;
   lines: CharacterLines;
 }
@@ -97,8 +124,8 @@ export type ScoringId =
  */
 export type TeamScoringId = 'firstPlace' | 'rankSum' | 'relay';
 
-/** Default team flavor when none is chosen (preserves the old fixed teamRankSum). */
-export const defaultTeamScoringId: TeamScoringId = 'rankSum';
+/** Default team flavor when none is chosen (relay = 이어달리기). */
+export const defaultTeamScoringId: TeamScoringId = 'relay';
 
 /** Maps a selectable team flavor to its engine scoring strategy id. */
 export const TEAM_SCORING_TO_ID: Record<TeamScoringId, ScoringId> = {

@@ -1,6 +1,5 @@
 import type { SkillHandler } from './types.ts';
 import { DT_MS } from '../types.ts';
-import { powerEffectScale } from '../stats.ts';
 
 /**
  * 원숭이 바나나 던지기 (spec §2.1): targets the nearest racer in front or behind
@@ -37,7 +36,7 @@ export const bananaHandler: SkillHandler = (ctx) => {
     );
 
   const target = candidates[0];
-  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
+  ctx.emit({ variant: 'activate' });
   if (!target) return; // nobody to throw at — silent whiff
 
   if ((target.skill.starUntil ?? 0) > frame) { // ⭐ star deflects the banana
@@ -57,14 +56,17 @@ export const bananaHandler: SkillHandler = (ctx) => {
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;
   }
+  if (ctx.tryRangedEvade(target)) { // 🦔 작은 표적: the throw misses the small low hedgehog
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
 
   if (rng.bool(Number(params.dodgeChance))) {
     ctx.emit({ variant: 'dodge', targetId: target.id, line: ctx.lines.dodge ?? '어… 빗나갔네' });
     return;
   }
 
-  // High-power targets shrug off some of the freeze (resistance).
-  const stunFrames = Math.round((Number(params.hitStunMs) / DT_MS) * powerEffectScale(target.power));
+  const stunFrames = Math.round(Number(params.hitStunMs) / DT_MS);
   target.phase = 'stunned';
   target.speed = 0;
   target.skill.burst = 0;

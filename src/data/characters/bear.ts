@@ -16,11 +16,9 @@ export const bear: CharacterData = {
   },
   runStyle: 'biped',
   renderScale: 1.15,
-  // Tank: very slow cruise, but immovable — shrugs off disruption and traffic.
-  // (speed 1→2: at 10 laps the slowest-cruise gap compounded so badly the bear
-  // fell below the can-win floor; still bottom-tier cruise, just less buried.)
-  speed: 2,
-  power: 5,
+  // Heavyweight charger: thunders down the straights, slow through bends.
+  // (Passive body-check identity now lives in the engine as a passive — engine-dev.)
+  cornering: 2,
   skill: {
     type: 'roar',
     // Roar that staggers every racer within range for staggerMs. Widened range +

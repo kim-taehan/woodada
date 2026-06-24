@@ -80,6 +80,6 @@ export const illusionCloneHandler: SkillHandler = (ctx) => {
   const made = ctx.spawnDecoys(specs, durationMs);
   if (made <= 0) return; // already had live decoys → hold (emit nothing)
 
-  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
+  ctx.emit({ variant: 'activate' });
   ctx.emit({ variant: 'clone' });
 };

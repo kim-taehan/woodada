@@ -146,26 +146,26 @@ export class FxLayer {
    * outgoing teammate, a burst of sparkles, and a small pop ring at the line.
    */
   baton(fromX: number, fromY: number, toX: number, toY: number, now: number): void {
-    const ring = new Graphics().circle(0, 0, 18).stroke({ color: 0xffe24d, width: 7, alpha: 1 });
+    const ring = new Graphics().circle(0, 0, 12).stroke({ color: 0xffe24d, width: 4, alpha: 1 });
     ring.position.set(toX, toY - 8);
-    this.push(ring, { bornAt: now, ttl: 0.5, grow: 7 });
+    this.push(ring, { bornAt: now, ttl: 0.4, grow: 4 });
 
-    const g = new Graphics().roundRect(-13, -4, 26, 8, 4).fill({ color: 0xffd23f }).stroke({ color: 0x7a3b10, width: 2 });
+    const g = new Graphics().roundRect(-10, -3, 20, 6, 3).fill({ color: 0xffd23f }).stroke({ color: 0x7a3b10, width: 2 });
     g.position.set(fromX, fromY);
     this.push(g, {
       bornAt: now,
-      ttl: 0.45,
+      ttl: 0.38,
       fade: false,
-      spin: 10,
-      arc: { fromX, fromY: fromY - 14, toX, toY: toY - 14, lift: 46 },
+      spin: 8,
+      arc: { fromX, fromY: fromY - 10, toX, toY: toY - 10, lift: 24 },
     });
 
-    for (let i = 0; i < 7; i++) {
-      const s = new Text({ text: '✨', style: { fontSize: 16 + (i % 2) * 4 } });
+    for (let i = 0; i < 4; i++) {
+      const s = new Text({ text: '✨', style: { fontSize: 14 } });
       s.anchor.set(0.5);
-      const a = (i / 7) * Math.PI * 2;
-      s.position.set(toX + Math.cos(a) * 24, toY - 16 + Math.sin(a) * 22);
-      this.push(s, { bornAt: now, ttl: 0.7, vx: Math.cos(a) * 18, vy: Math.sin(a) * 18 - 8, spin: 2 });
+      const a = (i / 4) * Math.PI * 2;
+      s.position.set(toX + Math.cos(a) * 16, toY - 12 + Math.sin(a) * 14);
+      this.push(s, { bornAt: now, ttl: 0.5, vx: Math.cos(a) * 12, vy: Math.sin(a) * 12 - 6, spin: 1.5 });
     }
   }
 

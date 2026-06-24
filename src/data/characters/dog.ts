@@ -20,10 +20,8 @@ export const dog: CharacterData = {
   // 31×25 vs cat's 33 / 27×19), so without a scale it renders biggest. Pull it a
   // touch below the cat (0.88) so it reads at a similar size on the track.
   renderScale: 0.86,
-  // Zoomies mascot: fastest cruise, but flimsy in traffic (easy to block/shove).
-  speed: 5,
-  power: 1,
-  cornering: 1, // straight sprinter — surges down the straights, drops back through the bends
+  // Zoomies mascot: straight sprinter — surges down the straights, drops back through the bends.
+  cornering: 1,
 
   skill: {
     type: 'zoomies',

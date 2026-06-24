@@ -19,10 +19,14 @@ export const spider: CharacterData = {
   // tough; it doesn't sprint, it yanks the leader back into the pack.
   runStyle: 'skitter',
   renderScale: 0.9,
-  // Web-trapping disruptor: low cruise speed, sturdy (resists shoves/traffic).
-  speed: 2,
-  power: 4,
-  cornering: 5, // curve specialist — hangs back on the straights, reels them in through the bends
+  // Web-trapping disruptor: curve specialist — hangs back on the straights, reels them in through the bends.
+  cornering: 5,
+  // 벽타기: clings anywhere, so swinging onto the outer rail through a curve costs it less distance —
+  // synergises with its curve mastery (run wide AND keep pace in the bends). Started at 0.3 (not the
+  // initially-floated 0.5): at laps=10 a grip ≥0.4 perturbs start-slot distance enough to break the
+  // loose slot-fairness gate (one slot starves below floor); 0.3 holds with margin and keeps the
+  // spider win-rate ~unchanged (flavor, not a power spike). Final strength = balance pass.
+  outerGrip: 0.3,
 
   skill: {
     // Web abduct (단일표적 위치강등): grab the nearest racer meaningfully ahead

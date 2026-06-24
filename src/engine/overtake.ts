@@ -29,22 +29,26 @@
 
 import type { Rng } from './prng.ts';
 import type { RacerState } from './types.ts';
-import { powerBlockDecel } from './stats.ts';
 // OVERTAKE constants live in the central tuning module; re-exported here so the
 // existing `import { OVERTAKE } from './overtake.ts'` sites keep working.
 import { OVERTAKE, LANE } from './tuning.ts';
 export { OVERTAKE } from './tuning.ts';
 
 /**
- * Lane → distance conversion factor (인코스 우위), CURVE-ONLY. A racer's per-frame `speed` is
- * multiplied by this when accumulating `progress`: through a CURVE the inner rail (lane 0) keeps
- * the full step (1.0) and the outer rail (lane 1) only `1 - LANE.distLoss` (the longer arc → less
- * forward distance for the same speed); on a STRAIGHT every lane is the same length so the factor
- * is 1 (passing out wide is free — a natural overtaking zone). Lane clamped to [0,1]. Pure /
- * deterministic — lane affects DISTANCE, never speed.
+ * Lane → distance conversion factor (인코스 우위). A racer's per-frame `speed` is
+ * multiplied by this when accumulating `progress`: both on CURVES and STRAIGHTS the
+ * outer rail is longer than the inner rail, so the outer rail gets less forward
+ * distance for the same speed. Lane clamped to [0,1]. Pure / deterministic — lane
+ * affects DISTANCE, never speed.
+ *
+ * 벽타기 (`outerGrip` 0..1): a gripper shrugs off that fraction of the distance penalty,
+ * so its effective distLoss is `LANE.distLoss * (1 - outerGrip)` — it loses less ground
+ * out wide.
  */
-export function laneDistanceFactor(lane: number, onCurve: boolean): number {
-  return 1 - (onCurve ? LANE.distLoss : 0) * clamp(lane, 0, 1);
+export function laneDistanceFactor(lane: number, _onCurve: boolean, outerGrip = 0): number {
+  const distLoss = LANE.distLoss * (1 - clamp(outerGrip, 0, 1));
+  // Both curves and straights have longer outer lanes → always apply distLoss
+  return 1 - distLoss * clamp(lane, 0, 1);
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -63,9 +67,30 @@ function moveToward(value: number, target: number, step: number): number {
  */
 // `_rng` is kept for call-site/signature compatibility; the lane rules are now fully
 // deterministic (inside-first preference, no coin-flip), so no random draw is taken here.
-export function applyOvertake(self: RacerState, all: RacerState[], _rng: Rng, frame: number): void {
+// `boxLane` (optional) is the lane of the nearest reachable item box ahead, precomputed by the
+// engine (which knows trackLength) — used for the gentle box-seek lean (적극 획득).
+// `holdLane`: during the opening start straight (before the first curve, set by the engine which
+// knows the track sections) racers KEEP their start-grid lane — no weaving/scrambling — for a
+// clean staggered launch, so the race doesn't look chaotic the instant it begins (출발 직선 유지).
+export function applyOvertake(
+  self: RacerState,
+  all: RacerState[],
+  _rng: Rng,
+  frame: number,
+  boxLane?: number,
+  holdLane = false,
+): void {
   // Out-of-control bursts (zoomies / nap-dash) plow ahead — readable, not blocked.
   if (self.phase === 'straying') return;
+
+  // 출발 직선 라인 유지: on the opening straight, hold the start lane (no lane change at all) so
+  // the field launches cleanly in formation; the scramble/overtake begins only at the first curve.
+  if (holdLane) {
+    self.phase = 'running';
+    self.facing = 0;
+    self.weaveSide = 0;
+    return; // lane left untouched — stays in the start-grid lane
+  }
 
   // SINGLE-AUTHORITY lane pipeline (난투 스크램블 모델). Every influence is an additive
   // OFFSET to one base target; they SUM, then a single rate-limited drift moves toward the
@@ -89,41 +114,51 @@ export function applyOvertake(self: RacerState, all: RacerState[], _rng: Rng, fr
   // back and re-blocking every frame (the old ±laneDrift jitter). Frame counter in the
   // serializable skill bag — deterministic, no RNG.
   const holding = committed !== 0 && Number(self.skill.weaveHold ?? 0) > frame;
-  // Rule 1 only fires against a racer we can actually out-run; a slower/equal racer just
-  // queues behind it (decelerates) instead of swinging out pointlessly.
-  const canPass = !!blocker && self.speed > blocker.speed;
 
-  const clearOn = (side: -1 | 1): boolean => {
-    const lane = self.lane + side * OVERTAKE.laneStep;
-    const inBounds = side === 1 ? lane <= 0.97 : lane >= 0.03;
-    return inBounds && !nearestAhead(all, self, lane, OVERTAKE.laneNear);
+  // 빈 라인 찾기: probe a side for the FIRST open lane, scanning outward at `weaveSteps`
+  // multiples of laneStep (one lane over, then two, …). Returns that multiplier (0 = the side
+  // is blocked at every scanned distance, or out of bounds). Speed-AGNOSTIC: a blocked racer
+  // looks for room whether or not it's faster — so it actively threads a gap instead of dozing
+  // nose-to-tail behind an equal/faster rival (the old "어리버리" stack-up).
+  const openStep = (side: -1 | 1): number => {
+    for (const m of OVERTAKE.weaveSteps) {
+      const lane = self.lane + side * OVERTAKE.laneStep * m;
+      const inBounds = side === 1 ? lane <= 0.97 : lane >= 0.03;
+      if (inBounds && !nearestAhead(all, self, lane, OVERTAKE.laneNear)) return m;
+    }
+    return 0;
   };
 
-  if (canPass || holding) {
-    // Keep a committed side while it stays open (hysteresis / weave-hold); on a FRESH weave
-    // try the INSIDE (−) first, fall back to the OUTSIDE (+). Fully deterministic — no rng.
+  if (blocker || holding) {
+    // Blocked by someone ahead (ANY speed) — steer into the nearest OPEN lane: keep a committed
+    // side while it stays open (weave-hold hysteresis); on a fresh weave try the INSIDE (−) first,
+    // then the OUTSIDE (+), each scanned outward for room. Fully deterministic — no rng.
     let side: -1 | 1 | 0 = 0;
-    if (committed !== 0 && (holding || clearOn(committed))) {
+    let mult = 1;
+    const heldStep = committed !== 0 ? openStep(committed) : 0;
+    if (committed !== 0 && (holding || heldStep)) {
       side = committed;
-    } else if (canPass) {
-      side = clearOn(-1) ? -1 : clearOn(1) ? 1 : 0;
+      mult = heldStep || 1;
+    } else {
+      const inM = openStep(-1);
+      const outM = inM ? 0 : openStep(1); // inside-first: only look outside if inside is jammed
+      if (inM) { side = -1; mult = inM; }
+      else if (outM) { side = 1; mult = outM; }
     }
 
     if (side !== 0) {
-      // Excursion is a FIXED step off the inner rail (target = innerGoal + side·laneStep), not
-      // off the current lane — so a blocked passer swings out ~one lane to go around and HOLDS
-      // there (then the inside pull brings it back after the pass), instead of cascading lane-
-      // by-lane to the outer wall when the field is dense (which walled the pack inner+outer).
-      offset += side * OVERTAKE.laneStep;
+      // Excursion is a FIXED step off the inner rail (target = innerGoal + side·mult·laneStep),
+      // not off the current lane — so a blocked passer swings out to the open lane and HOLDS
+      // there (the inside pull brings it back after the pass), instead of cascading lane-by-lane
+      // to the outer wall when the field is dense.
+      offset += side * OVERTAKE.laneStep * mult;
       self.phase = 'running';
       self.facing = side;
       self.weaveSide = side;
       self.skill.weaveHold = frame + OVERTAKE.weaveHoldFrames; // (re)arm the hold
     } else if (blocker) {
-      // Both sides blocked (or the hold lapsed onto traffic) — decelerate behind the blocker
-      // (high power shoulders through → less deceleration).
-      const decel = powerBlockDecel(OVERTAKE.blockDecel, self.power);
-      self.speed = Math.min(self.speed, blocker.speed) * decel;
+      // Genuinely boxed — no open lane on either side at any scanned width → decelerate behind it.
+      self.speed = Math.min(self.speed, blocker.speed) * OVERTAKE.blockDecel;
       self.phase = 'blocked';
       self.facing = 0;
       self.weaveSide = 0;
@@ -133,13 +168,6 @@ export function applyOvertake(self: RacerState, all: RacerState[], _rng: Rng, fr
       self.phase = 'running';
       self.facing = 0;
     }
-  } else if (blocker) {
-    // Blocked by a racer we're NOT faster than — queue behind it (decelerate), don't weave.
-    const decel = powerBlockDecel(OVERTAKE.blockDecel, self.power);
-    self.speed = Math.min(self.speed, blocker.speed) * decel;
-    self.phase = 'blocked';
-    self.facing = 0;
-    self.weaveSide = 0;
   } else {
     // Clear of traffic (rule 2) — drift to the inner rail; `base` already targets the inside.
     self.weaveSide = 0;
@@ -162,6 +190,12 @@ export function applyOvertake(self: RacerState, all: RacerState[], _rng: Rng, fr
     pressure += 1 - gap / OVERTAKE.nearAhead; // closer ahead = more pressure
   }
   offset += OVERTAKE.scrambleGain * pressure;
+
+  // 🎁 Box-seek (적극 획득): if a reachable item box is ahead, lean the lane target toward its
+  // lane so the box isn't auto-grabbed by whoever rides the inner rail (usually the leader) —
+  // a trailer steers out to claim a wide box. Gentle (a side influence in the additive sum, not
+  // an override): target moves a `boxSeekGain` fraction from `base` toward the box lane.
+  if (boxLane !== undefined) offset += (boxLane - base) * OVERTAKE.boxSeekGain;
 
   // Sum → clamp → single rate-limited drift. All influences composed additively above.
   const target = clamp(base + offset, 0.05, 0.95);

@@ -10,7 +10,7 @@ import { DT_MS } from '../types.ts';
  */
 export const roarHandler: SkillHandler = (ctx) => {
   const { self, all, params, frame } = ctx;
-  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
+  ctx.emit({ variant: 'activate' });
 
   const range = Number(params.range);
   const stagger = Math.round(Number(params.staggerMs) / DT_MS);
@@ -25,6 +25,7 @@ export const roarHandler: SkillHandler = (ctx) => {
       continue;
     if (self.teamId !== undefined && r.teamId === self.teamId) continue;
     if (Math.abs(r.progress - self.progress) > range) continue;
+    if (r.aoeImmune) { ctx.emit({ variant: 'dodge', targetId: r.id }); continue; } // 👽 AOE-immune (alien)
     if ((r.skill.starUntil ?? 0) > frame) { ctx.emit({ variant: 'dodge', targetId: r.id }); continue; } // ⭐ star
     if ((r.skill.skillInvulnUntil ?? 0) > frame) { ctx.emit({ variant: 'dodge', targetId: r.id }); continue; } // skill i-frames
     if (ctx.tryDecoyGuard(r)) { ctx.emit({ variant: 'dodge', targetId: r.id }); continue; } // gumiho decoy absorbs (퐁!)

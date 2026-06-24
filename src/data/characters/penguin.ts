@@ -18,16 +18,15 @@ export const penguin: CharacterData = {
   // Front-facing waddler: biped runStyle gives alternating legs + flipper swing.
   runStyle: 'biped',
   renderScale: 0.9,
-  // Roly-poly slider: slow waddle, but heavy and hard to shove around.
-  speed: 2,
-  power: 4,
+  // Belly-slider: straight-ahead waddle, sluggish through bends.
+  cornering: 2,
   skill: {
     type: 'icefield',
-    cooldownMs: [5000, 8000],
+    cooldownMs: [9000, 14000],
     // Lays an ice patch ahead (start = progress + aheadOffset, length zoneLength)
     // for durationMs. Species-based, team-agnostic: penguins glide faster
     // (boostFactor) across it; everyone else slips slower (slowFactor).
-    params: { zoneLength: 80, durationMs: 2800, slowFactor: 0.80, boostFactor: 1.06, aheadOffset: 40 },
+    params: { zoneLength: 80, durationMs: 2800, slowFactor: 0.80, boostFactor: 1.18, aheadOffset: 40 },
   },
   lines: {
     skill: '빙판 깔기! 미끌미끌~ 🧊',

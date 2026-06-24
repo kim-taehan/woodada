@@ -18,10 +18,11 @@ import { NameTag } from './character/NameTag.ts';
 import { SpeechBubbleLayer } from './fx/SpeechBubble.ts';
 import { FxLayer } from './fx/FxLayer.ts';
 import { CommentaryBar } from './fx/Commentary.ts';
-import { eventLine, leadLine, lastLapLine, mimicLine, mimicCopyBubble, bananaFailBubble, catDodgeBubble, catDodgeLine, eliminationLine, eliminationBubble } from './fx/commentaryLines.ts';
+import { eventLine, leadLine, lastLapLine, mimicLine, mimicCopyBubble, roarActivateBubble, icefieldActivateBubble, zoomiesActivateBubble, catwalkActivateBubble, illusionActivateBubble, bristleActivateBubble, abductActivateBubble, bananaFailBubble, bananaHitBubble, catDodgeBubble, catDodgeLine, eliminationLine, eliminationBubble } from './fx/commentaryLines.ts';
 import { Scoreboard } from './Scoreboard.ts';
 import { TopRankHud, type TopRow } from './TopRankHud.ts';
 import { teamPalette, type TeamId } from '../data/teams.ts';
+import { FINISH_OFFSET_FRAC } from '../engine/types.ts';
 
 interface RacerView {
   character: PartsCharacter;
@@ -60,13 +61,39 @@ interface RacerView {
   /** clock (seconds) at which the reel-in tween started. */
   reelStart: number;
   /**
-   * Death-match (선두탈락 only) rank badge ("1등"/"2등"…) shown above this racer
+   * Death-match (선두탈락 only) rank badge ("1 등"/"2 등"…) shown above this racer
    * once it's knocked out and lined up in the centre row. Lazily created in
    * placeEliminated (so non-elimination races never make one); dropped with the
    * view on the next buildScene (charLayer.removeChildren + views.clear). null
    * until first shown / in 꼴찌탈락 (last) mode, which shows no badge.
    */
   rankBadge: Text | null;
+  /**
+   * Relay waiting runner: when this runner should move from the infield queue to
+   * the start line. `null` = still in queue; number = clock (seconds) when the
+   * move started. The runner lerps from queue spot to its start-line lane over
+   * RELAY_WALK_SECS.
+   */
+  relayWalkStart: number | null;
+  /** Target start-line position for relay walk (set when walk begins). */
+  relayWalkTarget: Pos | null;
+  /**
+   * Relay handoff: when this runner just finished a leg and should move from
+   * the finish line back to the waiting queue. `null` = not transitioning;
+   * number = clock (seconds) when the return started. The runner lerps from
+   * current spot to its queue position over RELAY_RETURN_SECS.
+   */
+  relayReturnStart: number | null;
+  /** Target queue position for relay return (set when return begins). */
+  relayReturnTarget: { x: number; y: number } | null;
+  /**
+   * True while this relay runner was in `running` phase in the previous frame.
+   * Set by the main render loop; cleared when return animation is triggered.
+   * When the runner transitions running→waiting (finished a leg), this flag fires
+   * the return animation regardless of whether the engine updated r.leg (which it
+   * doesn't when ownNext >= config.laps, causing the old leg-compare approach to fail).
+   */
+  relayWasRunning: boolean;
 }
 
 export interface RaceRenderer {
@@ -127,6 +154,11 @@ const IMPACT_DELAY = DIVE_RISE + DIVE_HANG + DIVE_PLUNGE * 0.82;
 // screen space) from where it was to its engine-demoted spot behind the spider.
 // Matches the webPull strand/yank FX (~0.4s ttl) so glyph + body arrive together.
 const REEL_SECS = 0.25;
+
+// Relay waiting runner walk to start line: duration and trigger point.
+const RELAY_WALK_SECS = 1.2; // smooth walk animation duration
+const RELAY_RETURN_SECS = 1.5; // finished runner returns to waiting queue
+const RELAY_WALK_TRIGGER = 0.75; // first racer progress (u) to trigger 2nd runner walk (entering left curve)
 
 /**
  * Screen-space hop offset at `age` seconds into the jump-headbutt: how high off
@@ -359,6 +391,9 @@ export function createRaceRenderer(): RaceRenderer {
   let lastLapTriggered = false;
   let banner: Container | null = null;
   let bannerBornAt = 0;
+  let lanePopup: Container | null = null;
+  let lanePopupBornAt = 0;
+  let laneChangeShown = false;
   let audioCtx: AudioContext | null = null;
 
   // Relay: total legs per team (max team size); 0 when not a relay.
@@ -416,6 +451,25 @@ export function createRaceRenderer(): RaceRenderer {
     app.stage.addChild(banner);
     bannerBornAt = clock;
     commentary.say(lastLapLine(Math.round(clock * 10)), clock, true); // priority: bypass the hold
+  }
+
+  function triggerLaneChange(): void {
+    laneChangeShown = true;
+    if (lanePopup) lanePopup.destroy();
+    lanePopup = new Container();
+    const bg = new Graphics();
+    bg.roundRect(-110, -22, 220, 44, 14);
+    bg.fill({ color: 0x1a3a2a, alpha: 0.82 });
+    lanePopup.addChild(bg);
+    const txt = new Text({
+      text: '🏁 라인 이동 가능',
+      style: { fontFamily: 'sans-serif', fontSize: 22, fontWeight: '800', fill: 0x7effb2, stroke: { color: 0x0a1f14, width: 4 } },
+    });
+    txt.anchor.set(0.5);
+    lanePopup.addChild(txt);
+    lanePopup.position.set(width / 2, height * 0.48);
+    app.stage.addChild(lanePopup);
+    lanePopupBornAt = clock;
   }
 
   function clearPodium(): void {
@@ -686,11 +740,12 @@ export function createRaceRenderer(): RaceRenderer {
       case 'zoomies:activate':
         fx.dust(self.x, self.y + 14, clock);
         fx.speedLines(self.x, self.y - 6, dir, clock);
+        bubbles.spawn(e.racerId, zoomiesActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       case 'catwalk:activate':
-        // Sashay: a shimmer of sparkles + smooth slip streak (the actor glows).
         fx.sparkle(self.x, self.y, clock);
         fx.speedLines(self.x, self.y - 6, dir, clock);
+        bubbles.spawn(e.racerId, catwalkActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       case 'catwalk:dodge':
         // "냐옹" immunity flash the instant a disruption is shrugged off.
@@ -756,6 +811,7 @@ export function createRaceRenderer(): RaceRenderer {
         if (at) {
           fx.bananaThrow(self.x, self.y - 6, at.x, at.y, clock);
           fx.stars(at.x, at.y, clock);
+          bubbles.spawn(e.racerId, bananaHitBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         }
         break;
       case 'banana:dodge':
@@ -795,9 +851,13 @@ export function createRaceRenderer(): RaceRenderer {
           fx.dizzy(at.x, at.y, clock);
         }
         break;
+      case 'icefield:activate':
+        bubbles.spawn(e.racerId, icefieldActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
+        break;
       case 'roar:activate':
         fx.shockwave(self.x, self.y, clock);
         fx.dust(self.x, self.y + 12, clock);
+        bubbles.spawn(e.racerId, roarActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       case 'roar:hit':
         // Per-victim stagger from the roar's shockwave: dizzy swirl + impact ring
@@ -805,11 +865,9 @@ export function createRaceRenderer(): RaceRenderer {
         if (at) fx.dizzy(at.x, at.y, clock);
         break;
       case 'bristle:activate': {
-        // 🦔 Hedgehog flares its quills: a ring of spikes snapping outward in the
-        // spike colour (palette `base`), not the pale face tint. The actor's glow +
-        // pop are already raised above; this is the "가시 곤두" punch.
         const spikeTint = spikeTintOf(e.racerId);
         fx.bristle(self.x, self.y, spikeTint, clock);
+        bubbles.spawn(e.racerId, bristleActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       }
       case 'bristle:hit':
@@ -846,11 +904,8 @@ export function createRaceRenderer(): RaceRenderer {
         break;
       }
       case 'abduct:activate':
-        // 🕸️ Spider rears up and flings web (the partmodel 'skill' pose throws the
-        // front legs wide). The strand + yank land on the paired `abduct:hit`
-        // (same frame), which carries the target. Here just flick a couple of
-        // anticipation speed-lines off the cast. Actor glow/pop already raised.
         fx.speedLines(self.x, self.y - 6, dir, clock);
+        bubbles.spawn(e.racerId, abductActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       case 'abduct:hit':
         // 🕸️ Web connects: a silk strand snaps spider→target, the target is reeled
@@ -887,9 +942,12 @@ export function createRaceRenderer(): RaceRenderer {
         fx.baton(self.x, self.y - 6, dst.x, dst.y, clock);
         fx.dust(dst.x, dst.y + 20, clock);
         const v2g = selfHandoff ? v : v2;
-        if (v2g) v2g.glowUntil = clock + 1.6;
+        if (v2g) v2g.glowUntil = clock + 0.7;
         break;
       }
+      case 'illusionClone:activate':
+        bubbles.spawn(e.racerId, illusionActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
+        break;
       case 'illusionClone:clone': {
         // 🦊 Decoys conjured: a magic poof on the gumiho (the activate beat already
         // raised its glow/pop + "허허…" bubble), plus a conjure poof landing on EACH
@@ -1370,7 +1428,7 @@ export function createRaceRenderer(): RaceRenderer {
         character.root.addChildAt(glow, 0); // behind the body
         const tag = new NameTag(p.name, tint);
         charLayer.addChild(character.root, tag.root);
-        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0, diveAt: -1, diveTargetId: null, reelFrom: null, reelStart: 0, rankBadge: null });
+        views.set(p.id, { character, tag, tint, size: char.renderScale ?? 1, glow, glowUntil: 0, diveAt: -1, diveTargetId: null, reelFrom: null, reelStart: 0, rankBadge: null, relayWalkStart: null, relayWalkTarget: null, relayReturnStart: null, relayReturnTarget: null, relayWasRunning: false });
         names[p.id] = p.name;
       }
       namesById = names;
@@ -1395,6 +1453,11 @@ export function createRaceRenderer(): RaceRenderer {
         banner.destroy();
         banner = null;
       }
+      if (lanePopup) {
+        lanePopup.destroy();
+        lanePopup = null;
+      }
+      laneChangeShown = false;
       // Relay: legs per team = chosen laps (members cycle members[i % size]).
       // Drives the "n / laps 주자" counter. (Was max team size — now leg=laps.)
       relayLegTotal = cfg.relay ? Math.max(1, cfg.laps) : 0;
@@ -1454,6 +1517,19 @@ export function createRaceRenderer(): RaceRenderer {
         }
       }
 
+      // Relay handoff: temporarily disabled due to stability issues
+      // for (const e of frame.events) {
+      //   if (e.type !== 'relay' || e.variant !== 'handoff' || !e.targetId) continue;
+      //   const finisher = e.racerId;
+      //   const fv = views.get(finisher);
+      //   if (!fv) continue;
+      //   const prevState = prevScreenPos.get(finisher);
+      //   if (prevState && !fv.relayReturnStart) {
+      //     fv.relayReturnStart = clock;
+      //     fv.relayReturnTarget = null;
+      //   }
+      // }
+
       const posById = new Map<string, Pos>();
       // Live racer states by id so a diving eagle can read its target's CURRENT
       // track spot each frame (the target keeps moving during the plunge).
@@ -1485,10 +1561,14 @@ export function createRaceRenderer(): RaceRenderer {
       for (const r of frame.racers) {
         const v = views.get(r.id);
         if (!v) continue;
+        // Relay: collect waiting teammates so they queue off-track (return animation
+        // is handled inside the waiting block, not in the main loop).
         if (config.relay && r.phase === 'waiting') {
           waiting.push(r);
           continue;
         }
+        // Track running→waiting phase transition for relay return detection.
+        if (config.relay && r.phase === 'running') v.relayWasRunning = true;
         // ── Post-finish: coast past the line → free-scatter → emote by rank (#33).
         // Display-only: positions are interpolated by (frame - finishedAt) and a
         // deterministic id-hash, so the tableau is reproducible and never feeds
@@ -1635,37 +1715,195 @@ export function createRaceRenderer(): RaceRenderer {
       // infield by the start/finish line, stacked next-up first. Vests make it
       // obvious whose turn is coming. They never touch the racing line.
       if (config.relay && waiting.length) {
+        // For each team, find the runner who is currently running and near the trigger point.
+        // Then identify the next runner (leg + 1) who should walk to the start line.
+        const teamNextLegInfo = new Map<string, { currentLeg: number; lane: number }>();
+        for (const r of frame.racers) {
+          if (r.phase !== 'running' || !r.teamId) continue;
+          const u = ((r.progress % config.trackLength) + config.trackLength) % config.trackLength / config.trackLength;
+          if (u >= RELAY_WALK_TRIGGER) {
+            // This runner is at the trigger point; record their leg and lane.
+            const currentLeg = r.leg ?? 0;
+            const existing = teamNextLegInfo.get(r.teamId);
+            if (!existing || currentLeg > existing.currentLeg) {
+              teamNextLegInfo.set(r.teamId, { currentLeg, lane: r.lane });
+            }
+          }
+        }
+
         const byTeam = new Map<string, RacerState[]>();
         for (const r of waiting) {
           const key = r.teamId ?? r.id;
-          (byTeam.get(key) ?? byTeam.set(key, []).get(key)!).push(r);
+          const arr = byTeam.get(key) ?? [];
+          byTeam.set(key, arr);
+          arr.push(r);
         }
         // Sort each team's queue by leg so the next runner sits at the front.
         for (const list of byTeam.values()) list.sort((a, b) => (a.leg ?? 0) - (b.leg ?? 0));
+        
         const teams = [...byTeam.keys()];
-        const baseY = track.geo.cy + track.geo.radius * 0.42; // inside the bottom straight
+        // Waiting position: near the baton exchange line (start/finish line area).
+        // Start line is at the LEFT end of the bottom straight (u=0).
+        const startX = track.geo.cx - track.geo.straightHalf; // start line x
+        // Queue area: BELOW the outer edge of the bottom straight (spectator area, not inner field).
+        // Bottom straight center y = cy + radius; outer edge = cy + radius + laneSpan/2.
+        const startY = track.geo.cy + track.geo.radius + track.geo.laneSpan * 0.7 + 30;
         const colGap = Math.min(96, (track.geo.straightHalf * 1.6) / Math.max(1, teams.length));
-        const x0 = track.geo.cx - (colGap * (teams.length - 1)) / 2;
-        teams.forEach((teamKey, ci) => {
+        const x0 = startX - (colGap * (teams.length - 1)) / 2;
+        
+        // Pre-compute natural positions for each team's waiting runners near exchange line.
+        // Each team gets a cluster area; runners are scattered naturally within it.
+        const teamPositions = new Map<string, Array<{x: number, y: number}>>();
+        for (const teamKey of teams) {
           const col = byTeam.get(teamKey)!;
+          const positions: Array<{x: number, y: number}> = [];
+          const teamX0 = x0 + teams.indexOf(teamKey) * colGap;
+          // Cluster area width for this team (near exchange line).
+          const clusterWidth = Math.max(80, colGap * 0.8);
+          
+          col.forEach((r, ri) => {
+            // Natural scatter: pseudo-random offset based on racer id.
+            const hash = r.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+            const xOffset = ((hash % 100) - 50) * (clusterWidth / 50); // ±clusterWidth/2
+            const yOffset = (ri * 20) + ((hash % 25) - 12); // slight vertical scatter
+            positions.push({
+              x: teamX0 + xOffset,
+              y: startY + yOffset,
+            });
+          });
+          teamPositions.set(teamKey, positions);
+        }
+        
+        // Find the running racer's lane for each team that has a runner at trigger point.
+        const teamRunningLane = new Map<string, number>();
+        for (const [teamId, legInfo] of teamNextLegInfo.entries()) {
+          const runner = frame.racers.find(r => r.teamId === teamId && r.phase === 'running' && (r.leg ?? 0) === legInfo.currentLeg);
+          if (runner) {
+            teamRunningLane.set(teamId, runner.lane);
+          }
+        }
+
+        teams.forEach((teamKey) => {
+          const col = byTeam.get(teamKey)!;
+          const naturalPositions = teamPositions.get(teamKey)!;
           col.forEach((r, ri) => {
             const v = views.get(r.id);
             if (!v) return;
-            const x = x0 + ci * colGap;
-            const y = baseY + ri * 30;
-            v.character.root.position.set(x, y);
-            v.character.root.zIndex = 50 + ri; // behind active racers
-            v.character.root.scale.set(CHAR_SCALE * 0.62 * v.size * fieldScale);
+
+            // Check if this runner should walk to start line.
+            // Trigger when: team has a runner at trigger point AND this runner is the NEXT leg AND not already at start line.
+            const isWalking = v.relayWalkStart !== null;
+            // Already at start line (completed walk).
+            const isAtStartLine = v.relayWalkTarget !== null && v.relayWalkStart !== null;
+            
+            // Get the current leg of this team's runner at trigger point.
+            const legInfo = teamNextLegInfo.get(teamKey);
+            const nextLeg = legInfo ? legInfo.currentLeg + 1 : -1;
+            const isNextRunner = r.leg === nextLeg; // this runner is the next one to run
+            
+            let targetX: number, targetY: number, heading: number;
+            const queuePos = naturalPositions[ri] || naturalPositions[0];
+
+            // ── State machine ─────────────────────────────────────────────────
+            // Return trigger: runner was in `running` last frame, now in `waiting`
+            // → they just finished a leg. relayWasRunning is set by the main loop
+            // and cleared here — purely per-racer, immune to other teams' events.
+            if (v.relayWasRunning && v.relayReturnStart === null) {
+              v.relayWasRunning = false;
+              v.relayReturnStart = clock;
+              v.relayReturnTarget = { x: queuePos.x, y: queuePos.y };
+              // For the initial runner (never walked): synthesise a start-line "from"
+              // so the return lerps from the line rather than popping to queue.
+              if (!v.relayWalkTarget && config) {
+                const tp = track.place(0, config.trackLength, r.lane);
+                v.relayWalkTarget = { x: tp.x, y: tp.y, heading: 1 };
+              }
+            }
+            // Walk trigger: not moving AND it's this runner's turn.
+            if (!isWalking && !isAtStartLine && v.relayReturnStart === null && isNextRunner && legInfo) {
+              v.relayWalkStart = clock;
+              v.relayWalkTarget = null;
+            }
+
+            const isReturning = v.relayReturnStart !== null;
+
+            if (isReturning) {
+              // ── Return: lerp from start line back to queue position ──────────
+              const retProg = Math.min(1, (clock - v.relayReturnStart!) / RELAY_RETURN_SECS);
+              const ease = retProg < 0.5
+                ? 2 * retProg * retProg
+                : 1 - Math.pow(-2 * retProg + 2, 2) / 2; // easeInOutQuad
+              const from = v.relayWalkTarget ?? queuePos;
+              const toX = v.relayReturnTarget?.x ?? queuePos.x;
+              const toY = v.relayReturnTarget?.y ?? queuePos.y;
+              targetX = from.x + (toX - from.x) * ease;
+              targetY = from.y + (toY - from.y) * ease;
+              heading = -1;
+              if (retProg >= 1) {
+                v.relayReturnStart = null;
+                v.relayReturnTarget = null;
+                if (isNextRunner && legInfo) {
+                  // Seamless: already needed at start line → start walking from queue.
+                  v.relayWalkStart = clock;
+                  v.relayWalkTarget = null;
+                } else {
+                  v.relayWalkStart = null;
+                  v.relayWalkTarget = null;
+                }
+                targetX = toX;
+                targetY = toY;
+              }
+            } else if (isWalking && v.relayWalkStart !== null) {
+              // ── Walk to start line ───────────────────────────────────────────
+              const walkProgress = Math.min(1, (clock - v.relayWalkStart) / RELAY_WALK_SECS);
+              const ease = 1 - Math.pow(1 - walkProgress, 3); // easeOutCubic
+
+              if (!v.relayWalkTarget && config) {
+                const targetLane = teamRunningLane.get(teamKey) ?? 0.5;
+                const tp = track.place(0, config.trackLength, targetLane);
+                v.relayWalkTarget = { x: tp.x, y: tp.y, heading: 1 };
+              }
+
+              const target = v.relayWalkTarget!;
+              targetX = queuePos.x + (target.x - queuePos.x) * ease;
+              targetY = queuePos.y + (target.y - queuePos.y) * ease;
+              heading = 1;
+
+              if (walkProgress >= 1) {
+                targetX = target.x;
+                targetY = target.y;
+              }
+            } else if (isAtStartLine && v.relayWalkTarget) {
+              // ── Waiting at start line for baton ─────────────────────────────
+              targetX = v.relayWalkTarget.x;
+              targetY = v.relayWalkTarget.y;
+              heading = 1;
+            } else {
+              // ── In queue: cheer bounce ────────────────────────────────────────
+              // Staggered sin wave per runner (ri offset) so they don't all bounce in sync.
+              const bounce = Math.sin(clock * 2.5 * Math.PI * 2 + ri * 1.7) * 6;
+              targetX = queuePos.x;
+              targetY = queuePos.y + bounce;
+              heading = 1;
+            }
+
+            v.character.root.position.set(targetX, targetY);
+            v.character.root.zIndex = 50 + ri;
+            v.character.root.scale.set(CHAR_SCALE * v.size * fieldScale);
+            // After race ends: winning team celebrates, others settle.
+            const raceOver = frame.finished;
+            const isRelayWinner = raceOver && winningTeamId !== undefined && r.teamId === winningTeamId;
+            const waitPhase = isWalking || isReturning ? 'running' : raceOver ? (isRelayWinner ? 'celebrate' : 'dejected') : 'waiting';
             v.character.update({
-              phase: 'waiting',
-              speedNorm: 0,
+              phase: waitPhase,
+              speedNorm: isWalking || isReturning ? 0.1 : (raceOver && isRelayWinner) ? 1 : 0.5,
               clock,
               facing: 0,
-              heading: 1,
+              heading,
               reducedMotion,
             });
             v.glow.visible = false;
-            v.tag.setPosition(x, y - 40);
+            v.tag.setPosition(targetX, targetY - 40);
             v.tag.root.zIndex = 90000 + ri;
           });
         });
@@ -1820,6 +2058,27 @@ export function createRaceRenderer(): RaceRenderer {
         }
       }
 
+      // Lane-change popup: fires once per race when the leader (leg=0) crosses
+      // the opening straight. Short pill-shaped badge in the centre of the track.
+      if (!laneChangeShown && config) {
+        const threshold = FINISH_OFFSET_FRAC * config.trackLength;
+        const leaderInOpening = frame.racers.find(
+          (r) => r.phase === 'running' && (r.leg ?? 0) === 0 && r.progress >= threshold,
+        );
+        if (leaderInOpening) triggerLaneChange();
+      }
+      if (lanePopup) {
+        const age = clock - lanePopupBornAt;
+        if (age > 1.6) {
+          lanePopup.destroy();
+          lanePopup = null;
+        } else {
+          const pop = Math.min(1, age * 8);
+          lanePopup.scale.set(0.7 + pop * 0.3);
+          lanePopup.alpha = age < 1.0 ? 1 : Math.max(0, 1 - (age - 1.0) / 0.6);
+        }
+      }
+
       fx.update(clock, dt);
       bubbles.update(clock);
       commentary.update(clock);
@@ -1880,19 +2139,24 @@ export function createRaceRenderer(): RaceRenderer {
           if (!allMembers.length) return;
 
           if (teamRank < 3) {
-            // On a podium block. 1등팀 깝친다, 2·3등팀 중립. Up to MAX_ON_BLOCK stand
+            // On a podium block. 1 등팀 깝친다, 2·3 등팀 중립. Up to MAX_ON_BLOCK stand
             // on the block; any overflow (a big team) clusters on the GROUND in
             // front of the block in the SAME pose (winning team still celebrates).
             const onBlock = allMembers.slice(0, MAX_ON_BLOCK);
             const overflow = allMembers.slice(MAX_ON_BLOCK);
             const x = slotX[teamRank];
             const h = blockH[teamRank];
-            const block = new Graphics().roundRect(x - bw / 2, baseY - h, bw, h, 8).fill(blockColor[teamRank]);
+            // Scale block width to team size (wider for bigger teams).
+            const teamSpan = allMembers.length;
+            const scaledBw = Math.max(bw, bw + (teamSpan - 1) * 20);
+            const block = new Graphics().roundRect(x - scaledBw / 2, baseY - h, scaledBw, h, 8).fill(blockColor[teamRank]);
             block.stroke({ color: 0xffffff, width: 3, alpha: 0.65 });
             const num = new Text({ text: `${teamRank + 1}`, style: { fontSize: 46, fontWeight: '900', fill: 0xffffff } });
             num.anchor.set(0.5);
             num.position.set(x, baseY - h / 2);
             podiumScene!.addChild(block, num);
+            // Widen the number text anchor area to match the block.
+            num.scale.set(scaledBw / bw, 1);
 
             const phase = teamRank === 0 ? 'celebrate' : 'finished';
             // Fan the on-block members across the block top in a tidy huddle.
@@ -1901,16 +2165,16 @@ export function createRaceRenderer(): RaceRenderer {
               if (!v) return;
               const span = onBlock.length;
               const t = span > 1 ? i / (span - 1) - 0.5 : 0; // -0.5..0.5
-              const px = x + t * Math.min(bw * 0.62, 26 + span * 14);
+              const px = x + t * Math.min(scaledBw * 0.62, 26 + span * 14);
               const py = baseY - h - 14 + (i % 2) * 12; // slight stagger so they don't fully overlap
               v.character.root.visible = true;
               v.character.root.position.set(px, py);
               v.character.root.scale.set((teamRank === 0 ? 0.72 : 0.6) * v.size);
               v.character.root.zIndex = 1000 + (3 - teamRank) * 10 + i;
-              // Only the lead member shows a tag (keeps the cluster uncluttered).
-              v.tag.root.visible = i === 0;
+              // Show all team members' names on the podium.
+              v.tag.root.visible = true;
               v.tag.setPosition(px, py - 78);
-              v.tag.root.zIndex = 200000;
+              v.tag.root.zIndex = 200000 + i;
               podiumChars.push({ char: v.character, winner: teamRank === 0, phase });
               shown.add(id);
             });
@@ -1921,19 +2185,21 @@ export function createRaceRenderer(): RaceRenderer {
               if (!v) return;
               const span = overflow.length;
               const t = span > 1 ? i / (span - 1) - 0.5 : 0;
-              const px = x + t * Math.min(bw * 0.92, 30 + span * 16);
+              const px = x + t * Math.min(scaledBw * 0.92, 30 + span * 16);
               const py = baseY + 30 + (i % 2) * 16; // just in front of the block, on the field
               v.character.root.visible = true;
               v.character.root.position.set(px, py);
               v.character.root.scale.set(0.54 * v.size);
               v.character.root.zIndex = 900 + (3 - teamRank) * 10 + i; // in front of the block face
-              v.tag.root.visible = false;
+              v.tag.root.visible = true;
+              v.tag.setPosition(px, py - 68);
+              v.tag.root.zIndex = 200000 + i;
               podiumChars.push({ char: v.character, winner: false, phase });
               shown.add(id);
             });
           } else {
-            // 4등팀 이하: no block — the whole team slumps below the podium, dejected
-            // (show all members so nobody is hidden; they're anonymous also-rans).
+            // 4 등팀 이하: no block — the whole team slumps below the podium, dejected
+            // (show all members with names so everyone is recognized).
             const members = allMembers;
             const span = members.length;
             const teamSlot = teamRank - 3; // 0,1,... among the also-rans
@@ -1948,7 +2214,9 @@ export function createRaceRenderer(): RaceRenderer {
               v.character.root.position.set(px, py);
               v.character.root.scale.set(0.52 * v.size);
               v.character.root.zIndex = 800 + i;
-              v.tag.root.visible = false; // also-rans stay anonymous below the podium (no tag clutter)
+              v.tag.root.visible = true;
+              v.tag.setPosition(px, py - 68);
+              v.tag.root.zIndex = 200000 + i;
               podiumChars.push({ char: v.character, winner: false, phase: 'dejected' });
               shown.add(id);
             });

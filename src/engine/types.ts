@@ -82,6 +82,13 @@ export interface SkillRuntime {
   dodgeFrame?: number;
   dodgeRoll?: boolean;
   /**
+   * hedgehog 작은 표적 — ranged-evade memo. Mirrors dodgeFrame/dodgeRoll: the evade roll
+   * against incoming ranged disruption is resolved once per (target id, frame) and cached
+   * here so every attacker in that frame sees the same outcome (attacker-order independent).
+   */
+  evadeFrame?: number;
+  evadeRoll?: boolean;
+  /**
    * skill i-frames: frame index until which the racer is immune to incoming
    * disruption (stun/slow/pushback/pull/web), granted for ~0.3s the instant it
    * activates its own skill. Distinct from ⭐ star (longer + speed boost); this is
@@ -122,17 +129,38 @@ export interface RacerState {
   /** Intrinsic cruise speed (jittered per racer, unbiased in expectation). */
   baseSpeed: number;
   /**
-   * Contact/resistance stat (1..5, median 3) copied from CharacterData at init.
-   * Read at effect time to resist incoming slow/pushback/stun and ease block
-   * deceleration (see engine/stats.ts). Undefined → neutral (no effect).
-   */
-  power?: number;
-  /**
    * Cornering specialty (1..5, median 3) copied from CharacterData at init. Read each frame to
    * bias speed by track section — fast on straights & slow on curves (low) or vice-versa (high),
    * netting to zero over a lap (see engine/stats.ts sectionSpeedBias). Undefined → no preference.
    */
   cornering?: number;
+  /**
+   * Immune to AREA-OF-EFFECT disruption skills (copied from CharacterData at init). AOE skill
+   * handlers (e.g. roar) skip this racer. Trait-based, not an id check. Undefined → not immune.
+   */
+  aoeImmune?: boolean;
+  /**
+   * Wall-crawl grip (벽타기, 0..1) copied from CharacterData at init. Fraction of the curve
+   * outer-rail distance penalty (LANE.distLoss) this racer ignores in laneDistanceFactor.
+   * Undefined → 0 (normal penalty). Speed-neutral — only the lane→distance conversion is eased.
+   */
+  outerGrip?: number;
+  /**
+   * Small-target ranged evasion (작은 표적, 0..1) copied from CharacterData at init. Chance an
+   * incoming ranged disruption (banana / web / shell) misses this racer. Undefined → 0 (no evade).
+   */
+  rangedEvade?: number;
+  /**
+   * 구미호 본능 (역전 특화): 선두와의 거리 비례 최대 속도 보너스 (0..1 multiplier).
+   * 선두와 gap ≥ trackLength * 0.5 이면 최대치 적용. Trait, not an id check.
+   */
+  catchupBoost?: number;
+  /**
+   * Head start (빠른 출발): frame index until which this racer is held at the start line
+   * (progress 0, speed 0) before it begins running. Computed at init from the field-wide head
+   * start so the biggest head-start racer launches first. 0 → starts at the gun (frame 0).
+   */
+  startHoldUntil: number;
   /**
    * Relay-only: this racer's leg index within its team (0-based, participation
    * order; anchor = last). The renderer reads this on the team's active
@@ -306,4 +334,12 @@ export const DT_MS = 1000 / 60;
  * Shared with the renderer (imported from this module) so the drawn finish line
  * matches the simulated one.
  */
-export const FINISH_OFFSET_FRAC = 0.21;
+export const FINISH_OFFSET_FRAC = 0.25;
+
+/**
+ * Staggered start offset (fraction of one lap). At race start the outer-most
+ * racer (lane=1) begins this many laps ahead; inner-most (lane=0) starts at 0.
+ * Intermediate lanes interpolate linearly. Mirrors the diagonal start line
+ * drawn at u=0 in the renderer (outer edge at u=START_STAGGER_FRAC, inner at 0).
+ */
+export const START_STAGGER_FRAC = 0.018;

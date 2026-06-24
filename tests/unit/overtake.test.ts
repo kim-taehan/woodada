@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { applyOvertake, OVERTAKE } from '../../src/engine/overtake.ts';
+import { applyOvertake, OVERTAKE, laneDistanceFactor } from '../../src/engine/overtake.ts';
+import { LANE } from '../../src/engine/tuning.ts';
 import { createRng } from '../../src/engine/prng.ts';
 import type { RacerState } from '../../src/engine/types.ts';
 
@@ -15,6 +16,7 @@ function racer(over: Partial<RacerState>): RacerState {
     phase: 'running',
     facing: 0,
     skillCooldownUntil: 0,
+    startHoldUntil: 0,
     skill: {},
     ...over,
   };
@@ -59,5 +61,32 @@ describe('overtake / blocking', () => {
     applyOvertake(self, [self, front], createRng(1), 0);
     expect(self.phase).toBe('straying');
     expect(self.speed).toBe(8);
+  });
+});
+
+describe('laneDistanceFactor — 벽타기 (outerGrip)', () => {
+  it('on a STRAIGHT, lane (and grip) never cost distance', () => {
+    for (const lane of [0, 0.5, 1]) {
+      expect(laneDistanceFactor(lane, false, 0)).toBe(1);
+      expect(laneDistanceFactor(lane, false, 0.5)).toBe(1);
+      expect(laneDistanceFactor(lane, false, 1)).toBe(1);
+    }
+  });
+
+  it('on a CURVE, outerGrip eases the outer-rail distance penalty (and never reverses it)', () => {
+    const lane = 1; // outer rail = full penalty
+    const none = laneDistanceFactor(lane, true, 0); // 1 - distLoss
+    const half = laneDistanceFactor(lane, true, 0.5); // spider's start value
+    const full = laneDistanceFactor(lane, true, 1); // grips fully → no penalty
+
+    expect(none).toBeCloseTo(1 - LANE.distLoss, 10);
+    expect(full).toBeCloseTo(1, 10); // outerGrip 1 cancels the whole penalty
+    // A gripper covers MORE distance for the same speed out wide than a non-gripper.
+    expect(half).toBeGreaterThan(none);
+    expect(half).toBeLessThan(full);
+    // grip 0.5 cancels exactly half the loss.
+    expect(1 - half).toBeCloseTo((1 - none) * 0.5, 10);
+    // Default arg (no grip) === explicit 0 (back-compat for existing call sites).
+    expect(laneDistanceFactor(lane, true)).toBe(none);
   });
 });
