@@ -122,6 +122,70 @@ const CAT_WALK = ['냐옹~ 사뿐', '캣워크로 슉 흘림 😼', '냐옹, 안
 
 const BANANA_HIT = ['맞았다!! 🍌', '으하하, 직빵~! 🐒', '찰떡 명중! ㅋㅋ', '바나나 성공! 가랏!'];
 
+const ZOOMIES_ACTIVATE = [
+  '우다다다다!!!',
+  '달려달려!! 🐶',
+  '멈출 수가 없어!!',
+  '왈왈왈왈왈!!',
+  '나 지금 날고 있어~!',
+  '우다다!! 비켜비켜!!',
+];
+const CATWALK_ACTIVATE = [
+  '캣워크~ 😼',
+  '슉~ (우아하게)',
+  '흥, 이 정도야.',
+  '냐옹, 비켜주지~',
+  '고양이니까~ 😼',
+  '스르르~ 빠져나감',
+];
+const ILLUSION_ACTIVATE = [
+  '허허… (실은 나야)',
+  '나 어디 있게? ㅋㅋ',
+  '분신술~! 🦊',
+  '진짜는 맞춰봐!',
+  '구미호 마법~ ✨',
+  '어느 게 나일까~?',
+];
+const BRISTLE_ACTIVATE = [
+  '따끔! 붙지 마! 🦔',
+  '가시 곤두세웠다!!',
+  '까칠하게 간다~',
+  '건드리면 따가워~',
+  '고슴도치 방어막! 🦔',
+  '뾰족뾰족 조심해!',
+];
+const ABDUCT_ACTIVATE = [
+  '거기 서! 줄로 콱! 🕸️',
+  '거미줄 발사~!',
+  '잡았다 요놈! 🕷️',
+  '꼼짝 마~ 끈끈해!',
+  '내 줄에 걸렸어! ㅋ',
+  '스르르… 당겨라! 🕸️',
+];
+const ROAR_ACTIVATE = [
+  '크아앙!! 🐻',
+  '나는 곰이다~~!',
+  '다 비켜엇!!',
+  '으르렁!! 덤벼!',
+  '포효 타임~~ 🐾',
+  '곰 나왔다!! 조심해!',
+];
+const ICEFIELD_ACTIVATE = [
+  '빙판이다~ 미끄러져라! 🧊',
+  '여기 얼음 깔았음 ㅋㅋ',
+  '뒤뚱뒤뚱~ 길 비켜! 🐧',
+  '내 홈이야~ 다 미끄러져!',
+  '얼어붙어라~ 🧊❄️',
+  '미끌미끌~ 조심하슈 ㅋ',
+];
+
+export function roarActivateBubble(seed: number): string { return pick(ROAR_ACTIVATE, seed); }
+export function icefieldActivateBubble(seed: number): string { return pick(ICEFIELD_ACTIVATE, seed); }
+export function zoomiesActivateBubble(seed: number): string { return pick(ZOOMIES_ACTIVATE, seed); }
+export function catwalkActivateBubble(seed: number): string { return pick(CATWALK_ACTIVATE, seed); }
+export function illusionActivateBubble(seed: number): string { return pick(ILLUSION_ACTIVATE, seed); }
+export function bristleActivateBubble(seed: number): string { return pick(BRISTLE_ACTIVATE, seed); }
+export function abductActivateBubble(seed: number): string { return pick(ABDUCT_ACTIVATE, seed); }
 export function bananaFailBubble(seed: number): string {
   return pick(BANANA_FAIL, seed);
 }

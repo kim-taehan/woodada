@@ -53,7 +53,7 @@ export const bristleHandler: SkillDef = {
     // Probabilistic counter: only roll once a real passer exists (stable draw order).
     if (!rng.bool(Number(params.triggerChance))) return; // the pass slipped by — hold
 
-    ctx.emit({ variant: 'activate', line: ctx.lines.skill });
+    ctx.emit({ variant: 'activate' });
 
     if ((passer.skill.starUntil ?? 0) > frame) { // ⭐ star shrugs off the spines
       ctx.emit({ variant: 'dodge', targetId: passer.id });

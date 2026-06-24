@@ -33,6 +33,12 @@ export const CONDITION = {
 export const RETRY_COOLDOWN_MS = 200;
 
 /**
+ * Global cooldown scale applied to every character's cooldownMs (initial + re-arm).
+ * < 1 → skills fire more often.  > 1 → skills fire less often.
+ */
+export const COOLDOWN_SCALE = 0.5;
+
+/**
  * Field-size cooldown scaling (16-racer skill-density relief). Every skill cooldown
  * roll (initial + each re-arm) is multiplied by a gentle factor that grows with the
  * number of racers ACTUALLY ON TRACK (relay `waiting`/`finished` excluded — only

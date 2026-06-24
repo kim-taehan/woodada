@@ -19,5 +19,5 @@ export const zoomiesHandler: SkillHandler = (ctx) => {
     self.lane = Math.min(1, self.lane + Number(params.strayLane));
   }
 
-  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
+  ctx.emit({ variant: 'activate' });
 };

@@ -10,7 +10,7 @@ import { DT_MS } from '../types.ts';
  */
 export const roarHandler: SkillHandler = (ctx) => {
   const { self, all, params, frame } = ctx;
-  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
+  ctx.emit({ variant: 'activate' });
 
   const range = Number(params.range);
   const stagger = Math.round(Number(params.staggerMs) / DT_MS);

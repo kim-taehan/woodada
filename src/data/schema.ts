@@ -97,6 +97,11 @@ export interface CharacterData {
    * racer (all 0) is held 0ms = the classic simultaneous start. Trait, not an id check. Default 0.
    */
   headStartMs?: number;
+  /**
+   * 구미호 본능 (역전 특화): 선두와 거리가 멀수록 속도가 증가한다. 값은 최대 속도 배율 보너스
+   * (0..1). 선두와의 거리가 trackLength * 0.5 이상이면 최대 보너스 적용. Trait, not an id check.
+   */
+  catchupBoost?: number;
   skill: SkillSpec;
   lines: CharacterLines;
 }

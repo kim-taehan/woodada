@@ -25,5 +25,5 @@ export const icefieldHandler: SkillHandler = (ctx) => {
     boostFactor: Number(params.boostFactor),
     slowFactor: Number(params.slowFactor),
   });
-  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
+  ctx.emit({ variant: 'activate' });
 };

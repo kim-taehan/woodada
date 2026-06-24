@@ -18,7 +18,7 @@ import { NameTag } from './character/NameTag.ts';
 import { SpeechBubbleLayer } from './fx/SpeechBubble.ts';
 import { FxLayer } from './fx/FxLayer.ts';
 import { CommentaryBar } from './fx/Commentary.ts';
-import { eventLine, leadLine, lastLapLine, mimicLine, mimicCopyBubble, bananaFailBubble, bananaHitBubble, catDodgeBubble, catDodgeLine, eliminationLine, eliminationBubble } from './fx/commentaryLines.ts';
+import { eventLine, leadLine, lastLapLine, mimicLine, mimicCopyBubble, roarActivateBubble, icefieldActivateBubble, zoomiesActivateBubble, catwalkActivateBubble, illusionActivateBubble, bristleActivateBubble, abductActivateBubble, bananaFailBubble, bananaHitBubble, catDodgeBubble, catDodgeLine, eliminationLine, eliminationBubble } from './fx/commentaryLines.ts';
 import { Scoreboard } from './Scoreboard.ts';
 import { TopRankHud, type TopRow } from './TopRankHud.ts';
 import { teamPalette, type TeamId } from '../data/teams.ts';
@@ -740,11 +740,12 @@ export function createRaceRenderer(): RaceRenderer {
       case 'zoomies:activate':
         fx.dust(self.x, self.y + 14, clock);
         fx.speedLines(self.x, self.y - 6, dir, clock);
+        bubbles.spawn(e.racerId, zoomiesActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       case 'catwalk:activate':
-        // Sashay: a shimmer of sparkles + smooth slip streak (the actor glows).
         fx.sparkle(self.x, self.y, clock);
         fx.speedLines(self.x, self.y - 6, dir, clock);
+        bubbles.spawn(e.racerId, catwalkActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       case 'catwalk:dodge':
         // "냐옹" immunity flash the instant a disruption is shrugged off.
@@ -850,9 +851,13 @@ export function createRaceRenderer(): RaceRenderer {
           fx.dizzy(at.x, at.y, clock);
         }
         break;
+      case 'icefield:activate':
+        bubbles.spawn(e.racerId, icefieldActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
+        break;
       case 'roar:activate':
         fx.shockwave(self.x, self.y, clock);
         fx.dust(self.x, self.y + 12, clock);
+        bubbles.spawn(e.racerId, roarActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       case 'roar:hit':
         // Per-victim stagger from the roar's shockwave: dizzy swirl + impact ring
@@ -860,11 +865,9 @@ export function createRaceRenderer(): RaceRenderer {
         if (at) fx.dizzy(at.x, at.y, clock);
         break;
       case 'bristle:activate': {
-        // 🦔 Hedgehog flares its quills: a ring of spikes snapping outward in the
-        // spike colour (palette `base`), not the pale face tint. The actor's glow +
-        // pop are already raised above; this is the "가시 곤두" punch.
         const spikeTint = spikeTintOf(e.racerId);
         fx.bristle(self.x, self.y, spikeTint, clock);
+        bubbles.spawn(e.racerId, bristleActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       }
       case 'bristle:hit':
@@ -901,11 +904,8 @@ export function createRaceRenderer(): RaceRenderer {
         break;
       }
       case 'abduct:activate':
-        // 🕸️ Spider rears up and flings web (the partmodel 'skill' pose throws the
-        // front legs wide). The strand + yank land on the paired `abduct:hit`
-        // (same frame), which carries the target. Here just flick a couple of
-        // anticipation speed-lines off the cast. Actor glow/pop already raised.
         fx.speedLines(self.x, self.y - 6, dir, clock);
+        bubbles.spawn(e.racerId, abductActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
         break;
       case 'abduct:hit':
         // 🕸️ Web connects: a silk strand snaps spider→target, the target is reeled
@@ -945,6 +945,9 @@ export function createRaceRenderer(): RaceRenderer {
         if (v2g) v2g.glowUntil = clock + 0.7;
         break;
       }
+      case 'illusionClone:activate':
+        bubbles.spawn(e.racerId, illusionActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
+        break;
       case 'illusionClone:clone': {
         // 🦊 Decoys conjured: a magic poof on the gumiho (the activate beat already
         // raised its glow/pop + "허허…" bubble), plus a conjure poof landing on EACH
@@ -1742,7 +1745,9 @@ export function createRaceRenderer(): RaceRenderer {
         // Waiting position: near the baton exchange line (start/finish line area).
         // Start line is at the LEFT end of the bottom straight (u=0).
         const startX = track.geo.cx - track.geo.straightHalf; // start line x
-        const startY = track.geo.cy; // center y of bottom straight
+        // Queue area: BELOW the outer edge of the bottom straight (spectator area, not inner field).
+        // Bottom straight center y = cy + radius; outer edge = cy + radius + laneSpan/2.
+        const startY = track.geo.cy + track.geo.radius + track.geo.laneSpan * 0.7 + 30;
         const colGap = Math.min(96, (track.geo.straightHalf * 1.6) / Math.max(1, teams.length));
         const x0 = startX - (colGap * (teams.length - 1)) / 2;
         
@@ -1885,9 +1890,13 @@ export function createRaceRenderer(): RaceRenderer {
             v.character.root.position.set(targetX, targetY);
             v.character.root.zIndex = 50 + ri;
             v.character.root.scale.set(CHAR_SCALE * v.size * fieldScale);
+            // After race ends: winning team celebrates, others settle.
+            const raceOver = frame.finished;
+            const isRelayWinner = raceOver && winningTeamId !== undefined && r.teamId === winningTeamId;
+            const waitPhase = isWalking || isReturning ? 'running' : raceOver ? (isRelayWinner ? 'celebrate' : 'dejected') : 'waiting';
             v.character.update({
-              phase: isWalking || isReturning ? 'running' : 'waiting',
-              speedNorm: isWalking || isReturning ? 0.1 : 0.5,
+              phase: waitPhase,
+              speedNorm: isWalking || isReturning ? 0.1 : (raceOver && isRelayWinner) ? 1 : 0.5,
               clock,
               facing: 0,
               heading,

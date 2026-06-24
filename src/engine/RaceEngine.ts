@@ -8,7 +8,7 @@ import { createRng, type Rng } from './prng.ts';
 import { applyOvertake, laneDistanceFactor } from './overtake.ts';
 import { sectionSpeedBias } from './stats.ts';
 import { isCurve, lapPhase } from './track.ts';
-import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE, DOG_STUN_RECOVER, PENGUIN_SPURT, CAT_CORNER_EXIT, MONKEY_ITEM } from './tuning.ts';
+import { SPEED_JITTER, RETRY_COOLDOWN_MS, COOLDOWN_SCALE, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE, DOG_STUN_RECOVER, PENGUIN_SPURT, CAT_CORNER_EXIT, MONKEY_ITEM } from './tuning.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
@@ -248,13 +248,14 @@ export function createRaceEngine(
         aoeImmune: stats?.aoeImmune,
         outerGrip: stats?.outerGrip,
         rangedEvade: stats?.rangedEvade,
+        catchupBoost: stats?.catchupBoost,
         // 빠른 출발: held at the gun for (field max − own) head start, then runs (frame 0 for the fox).
         startHoldUntil: Math.round((fieldMaxHeadStartMs - (stats?.headStartMs ?? 0)) / DT_MS),
         leg,
         phase,
         facing: 0,
         skillCooldownUntil: Math.round(
-          (rng.range(...firstCooldown(config, p.characterId)) * initialCooldownFactor) / DT_MS,
+          (rng.range(...firstCooldown(config, p.characterId)) * initialCooldownFactor * COOLDOWN_SCALE) / DT_MS,
         ),
         skill: {},
       } satisfies RacerState;
@@ -358,13 +359,13 @@ export function createRaceEngine(
     // blockable forward slip, and emit activate + dodge (legacy dodge event preserved
     // for the 냥펀치/캣워크 commentary; targetId = the cat).
     const [min, max] = character.skill.cooldownMs;
-    const factor = fieldCooldownFactor(activeRunnerCount());
+    const factor = fieldCooldownFactor(activeRunnerCount()) * COOLDOWN_SCALE;
     cat.skillCooldownUntil =
       frame + Math.round((internal.skillRng.get(cat.id)!.range(min, max) * factor) / DT_MS);
     cat.skill.burst = Number(character.skill.params.slipBoost ?? 0);
     cat.skill.effectUntil = frame + Math.round(Number(character.skill.params.windowMs ?? 0) / DT_MS);
     cat.phase = 'straying';
-    events.push({ frame, racerId: cat.id, type: 'catwalk', variant: 'activate', line: character.lines.skill });
+    events.push({ frame, racerId: cat.id, type: 'catwalk', variant: 'activate' });
     events.push({ frame, racerId: cat.id, type: 'catwalk', variant: 'dodge', targetId: cat.id });
     return true;
   }
@@ -520,7 +521,7 @@ export function createRaceEngine(
       // activation — including a skill the alien copied via invokeSkill (same `self`).
       self.skill.skillInvulnUntil = frame + SKILL_INVULN_FRAMES;
       const [min, max] = character.skill.cooldownMs;
-      const factor = fieldCooldownFactor(activeRunnerCount());
+      const factor = fieldCooldownFactor(activeRunnerCount()) * COOLDOWN_SCALE;
       self.skillCooldownUntil =
         frame + Math.round((internal.skillRng.get(self.id)!.range(min, max) * factor) / DT_MS);
     } else {
@@ -761,6 +762,17 @@ export function createRaceEngine(
       if (wasOnCurve && !onCurve) self.skill.cornerExitUntil = frame + CAT_CORNER_EXIT.windowFrames;
       if (Number(self.skill.cornerExitUntil ?? 0) > frame) self.speed *= 1 + CAT_CORNER_EXIT.boost;
     }
+
+    // 🦊 구미호 본능: 선두와 거리 멀수록 속도 증가 (catchupBoost 트레이트).
+    if (self.catchupBoost) {
+      const leader = internal.racers.reduce((best, r) =>
+        r.phase === 'running' && r.id !== self.id && r.progress > best.progress ? r : best,
+        { progress: self.progress } as RacerState
+      );
+      const gap = Math.max(0, leader.progress - self.progress);
+      const ratio = Math.min(gap / (config.trackLength * 0.5), 1);
+      self.speed *= 1 + ratio * self.catchupBoost;
+    }
   }
 
   // 🎁 Lane of the nearest reachable item box ahead of `self` (lap-aware), or undefined if none
@@ -825,7 +837,8 @@ export function createRaceEngine(
 
     self.speed *= catchupFactor(self);
 
-    applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame, nearestBoxLane(self), inStartStraight);
+    const laneHold = inStartStraight || ((self.skill['laneHoldUntil'] as number | undefined ?? 0) > frame);
+    applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame, nearestBoxLane(self), laneHold);
 
     applyIce(self);
     // slowMul (bristle / lightning / fart).
@@ -915,6 +928,10 @@ export function createRaceEngine(
       next.progress = 0;
       next.speed = 0;
       next.leg = nextLeg;
+      // 0.5-second skill lockout after receiving baton.
+      next.skillCooldownUntil = Math.max(next.skillCooldownUntil, frame + Math.round(0.5 * 60));
+      // 0.2-second lane-hold after baton (no immediate lane drift).
+      next.skill['laneHoldUntil'] = frame + Math.round(0.2 * 60);
     }
     events.push({ frame, racerId: finisher.id, type: 'relay', variant: 'handoff', targetId: nextId });
   }
@@ -1405,23 +1422,16 @@ export function createRaceEngine(
 
       updateBoxes(order, events);
 
-      // Stun → skill-cooldown reset: a racer freshly stunned this frame (any source)
-      // can't fire its skill the instant it recovers — its cooldown is pushed to the
-      // stun's end + a fresh (field-scaled) roll. Stable `order` so the rng draw order
-      // is deterministic; only racers that newly entered `stunned` this frame qualify.
-      const stunFactor = fieldCooldownFactor(activeRunnerCount());
+      // 🐶 강아지 패시브: 스턴을 남들보다 빨리 떨치고 일어난다.
+      // 스킬 쿨다운은 스턴 종료 시점까지만 밀림(새 롤 없음 — 기존 쿨타임 유지).
       for (const self of order) {
         if (self.phase !== 'stunned' || wasStunned.has(self.id)) continue;
-        // 🐶 강아지 패시브 (see CHARACTER PASSIVES): 스턴을 남들보다 빨리 떨치고 일어난다 — 갓
-        // 걸린 스턴의 남은 시간을 단축. 모든 스턴 소스(바나나·roar·decoy·아이템) 공통, 순수 계산.
         if (self.characterId === 'dog' && self.skill.effectUntil !== undefined) {
           const remaining = self.skill.effectUntil - frame;
           if (remaining > 0) self.skill.effectUntil = frame + Math.max(1, Math.round(remaining * DOG_STUN_RECOVER));
         }
-        const [min, max] = config.characters[self.characterId].skill.cooldownMs;
         const stunEnd = self.skill.effectUntil ?? frame;
-        const roll = Math.round((internal.skillRng.get(self.id)!.range(min, max) * stunFactor) / DT_MS);
-        self.skillCooldownUntil = Math.max(self.skillCooldownUntil, stunEnd) + roll;
+        self.skillCooldownUntil = Math.max(self.skillCooldownUntil, stunEnd);
       }
 
       const f = snapshot(events);

@@ -51,7 +51,7 @@ export const abductHandler: SkillHandler = (ctx) => {
   // Nobody to grab → hold (emit nothing → engine retries on RETRY_COOLDOWN_MS).
   if (!target) return;
 
-  ctx.emit({ variant: 'activate', line: ctx.lines.skill });
+  ctx.emit({ variant: 'activate' });
 
   if ((target.skill.starUntil ?? 0) > frame) { // ⭐ star deflects the web
     ctx.emit({ variant: 'dodge', targetId: target.id });

@@ -151,6 +151,11 @@ export interface RacerState {
    */
   rangedEvade?: number;
   /**
+   * 구미호 본능 (역전 특화): 선두와의 거리 비례 최대 속도 보너스 (0..1 multiplier).
+   * 선두와 gap ≥ trackLength * 0.5 이면 최대치 적용. Trait, not an id check.
+   */
+  catchupBoost?: number;
+  /**
    * Head start (빠른 출발): frame index until which this racer is held at the start line
    * (progress 0, speed 0) before it begins running. Computed at init from the field-wide head
    * start so the biggest head-start racer launches first. 0 → starts at the gun (frame 0).
