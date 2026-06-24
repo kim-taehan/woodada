@@ -7,11 +7,12 @@
 import { createRng, type Rng } from './prng.ts';
 import { applyOvertake, laneDistanceFactor } from './overtake.ts';
 import { sectionSpeedBias } from './stats.ts';
-import { isCurve, lapPhase } from './track.ts';
-import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE } from './tuning.ts';
+import { isCurve, lapPhase, SECTION } from './track.ts';
+import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE, DOG_STUN_RECOVER, PENGUIN_SPURT, CAT_CORNER_EXIT, MONKEY_ITEM } from './tuning.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
+  START_STAGGER_FRAC,
   type DecoyState,
   type EngineFrame,
   type RaceConfig,
@@ -21,7 +22,7 @@ import {
   type SkillEvent,
 } from './types.ts';
 import type { SkillContext, SkillRegistry } from './skills/types.ts';
-import { rollDodge } from './skills/dodge.ts';
+import { rollDodge, rollRangedEvade } from './skills/dodge.ts';
 import type { ScoringRegistry } from './scoring/types.ts';
 
 // Engine tuning knobs (SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED,
@@ -31,7 +32,14 @@ import type { ScoringRegistry } from './scoring/types.ts';
 // start), live briefly, and vanish when collected or after their lifetime.
 const ITEM = {
   collectDist: 7, // progress units
-  collectLane: 0.6, // wide: effectively lane-independent, so no lane is favoured
+  // Lane-DEPENDENT pickup (위치 경쟁): you must actually be near the box's lane to grab it, so a
+  // box isn't auto-collected by whoever reaches its progress first (usually the inner-rail leader).
+  // ≈ one lane band — paired with the box-seek lean (overtake.ts) so trailers steer out to claim it.
+  collectLane: 0.15,
+  // Box-seek reach (적극 획득): a racer leans toward a box at most `seekReach` progress units ahead
+  // (lap-aware) AND within `seekLaneReach` lanes — close enough to be worth detouring for.
+  seekReach: 60,
+  seekLaneReach: 0.5,
   maxBoxes: 3,
   firstSpawnMs: [1500, 3000] as [number, number],
   spawnGapMs: [1800, 4000] as [number, number],
@@ -42,6 +50,9 @@ const ITEM = {
   shellStunMs: 750, // 🐢 stuns the current leader (even the picker)
   starBoost: 1.4, starMs: 2400, // 🌟 self speed + full immunity
 } as const;
+
+/** The four gamble-box outcomes (decoupled from the weight roll so the monkey can remap one). */
+type ItemKind = 'star' | 'lightning' | 'shell' | 'fart';
 
 // Skill-activation i-frames: ~0.3s of immunity to incoming disruption granted the
 // instant a racer activates its own skill (so it isn't interrupted mid-cast).
@@ -196,6 +207,15 @@ export function createRaceEngine(
     : config.participants.length;
   const initialCooldownFactor = fieldCooldownFactor(initialActive);
 
+  // 빠른 출발 (head start): the field is held at the gun for the biggest head start present, and
+  // each racer's own hold is that field max minus its own — so the largest-head-start racer (the
+  // fox) launches at frame 0 and the rest follow when their hold lapses. No head-start racer in
+  // the field → max 0 → everyone held 0 (classic simultaneous start). Pure, deterministic.
+  const fieldMaxHeadStartMs = Math.max(
+    0,
+    ...config.participants.map((p) => config.characters[p.characterId]?.headStartMs ?? 0),
+  );
+
   const internal: Internals = {
     racers: config.participants.map((p, i, arr) => {
       const r = rng.fork(`base:${p.id}`);
@@ -219,12 +239,17 @@ export function createRaceEngine(
         id: p.id,
         characterId: p.characterId,
         teamId: p.teamId,
-        progress: 0,
+        progress: phase === 'running' ? homeLane * START_STAGGER_FRAC * config.trackLength : 0,
         lane: homeLane,
         homeLane,
         speed: 0,
         baseSpeed,
         cornering: stats?.cornering,
+        aoeImmune: stats?.aoeImmune,
+        outerGrip: stats?.outerGrip,
+        rangedEvade: stats?.rangedEvade,
+        // 빠른 출발: held at the gun for (field max − own) head start, then runs (frame 0 for the fox).
+        startHoldUntil: Math.round((fieldMaxHeadStartMs - (stats?.headStartMs ?? 0)) / DT_MS),
         leg,
         phase,
         facing: 0,
@@ -345,6 +370,19 @@ export function createRaceEngine(
   }
 
   /**
+   * 🦔 작은 표적 (see CHARACTER PASSIVES): resolve `target`'s ranged-evade against an incoming
+   * RANGED disruption (banana / web / shell). Trait-driven (CharacterData.rangedEvade) — not an
+   * id check. The roll is on the TARGET's own seeded sub-stream, memoised per (target id, frame)
+   * so several attackers in one frame agree (attacker-order independent). No cooldown, no side
+   * effects other than the cached roll — evasion is always-on. The CALLER emits the dodge event
+   * and whiffs the hit. Returns false for any racer without the trait.
+   */
+  function tryHedgehogEvade(target: RacerState): boolean {
+    const chance = config.characters[target.characterId]?.rangedEvade ?? target.rangedEvade ?? 0;
+    return rollRangedEvade(target, frame, internal.skillRng.get(target.id)!, chance);
+  }
+
+  /**
    * Single skill-firing entry point shared by cooldown-gated self-activation
    * AND the event-driven `onOvertaken` hook (TODO #7). Both paths pass the same
    * cooldown gate, draw from the same `skill:<id>` sub-stream, and award the same
@@ -356,6 +394,7 @@ export function createRaceEngine(
    */
   function fireSkill(self: RacerState, events: SkillEvent[], passer?: RacerState): void {
     if (frame < self.skillCooldownUntil) return;
+    if (frame < self.startHoldUntil) return; // 빠른 출발: held racers don't cast at the line
     if (
       self.phase === 'finished' ||
       self.phase === 'waiting' ||
@@ -394,6 +433,7 @@ export function createRaceEngine(
       canCopySkill: (copiedType: string) =>
         copiedType !== 'mimic' && copiedType !== 'illusionClone' && skills.get(copiedType) !== undefined,
       tryDodge: (target: RacerState) => tryCatwalkDodge(target, events),
+      tryRangedEvade: (target: RacerState) => tryHedgehogEvade(target),
       addIceZone: (z: Parameters<SkillContext['addIceZone']>[0]) => {
         const start = ((z.startProgress % config.trackLength) + config.trackLength) % config.trackLength;
         internal.iceZones.push({
@@ -641,6 +681,22 @@ export function createRaceEngine(
     }
   }
 
+  // ─── CHARACTER PASSIVES ──────────────────────────────────────────────────────────────────
+  // Per-character always-on effects (distinct from cooldown skills). They hook in at different
+  // points by nature, so they can't share one call site — this index keeps them findable:
+  //   🐻 bear  — applyBearShove()              : whole-field, after progress resolves (lane push)
+  //   🐶 dog   — fresh-stun loop (DOG_STUN_RECOVER) : in the per-frame stun-recovery pass
+  //   🐧 penguin / 🐱 cat — applyCharacterSpeedPassives() : per-racer speed, inside advance()
+  //   🐵 monkey — monkeyRemapItem()            : remaps a rolled item kind in applyItemPickup
+  //   🦔 hedgehog — tryHedgehogEvade() (rangedEvade) : whiffs an incoming ranged hit
+  //                                                    (banana / web / shell)
+  //   🦊 fox (headStartMs) — startHoldUntil hold in advance()/fireSkill : launches first at the gun
+  //   👽 alien (aoeImmune) / 🕷️ spider (outerGrip) : data traits read at their single point
+  //                                                  (roar handler / laneDistanceFactor)
+  // Determinism: most take no RNG; the rolls that exist (monkey item remap, hedgehog evade) are
+  // each on a stable-label SUB-stream so they never shift the main draw order, and the hedgehog
+  // evade is memoised per (target, frame) so attacker order can't change it.
+
   /**
    * Bear passive "몸통 밀치기" (body shove). Every frame, each bear in CONTACT with a rival
    * just ahead on its lane band — same window the personal-zone clamp uses (forward gap within
@@ -665,9 +721,78 @@ export function createRaceEngine(
     }
   }
 
+  /**
+   * True once `self` has passed the LAST curve of its final lap and is on the bottom-straight
+   * finishing run toward the goal (the "home stretch"). The finish run is the segment from the
+   * final start-line crossing to the offset finish — entirely within the bottom straight (since
+   * FINISH_OFFSET_FRAC < SECTION.bottomStraightEnd). Non-relay: starts at laps×trackLength. Relay:
+   * only the anchor leg has a finishing run, starting at its leg's lap line (1×trackLength). Pure.
+   */
+  function inFinalHomeStretch(self: RacerState): boolean {
+    // Death-match has no finish line (race ends by elimination, racers lap indefinitely), so
+    // there is no "final home stretch" — the spurt would otherwise fire every lap past `laps`.
+    if (config.elimination) return false;
+    if (config.relay) {
+      if ((self.leg ?? 0) < config.laps - 1) return false; // only the anchor runs the finish line
+      return self.progress >= config.trackLength;
+    }
+    return self.progress >= config.laps * config.trackLength;
+  }
+
+  /**
+   * Per-racer character speed passives, applied right after the base/section speed is set in
+   * advance() (before catch-up). Pure functions of section + progress + a per-racer frame latch
+   * in the skill bag — no RNG, no extra draws → deterministic. Speed only (lane untouched).
+   *   🐧 penguin — 막판 스퍼트: on the final home-stretch straight, raise the straight pace to
+   *       PENGUIN_SPURT.sprintCornering ("sprint 6") by adding the delta over its normal bias.
+   *   🐱 cat — 코너 탈출 가속: on a curve→straight transition, latch a short window during which
+   *       speed gets a × (1 + CAT_CORNER_EXIT.boost) kick (the cat darts out of the bend).
+   */
+  function applyCharacterSpeedPassives(self: RacerState, onCurve: boolean, jitter: number, condition: number): void {
+    if (self.characterId === 'penguin' && !onCurve && inFinalHomeStretch(self)) {
+      const bonus = sectionSpeedBias(PENGUIN_SPURT.sprintCornering, false) - sectionSpeedBias(self.cornering, false);
+      self.speed += bonus * jitter * condition;
+    }
+
+    if (self.characterId === 'cat') {
+      // Latch the corner-exit window on the curve→straight transition (prev curve, now straight).
+      const wasOnCurve = self.skill.prevOnCurve === true;
+      self.skill.prevOnCurve = onCurve;
+      if (wasOnCurve && !onCurve) self.skill.cornerExitUntil = frame + CAT_CORNER_EXIT.windowFrames;
+      if (Number(self.skill.cornerExitUntil ?? 0) > frame) self.speed *= 1 + CAT_CORNER_EXIT.boost;
+    }
+  }
+
+  // 🎁 Lane of the nearest reachable item box ahead of `self` (lap-aware), or undefined if none
+  // in reach — fed to applyOvertake so the racer leans toward it (적극 획득). Pure: box positions
+  // are deterministic (boxRng), no RNG drawn here.
+  function nearestBoxLane(self: RacerState): number | undefined {
+    let lane: number | undefined;
+    let bestGap = Infinity;
+    const lapPos = self.progress % config.trackLength;
+    for (const box of internal.boxes) {
+      if (frame > box.expire) continue;
+      let gap = box.progress - lapPos;
+      if (gap < 0) gap += config.trackLength; // wrap to the next-ahead box on this lap
+      if (gap > ITEM.seekReach) continue;
+      if (Math.abs(box.lane - self.lane) > ITEM.seekLaneReach) continue;
+      if (gap < bestGap) {
+        bestGap = gap;
+        lane = box.lane;
+      }
+    }
+    return lane;
+  }
+
   function advance(self: RacerState, events: SkillEvent[]): void {
     if (self.phase === 'finished' || self.phase === 'waiting' || self.phase === 'eliminated') return;
     if (self.phase === 'stunned') {
+      self.speed = 0;
+      return;
+    }
+    // 빠른 출발 (head start): hold this racer on the line until its head-start delay lapses, so the
+    // fox (largest head start → 0 hold) launches first. Frozen at progress 0, no forward movement.
+    if (frame < self.startHoldUntil) {
       self.speed = 0;
       return;
     }
@@ -685,11 +810,21 @@ export function createRaceEngine(
     }
     const condition = Number(self.skill.condition ?? 1);
     const jitter = 1 + internal.racerRng.get(self.id)!.range(-SPEED_JITTER, SPEED_JITTER);
-    self.speed = (self.baseSpeed + sectionSpeedBias(self.cornering, onCurve)) * jitter * condition + (self.skill.burst ?? 0);
+    // 출발 직선 라인 유지: on the opening straight of lap 0 the field holds formation (see applyOvertake
+    // below). To keep that staggered launch FAIR, the per-character cornering speed split is neutralised
+    // during it — otherwise a straight-sprinter (dog) pulls away in the parade and starves the curve
+    // specialists (hedgehog/spider/cat) below the fairness floor. baseSpeed/jitter/condition (all random,
+    // not character-systematic) remain. Cornering identity resumes at the first curve. Pure (progress).
+    const inStartStraight = self.progress < SECTION.bottomStraightEnd * config.trackLength;
+    const corneringBias = inStartStraight ? 0 : sectionSpeedBias(self.cornering, onCurve);
+    self.speed = (self.baseSpeed + corneringBias) * jitter * condition + (self.skill.burst ?? 0);
+
+    // Per-racer character speed passives (penguin spurt, cat corner-exit) — see CHARACTER PASSIVES.
+    applyCharacterSpeedPassives(self, onCurve, jitter, condition);
 
     self.speed *= catchupFactor(self);
 
-    applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame);
+    applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame, nearestBoxLane(self), inStartStraight);
 
     applyIce(self);
     // slowMul (bristle / lightning / fart).
@@ -702,7 +837,7 @@ export function createRaceEngine(
     // wide there is free — a natural overtaking zone). `progress` accumulates the speed scaled
     // by this factor, staying a *corrected* distance metric (real path travelled) that ranking /
     // finish / death-match read directly and fairly across lanes.
-    self.progress += self.speed * laneDistanceFactor(self.lane, onCurve);
+    self.progress += self.speed * laneDistanceFactor(self.lane, onCurve, self.outerGrip);
 
     // Death-match: nobody "finishes" by crossing a goal line — the race ends only
     // by elimination (handled in applyEliminations / isRaceFinished). Racers keep
@@ -1018,6 +1153,22 @@ export function createRaceEngine(
       self.characterId === 'penguin' ? zone.boostFactor : zone.slowFactor;
   }
 
+  /**
+   * 🐵 원숭이 잔머리 (see CHARACTER PASSIVES): remap a rolled item kind to a smarter one for a
+   * monkey, given whether it is currently the leader. Pure (the only randomness is the passed-in
+   * `rng`, a stable-label sub-stream so it never shifts the main item draw order):
+   *   - shell while leading → fart   (the shell would stun the monkey itself)
+   *   - fart while NOT leading → shell (a chasing fart hits no one useful; snipe the leader)
+   *   - lightning → star with `lightningToStarChance` (gated: star is the strongest item)
+   *   - otherwise unchanged.
+   */
+  function monkeyRemapItem(kind: ItemKind, isLeader: boolean, rng: Rng): ItemKind {
+    if (kind === 'shell' && isLeader) return 'fart';
+    if (kind === 'fart' && !isLeader) return 'shell';
+    if (kind === 'lightning' && rng.bool(MONKEY_ITEM.lightningToStarChance)) return 'star';
+    return kind;
+  }
+
   /** A gamble box, on pickup, rolls one of four effects (weighted). */
   function applyItemPickup(self: RacerState, order: RacerState[], events: SkillEvent[]): void {
     const irng = internal.itemRng.get(self.id)!;
@@ -1025,9 +1176,25 @@ export function createRaceEngine(
       r.phase !== 'finished' && r.phase !== 'waiting' && r.phase !== 'stunned' && r.phase !== 'eliminated';
     // Immune to this item's disruption: ⭐ star OR brief skill-activation i-frames.
     const immune = (r: RacerState) => (r.skill.starUntil ?? 0) > frame || isSkillInvuln(r);
-    const x = irng.range(0, 8); // weights: star 1 / lightning 2 / shell 2 / fart 3
 
-    if (x < 1) {
+    // Current leader = active racer with max progress (shared by the shell effect + monkey remap).
+    let leader: RacerState | undefined;
+    for (const r of order) if (active(r) && (!leader || r.progress > leader.progress)) leader = r;
+
+    const x = irng.range(0, 8); // weights: star 1 / lightning 2 / shell 2 / fart 3
+    let kind: ItemKind = x < 1 ? 'star' : x < 3 ? 'lightning' : x < 5 ? 'shell' : 'fart';
+    // 🐵 Monkey remap: situational re-pick. The roll is on a SUB-stream forked off this racer's
+    // itemRng so the main `x` draw order (and thus everyone else's items) is untouched. The fork
+    // seed derives from the rng's BASE seed (not its live state), so the label must carry a
+    // per-pickup discriminator or every pickup would roll identically — a monotonic per-racer
+    // pickup counter gives each pickup its own deterministic sub-stream. Determinism holds.
+    if (self.characterId === 'monkey') {
+      const pick = Number(self.skill.monkeyItemPicks ?? 0);
+      self.skill.monkeyItemPicks = pick + 1;
+      kind = monkeyRemapItem(kind, leader?.id === self.id, irng.fork(`monkeyitem:${pick}`));
+    }
+
+    if (kind === 'star') {
       // 🌟 star: self speed boost + full immunity for a while.
       const until = frame + Math.round(ITEM.starMs / DT_MS);
       self.skill.burst = ITEM.starBoost;
@@ -1035,7 +1202,7 @@ export function createRaceEngine(
       self.skill.starUntil = until;
       self.phase = 'straying';
       events.push({ frame, racerId: self.id, type: 'item', variant: 'star', line: '무적! ⭐' });
-    } else if (x < 3) {
+    } else if (kind === 'lightning') {
       // ⚡ lightning: every other racer slows briefly.
       const until = frame + Math.round(ITEM.lightningSlowMs / DT_MS);
       for (const r of order) {
@@ -1044,17 +1211,20 @@ export function createRaceEngine(
         r.skill.slowMul = ITEM.lightningMul;
       }
       events.push({ frame, racerId: self.id, type: 'item', variant: 'lightning', line: '⚡ 번개!' });
-    } else if (x < 5) {
+    } else if (kind === 'shell') {
       // 🐢 shell: stuns the current leader — even if the picker IS the leader.
-      let leader: RacerState | undefined;
-      for (const r of order) if (active(r) && (!leader || r.progress > leader.progress)) leader = r;
       events.push({ frame, racerId: self.id, type: 'item', variant: 'shell', line: '🐢 등껍질!' });
       if (leader && !immune(leader)) {
-        leader.phase = 'stunned';
-        leader.speed = 0;
-        leader.skill.burst = 0;
-        leader.skill.effectUntil = frame + Math.round(ITEM.shellStunMs / DT_MS);
-        events.push({ frame, racerId: self.id, type: 'item', variant: 'shellhit', targetId: leader.id });
+        // 🦔 작은 표적: a hedgehog leader can duck the shell (ranged) — whiff, no stun.
+        if (tryHedgehogEvade(leader)) {
+          events.push({ frame, racerId: self.id, type: 'item', variant: 'dodge', targetId: leader.id });
+        } else {
+          leader.phase = 'stunned';
+          leader.speed = 0;
+          leader.skill.burst = 0;
+          leader.skill.effectUntil = frame + Math.round(ITEM.shellStunMs / DT_MS);
+          events.push({ frame, racerId: self.id, type: 'item', variant: 'shellhit', targetId: leader.id });
+        }
       }
     } else {
       // 💨 fart: racers behind the picker (within range) slow briefly.
@@ -1241,6 +1411,12 @@ export function createRaceEngine(
       const stunFactor = fieldCooldownFactor(activeRunnerCount());
       for (const self of order) {
         if (self.phase !== 'stunned' || wasStunned.has(self.id)) continue;
+        // 🐶 강아지 패시브 (see CHARACTER PASSIVES): 스턴을 남들보다 빨리 떨치고 일어난다 — 갓
+        // 걸린 스턴의 남은 시간을 단축. 모든 스턴 소스(바나나·roar·decoy·아이템) 공통, 순수 계산.
+        if (self.characterId === 'dog' && self.skill.effectUntil !== undefined) {
+          const remaining = self.skill.effectUntil - frame;
+          if (remaining > 0) self.skill.effectUntil = frame + Math.max(1, Math.round(remaining * DOG_STUN_RECOVER));
+        }
         const [min, max] = config.characters[self.characterId].skill.cooldownMs;
         const stunEnd = self.skill.effectUntil ?? frame;
         const roll = Math.round((internal.skillRng.get(self.id)!.range(min, max) * stunFactor) / DT_MS);

@@ -4,6 +4,8 @@ import { createDefaultSkillRegistry } from '../../src/engine/skills/index.ts';
 import { createDefaultScoringRegistry } from '../../src/engine/scoring/index.ts';
 import { makeConfig, allThree } from './helpers.ts';
 import { characterCatalog } from '../../src/data/characters/index.ts';
+import { isCurve, lapPhase } from '../../src/engine/track.ts';
+import { CAT_CORNER_EXIT } from '../../src/engine/tuning.ts';
 
 const skills = createDefaultSkillRegistry();
 const scoring = createDefaultScoringRegistry();
@@ -73,6 +75,174 @@ describe('skill behaviour', () => {
         }
       }
     }
+  });
+
+  it('roar never hits the AOE-immune alien (it dodges the stagger; non-aliens still get hit)', () => {
+    // 👽 alien.aoeImmune → the bear's roar emits a `dodge` for the alien instead of a `hit`.
+    // We assert at the source (the roar handler's events): a roar `hit` must never target the
+    // alien, and a roar `dodge` does land on it. Liveness: roar `hit`s land on non-aliens,
+    // proving the roar is genuinely firing — immunity is the alien's trait, not a no-op.
+    // (Pack of bears so roar fires densely; the alien sits in range.)
+    let sawRoarHit = false; // roar hit *someone* (non-alien) → roar is live
+    let sawAlienDodge = false; // roar emitted a dodge for the alien → immunity path taken
+    for (let s = 0; s < 60; s++) {
+      const cfg = makeConfig({ characterIds: ['bear', 'bear', 'alien', 'dog', 'penguin'], seed: s });
+      const { frames } = simulateRace(cfg, skills, scoring);
+      const alienId = cfg.participants.find((p) => p.characterId === 'alien')!.id;
+      for (const f of frames) {
+        for (const e of f.events) {
+          if (e.type !== 'roar') continue;
+          if (e.variant === 'hit') {
+            if (e.targetId) sawRoarHit = true;
+            expect(e.targetId).not.toBe(alienId); // never a roar hit on the alien
+          }
+          if (e.variant === 'dodge' && e.targetId === alienId) sawAlienDodge = true;
+        }
+      }
+    }
+    expect(sawRoarHit).toBe(true);
+    expect(sawAlienDodge).toBe(true);
+  });
+
+  it('cat 코너 탈출 가속: latches a corner-exit boost window only on a curve→straight transition', () => {
+    // 🐱 The cat passive arms `cornerExitUntil = frame + windowFrames` the instant it leaves a
+    // curve onto a straight, and applies a speed kick while the window is live. We assert at the
+    // mechanism: (1) the window does get armed over a multi-lap race (the latch fires), and
+    // (2) whenever it is freshly armed, the cat is on a STRAIGHT (the transition condition holds —
+    // never armed mid-curve). Deterministic, no RNG in the passive.
+    const trackLength = 1000;
+    let sawArmed = false; // the boost window was live at some frame
+    let sawFreshArm = false; // observed the exact arm frame (cornerExitUntil === frame + window)
+    for (let s = 0; s < 30 && !(sawArmed && sawFreshArm); s++) {
+      const cfg = makeConfig({ characterIds: ['cat', 'dog', 'monkey', 'bear'], seed: s, laps: 3, trackLength });
+      const { frames } = simulateRace(cfg, skills, scoring);
+      const catId = cfg.participants.find((p) => p.characterId === 'cat')!.id;
+      for (const f of frames) {
+        const cat = f.racers.find((r) => r.id === catId)!;
+        const until = Number(cat.skill.cornerExitUntil ?? 0);
+        if (until > f.frame) sawArmed = true;
+        // A fresh arm this frame ⇒ the cat must be on a straight (curve→straight transition).
+        if (until === f.frame + CAT_CORNER_EXIT.windowFrames) {
+          sawFreshArm = true;
+          expect(isCurve(lapPhase(cat.progress, trackLength))).toBe(false);
+        }
+      }
+    }
+    expect(sawArmed).toBe(true);
+    expect(sawFreshArm).toBe(true);
+  });
+
+  it('monkey 아이템 잔머리: a monkey never self-stuns with its own shell (remaps to fart); deterministic', () => {
+    // 🐵 The monkey remaps its rolled item: shell-while-leading → fart (a shell stuns the leader,
+    // so a leading monkey would freeze itself). The clean, tie-proof contract: a monkey's own
+    // shell never targets the monkey (`shellhit` targetId ≠ monkey). Liveness: monkeys still
+    // throw shell (from behind) AND fart, proving both remap paths run. Plus a determinism check:
+    // same (config, seed) replays the monkey's item-event stream exactly.
+    let sawMonkeyShell = false; // monkey threw a shell (from behind → real leader hit)
+    let sawMonkeyFart = false; // monkey threw a fart (shell→fart remap path or a real fart)
+    const monkeyItemStream = (frames: { frame: number; events: { type: string; variant: string; racerId: string; targetId?: string }[] }[], monkeyId: string) => {
+      const stream: string[] = [];
+      for (const f of frames) {
+        const line = f.events
+          .filter((e) => e.type === 'item' && e.racerId === monkeyId)
+          .map((e) => `${e.variant}${e.targetId ? '>' + e.targetId : ''}`)
+          .join(',');
+        if (line) stream.push(`${f.frame}:${line}`);
+      }
+      return stream;
+    };
+    for (let s = 0; s < 80; s++) {
+      const ids = ['monkey', 'dog', 'cat', 'bear', 'penguin'];
+      const cfg = makeConfig({ characterIds: ids, seed: s, laps: 2 });
+      const monkeyId = cfg.participants.find((p) => p.characterId === 'monkey')!.id;
+      const { frames } = simulateRace(cfg, skills, scoring);
+      for (const f of frames) {
+        for (const e of f.events) {
+          if (e.type !== 'item' || e.racerId !== monkeyId) continue;
+          if (e.variant === 'shell') sawMonkeyShell = true;
+          if (e.variant === 'fart') sawMonkeyFart = true;
+          // A monkey's own shell must never knock out the monkey itself (it would have remapped).
+          if (e.variant === 'shellhit') expect(e.targetId).not.toBe(monkeyId);
+        }
+      }
+      // Determinism: an identical re-sim reproduces the monkey's item-event stream exactly.
+      const { frames: frames2 } = simulateRace(makeConfig({ characterIds: ids, seed: s, laps: 2 }), skills, scoring);
+      expect(monkeyItemStream(frames2, monkeyId)).toEqual(monkeyItemStream(frames, monkeyId));
+    }
+    expect(sawMonkeyShell).toBe(true);
+    expect(sawMonkeyFart).toBe(true);
+  });
+
+  it('hedgehog 작은 표적: ranged hits (banana/web/shell) sometimes miss it but can also land; deterministic', () => {
+    // 🦔 rangedEvade=0.3 → a banana/web/shell aimed at the hedgehog whiffs ~30% (a `dodge` event,
+    // no stun/pull), but the other ~70% land (it is NOT immune — distinct from the alien's hard
+    // AOE immunity). We assert at the source events: the hedgehog both DODGES and gets HIT by
+    // ranged attacks across seeds, and the per-(target,frame) roll replays identically.
+    let sawEvadeDodge = false; // a ranged source emitted a dodge targeting the hedgehog
+    let sawRangedHit = false; // a ranged source still landed on the hedgehog (not immune)
+    const RANGED = new Set(['banana', 'abduct', 'item']); // item = shell path
+    const hogEvents = (frames: { frame: number; events: { type: string; variant: string; targetId?: string }[] }[], hogId: string) => {
+      const out: string[] = [];
+      for (const f of frames)
+        for (const e of f.events)
+          if (RANGED.has(e.type) && e.targetId === hogId && (e.variant === 'dodge' || e.variant === 'hit' || e.variant === 'shellhit'))
+            out.push(`${f.frame}:${e.type}:${e.variant}`);
+      return out;
+    };
+    for (let s = 0; s < 120 && !(sawEvadeDodge && sawRangedHit); s++) {
+      // Pack the ranged attackers (monkey banana, spider web) + shell items around the hedgehog.
+      const ids = ['hedgehog', 'monkey', 'spider', 'monkey', 'spider', 'dog'];
+      const cfg = makeConfig({ characterIds: ids, seed: s, laps: 3 });
+      const hogId = cfg.participants.find((p) => p.characterId === 'hedgehog')!.id;
+      const { frames } = simulateRace(cfg, skills, scoring);
+      for (const e of hogEvents(frames, hogId)) {
+        if (e.endsWith(':dodge')) sawEvadeDodge = true;
+        if (e.endsWith(':hit') || e.endsWith(':shellhit')) sawRangedHit = true;
+      }
+      // Determinism: identical re-sim reproduces the hedgehog's ranged-event stream exactly.
+      const { frames: frames2 } = simulateRace(makeConfig({ characterIds: ids, seed: s, laps: 3 }), skills, scoring);
+      expect(hogEvents(frames2, hogId)).toEqual(hogEvents(frames, hogId));
+    }
+    expect(sawEvadeDodge).toBe(true);
+    expect(sawRangedHit).toBe(true);
+  });
+
+  it('fox 빠른 출발: the fox runs from the gun while the rest are held ~1s, then everyone runs', () => {
+    // 🦊 headStartMs=1000 → at frame 0 the fox moves but every non-fox is frozen at the line
+    // (progress 0, speed 0) until its hold (≈1s) lapses; afterwards the whole field runs.
+    const ids = ['fox', 'dog', 'bear', 'cat', 'penguin', 'spider'];
+    const cfg = makeConfig({ characterIds: ids, seed: 7, laps: 2 });
+    const foxId = cfg.participants.find((p) => p.characterId === 'fox')!.id;
+    const others = cfg.participants.filter((p) => p.characterId !== 'fox').map((p) => p.id);
+    const { frames } = simulateRace(cfg, skills, scoring);
+    const holdFrames = Math.round(1000 / (1000 / 60)); // ≈60
+
+    // A few frames in (well within the hold), the fox has moved and every other racer is still
+    // frozen (progress unchanged from their initial stagger position — not advancing).
+    const frame0 = frames.find((f) => f.frame === 0)!;
+    const early = frames.find((f) => f.frame === 10)!;
+    expect(early.racers.find((r) => r.id === foxId)!.progress).toBeGreaterThan(
+      frame0.racers.find((r) => r.id === foxId)!.progress,
+    );
+    for (const id of others) {
+      const initProgress = frame0.racers.find((r) => r.id === id)!.progress;
+      expect(early.racers.find((r) => r.id === id)!.progress).toBe(initProgress);
+    }
+
+    // Once the hold lapses, the others are running too (progress > 0 for the whole field).
+    const after = frames.find((f) => f.frame === holdFrames + 20)!;
+    for (const id of [foxId, ...others])
+      expect(after.racers.find((r) => r.id === id)!.progress).toBeGreaterThan(0);
+
+    // No head-start racer → classic simultaneous start (everyone moves from frame 0).
+    const noFox = simulateRace(makeConfig({ characterIds: ['dog', 'bear', 'cat'], seed: 7 }), skills, scoring);
+    const f5 = noFox.frames.find((f) => f.frame === 5)!;
+    for (const r of f5.racers) expect(r.progress).toBeGreaterThan(0);
+
+    // Determinism: identical re-sim reproduces the fox's progress trace.
+    const re = simulateRace(makeConfig({ characterIds: ids, seed: 7, laps: 2 }), skills, scoring);
+    const trace = (fr: typeof frames) => fr.map((f) => f.racers.find((r) => r.id === foxId)!.progress.toFixed(4));
+    expect(trace(re.frames)).toEqual(trace(frames));
   });
 
   it('mimic copies the nearest racer\'s skill and fires it AS the alien, deterministically', () => {

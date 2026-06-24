@@ -10,7 +10,7 @@
 
 import { Container, Graphics } from 'pixi.js';
 import { OvalTrack } from './OvalTrack.ts';
-import { FINISH_OFFSET_FRAC } from '../../engine/types.ts';
+import { FINISH_OFFSET_FRAC, START_STAGGER_FRAC } from '../../engine/types.ts';
 import { grassland } from '../../data/tracks/grassland.ts';
 import type { TrackTheme, DecorSpec, Ambient } from '../../data/tracks/schema.ts';
 
@@ -452,11 +452,30 @@ export function buildTrackScene(
   // lap line stays at u=0, so start ≠ finish for relay as well.
   const finishU = FINISH_OFFSET_FRAC;
 
-  // Start / lap line across the track at u = 0 (bottom straight LEFT end). Plain
-  // dashed white line — visually distinct from the checker finish tape.
+  // Two lines at the start position (u=0):
+  //   1. Relay exchange line — straight across (u=0 outer → u=0 inner).
+  //   2. Start line — diagonal (outer at u=0, inner pushed to u=DIAG).
+  // Both are always drawn on every track.
   {
+    const DIAG = START_STAGGER_FRAC;
+
+    // 1. Relay exchange line: straight, thinner.
+    const exchange = new Graphics();
+    const ea = track.pointAt(0, outerOff);
+    const eb = track.pointAt(0, innerOff);
+    for (let i = 0; i < 6; i++) {
+      const t0 = i / 6;
+      const t1 = (i + 0.5) / 6;
+      exchange
+        .moveTo(ea.x + (eb.x - ea.x) * t0, ea.y + (eb.y - ea.y) * t0)
+        .lineTo(ea.x + (eb.x - ea.x) * t1, ea.y + (eb.y - ea.y) * t1)
+        .stroke({ color: 0xffffff, width: 4, alpha: 0.65 });
+    }
+    scene.addChild(exchange);
+
+    // 2. Start line: diagonal, bolder. Outer lane leads (staggered-start direction).
     const start = new Graphics();
-    const sa = track.pointAt(0, outerOff);
+    const sa = track.pointAt(DIAG, outerOff);
     const sb = track.pointAt(0, innerOff);
     for (let i = 0; i < 6; i++) {
       const t0 = i / 6;
