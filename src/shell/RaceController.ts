@@ -22,7 +22,9 @@ export class RaceController {
   private engine: RaceEngine;
   private raf = 0;
   private running = false;
+  private paused = false;
   private coastRaf = 0;
+  private lastTime = 0;
 
   /**
    * `arenaId` is purely visual: forwarded to the renderer seam only, never the
@@ -49,6 +51,7 @@ export class RaceController {
    */
   run(): Promise<RaceResult> {
     this.running = true;
+    this.paused = false;
     return new Promise((resolve) => {
       let acc = 0; // accumulated (scaled) ms toward the next engine step
       let last = 0;
@@ -56,9 +59,14 @@ export class RaceController {
 
       const tick = (ts: number) => {
         if (!this.running) return;
+        if (this.paused) {
+          this.raf = requestAnimationFrame(tick);
+          return;
+        }
         if (!last) last = ts;
         const realDt = Math.min(ts - last, 100); // clamp big gaps (tab switches)
         last = ts;
+        this.lastTime = last;
 
         // Death-match: briefly slow pacing when someone is knocked out so the
         // elimination moment reads. Display-only; the engine stays fixed-step.
@@ -141,5 +149,19 @@ export class RaceController {
     cancelAnimationFrame(this.raf);
     cancelAnimationFrame(this.coastRaf);
     this.coastRaf = 0;
+  }
+
+  pause(): void {
+    this.paused = true;
+  }
+
+  resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    this.lastTime = 0;
+  }
+
+  isPaused(): boolean {
+    return this.paused;
   }
 }

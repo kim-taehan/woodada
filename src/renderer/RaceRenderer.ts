@@ -1880,19 +1880,24 @@ export function createRaceRenderer(): RaceRenderer {
           if (!allMembers.length) return;
 
           if (teamRank < 3) {
-            // On a podium block. 1등팀 깝친다, 2·3등팀 중립. Up to MAX_ON_BLOCK stand
+            // On a podium block. 1 등팀 깝친다, 2·3 등팀 중립. Up to MAX_ON_BLOCK stand
             // on the block; any overflow (a big team) clusters on the GROUND in
             // front of the block in the SAME pose (winning team still celebrates).
             const onBlock = allMembers.slice(0, MAX_ON_BLOCK);
             const overflow = allMembers.slice(MAX_ON_BLOCK);
             const x = slotX[teamRank];
             const h = blockH[teamRank];
-            const block = new Graphics().roundRect(x - bw / 2, baseY - h, bw, h, 8).fill(blockColor[teamRank]);
+            // Scale block width to team size (wider for bigger teams).
+            const teamSpan = allMembers.length;
+            const scaledBw = Math.max(bw, bw + (teamSpan - 1) * 20);
+            const block = new Graphics().roundRect(x - scaledBw / 2, baseY - h, scaledBw, h, 8).fill(blockColor[teamRank]);
             block.stroke({ color: 0xffffff, width: 3, alpha: 0.65 });
             const num = new Text({ text: `${teamRank + 1}`, style: { fontSize: 46, fontWeight: '900', fill: 0xffffff } });
             num.anchor.set(0.5);
             num.position.set(x, baseY - h / 2);
             podiumScene!.addChild(block, num);
+            // Widen the number text anchor area to match the block.
+            num.scale.set(scaledBw / bw, 1);
 
             const phase = teamRank === 0 ? 'celebrate' : 'finished';
             // Fan the on-block members across the block top in a tidy huddle.
@@ -1901,16 +1906,16 @@ export function createRaceRenderer(): RaceRenderer {
               if (!v) return;
               const span = onBlock.length;
               const t = span > 1 ? i / (span - 1) - 0.5 : 0; // -0.5..0.5
-              const px = x + t * Math.min(bw * 0.62, 26 + span * 14);
+              const px = x + t * Math.min(scaledBw * 0.62, 26 + span * 14);
               const py = baseY - h - 14 + (i % 2) * 12; // slight stagger so they don't fully overlap
               v.character.root.visible = true;
               v.character.root.position.set(px, py);
               v.character.root.scale.set((teamRank === 0 ? 0.72 : 0.6) * v.size);
               v.character.root.zIndex = 1000 + (3 - teamRank) * 10 + i;
-              // Only the lead member shows a tag (keeps the cluster uncluttered).
-              v.tag.root.visible = i === 0;
+              // Show all team members' names on the podium.
+              v.tag.root.visible = true;
               v.tag.setPosition(px, py - 78);
-              v.tag.root.zIndex = 200000;
+              v.tag.root.zIndex = 200000 + i;
               podiumChars.push({ char: v.character, winner: teamRank === 0, phase });
               shown.add(id);
             });
@@ -1921,19 +1926,21 @@ export function createRaceRenderer(): RaceRenderer {
               if (!v) return;
               const span = overflow.length;
               const t = span > 1 ? i / (span - 1) - 0.5 : 0;
-              const px = x + t * Math.min(bw * 0.92, 30 + span * 16);
+              const px = x + t * Math.min(scaledBw * 0.92, 30 + span * 16);
               const py = baseY + 30 + (i % 2) * 16; // just in front of the block, on the field
               v.character.root.visible = true;
               v.character.root.position.set(px, py);
               v.character.root.scale.set(0.54 * v.size);
               v.character.root.zIndex = 900 + (3 - teamRank) * 10 + i; // in front of the block face
-              v.tag.root.visible = false;
+              v.tag.root.visible = true;
+              v.tag.setPosition(px, py - 68);
+              v.tag.root.zIndex = 200000 + i;
               podiumChars.push({ char: v.character, winner: false, phase });
               shown.add(id);
             });
           } else {
-            // 4등팀 이하: no block — the whole team slumps below the podium, dejected
-            // (show all members so nobody is hidden; they're anonymous also-rans).
+            // 4 등팀 이하: no block — the whole team slumps below the podium, dejected
+            // (show all members with names so everyone is recognized).
             const members = allMembers;
             const span = members.length;
             const teamSlot = teamRank - 3; // 0,1,... among the also-rans
@@ -1948,7 +1955,9 @@ export function createRaceRenderer(): RaceRenderer {
               v.character.root.position.set(px, py);
               v.character.root.scale.set(0.52 * v.size);
               v.character.root.zIndex = 800 + i;
-              v.tag.root.visible = false; // also-rans stay anonymous below the podium (no tag clutter)
+              v.tag.root.visible = true;
+              v.tag.setPosition(px, py - 68);
+              v.tag.root.zIndex = 200000 + i;
               podiumChars.push({ char: v.character, winner: false, phase: 'dejected' });
               shown.add(id);
             });
