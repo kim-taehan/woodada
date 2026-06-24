@@ -69,6 +69,10 @@ export const abductHandler: SkillHandler = (ctx) => {
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;
   }
+  if (ctx.tryRangedEvade(target)) { // 🦔 작은 표적: the web sails over the small low hedgehog
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
 
   // Yank the target back behind the spider.
   const desired = self.progress - Number(params.pullGap);

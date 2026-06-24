@@ -25,11 +25,18 @@ describe('engine fairness (loose sanity — balance tuned later)', () => {
   // fair share (1/numChars), so they stay correct as the roster grows. Floors widen
   // (drop) a little at high lap counts where skill effects compound (e.g. ice over
   // many laps). This is the deferred-balance gate, not a ±tolerance target.
+  //
+  // laps=10 N was 200 but that is too few for the 18-slot SLOT floor: at 10 laps the
+  // per-slot win count has high variance (item/skill chaos compounds), so a single slot
+  // can land on 2/200 (1.0%) by seed luck while its true rate is ~fair — measured directly:
+  // slot-min was 2/200 (FAIL) but 9/300 and 10/400 (PASS, ~fair) for the same engine. That is
+  // sampling noise, not bias (no character is starved; no one dominates), so N is raised to 300
+  // to make the slot floor statistically meaningful rather than loosening the fairness bar.
   const fairShare = 1 / allThree.length;
   const LAP_CASES = [
     { laps: 1, N: 1200, charFloorMul: 0.4, charCeil: 0.45, slotFloorMul: 0.3, slotCeilMul: 2.2 },
     { laps: 3, N: 400, charFloorMul: 0.35, charCeil: 0.45, slotFloorMul: 0.25, slotCeilMul: 2.4 },
-    { laps: 10, N: 200, charFloorMul: 0.3, charCeil: 0.45, slotFloorMul: 0.2, slotCeilMul: 2.6 },
+    { laps: 10, N: 300, charFloorMul: 0.3, charCeil: 0.45, slotFloorMul: 0.2, slotCeilMul: 2.6 },
   ];
 
   for (const { laps, N, charFloorMul, charCeil, slotFloorMul, slotCeilMul } of LAP_CASES) {

@@ -37,3 +37,25 @@ export function rollDodge(
   cat.skill.dodgeRoll = roll;
   return roll;
 }
+
+/**
+ * hedgehog 작은 표적 — ranged-evade roll. Same (target id, frame) determinism contract as
+ * `rollDodge`: a small low target makes an incoming RANGED disruption (banana / web / shell)
+ * miss with probability `evadeChance`. The roll is taken on the TARGET's own seeded sub-stream
+ * forked by frame (a stable label distinct from `dodge:` so the two passives never share a
+ * draw), and memoised onto the target so every attacker in that frame agrees. No cooldown gate —
+ * evasion is an always-on trait, not a spent skill. Returns false when `evadeChance` is 0.
+ */
+export function rollRangedEvade(
+  target: RacerState,
+  frame: number,
+  targetRng: Rng,
+  evadeChance: number,
+): boolean {
+  if (evadeChance <= 0) return false;
+  if (target.skill.evadeFrame === frame) return target.skill.evadeRoll === true;
+  const roll = targetRng.fork(`evade:${frame}`).bool(evadeChance);
+  target.skill.evadeFrame = frame;
+  target.skill.evadeRoll = roll;
+  return roll;
+}

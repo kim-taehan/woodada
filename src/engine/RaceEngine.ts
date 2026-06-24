@@ -7,7 +7,7 @@
 import { createRng, type Rng } from './prng.ts';
 import { applyOvertake, laneDistanceFactor } from './overtake.ts';
 import { sectionSpeedBias } from './stats.ts';
-import { isCurve, lapPhase, SECTION } from './track.ts';
+import { isCurve, lapPhase } from './track.ts';
 import { SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE, DOG_STUN_RECOVER, PENGUIN_SPURT, CAT_CORNER_EXIT, MONKEY_ITEM } from './tuning.ts';
 import {
   DT_MS,
@@ -815,7 +815,8 @@ export function createRaceEngine(
     // during it — otherwise a straight-sprinter (dog) pulls away in the parade and starves the curve
     // specialists (hedgehog/spider/cat) below the fairness floor. baseSpeed/jitter/condition (all random,
     // not character-systematic) remain. Cornering identity resumes at the first curve. Pure (progress).
-    const inStartStraight = self.progress < SECTION.bottomStraightEnd * config.trackLength;
+    // leg 0 only: relay handoff runners also start at progress=0 but should race freely.
+    const inStartStraight = (self.leg ?? 0) === 0 && self.progress < FINISH_OFFSET_FRAC * config.trackLength;
     const corneringBias = inStartStraight ? 0 : sectionSpeedBias(self.cornering, onCurve);
     self.speed = (self.baseSpeed + corneringBias) * jitter * condition + (self.skill.burst ?? 0);
 

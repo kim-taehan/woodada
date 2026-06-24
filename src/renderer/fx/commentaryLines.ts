@@ -120,8 +120,13 @@ const BANANA_FAIL = ['어? 빗나갔다!', '에이~ 피했네 🍌', '아 깝다
 const CAT_PUNCH = ['냥펀치!!', '냥펀치! 탁 쳐냈다 🐾', '그런 거 안 통해! 냥펀치!'];
 const CAT_WALK = ['냐옹~ 사뿐', '캣워크로 슉 흘림 😼', '냐옹, 안 맞지롱'];
 
+const BANANA_HIT = ['맞았다!! 🍌', '으하하, 직빵~! 🐒', '찰떡 명중! ㅋㅋ', '바나나 성공! 가랏!'];
+
 export function bananaFailBubble(seed: number): string {
   return pick(BANANA_FAIL, seed);
+}
+export function bananaHitBubble(seed: number): string {
+  return pick(BANANA_HIT, seed);
 }
 
 /** 고양이가 막 회피한 공격 종류로 버블 갈래를 고른다. 거미줄/바나나는 냥펀치, 나머지는 캣워크. */

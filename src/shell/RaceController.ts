@@ -24,7 +24,6 @@ export class RaceController {
   private running = false;
   private paused = false;
   private coastRaf = 0;
-  private lastTime = 0;
 
   /**
    * `arenaId` is purely visual: forwarded to the renderer seam only, never the
@@ -66,7 +65,7 @@ export class RaceController {
         if (!last) last = ts;
         const realDt = Math.min(ts - last, 100); // clamp big gaps (tab switches)
         last = ts;
-        this.lastTime = last;
+
 
         // Death-match: briefly slow pacing when someone is knocked out so the
         // elimination moment reads. Display-only; the engine stays fixed-step.
@@ -158,7 +157,6 @@ export class RaceController {
   resume(): void {
     if (!this.paused) return;
     this.paused = false;
-    this.lastTime = 0;
   }
 
   isPaused(): boolean {

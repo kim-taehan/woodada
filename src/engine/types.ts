@@ -329,7 +329,7 @@ export const DT_MS = 1000 / 60;
  * Shared with the renderer (imported from this module) so the drawn finish line
  * matches the simulated one.
  */
-export const FINISH_OFFSET_FRAC = 0.21;
+export const FINISH_OFFSET_FRAC = 0.25;
 
 /**
  * Staggered start offset (fraction of one lap). At race start the outer-most

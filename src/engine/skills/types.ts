@@ -36,6 +36,14 @@ export interface SkillContext {
    */
   tryDodge(target: RacerState): boolean;
   /**
+   * Resolve a small-target ranged evade (hedgehog 작은 표적) for `target` against an incoming
+   * RANGED disruption (banana / web / shell). Returns true if the target's small profile makes
+   * the hit miss, in which case the caller should whiff (no effect) and emit a dodge. Trait-based
+   * (CharacterData.rangedEvade), deterministic per (target id, frame) like `tryDodge`. Returns
+   * false when the target has no evade trait.
+   */
+  tryRangedEvade(target: RacerState): boolean;
+  /**
    * Lay an ice zone on the track (penguin icefield). `startProgress` is absolute
    * (the engine wraps it into lap-space). The engine tracks the zone and applies
    * its per-frame speed multipliers + exposes it on EngineFrame.iceZones.

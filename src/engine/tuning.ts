@@ -199,6 +199,21 @@ export const OVERTAKE = {
   /** Gentle lane wander amplitude + frequency (small — decorrelates the pack, not an anchor). */
   wanderAmp: 0.04,
   wanderFreq: 0.05,
+  /**
+   * 빈 라인 찾기: when blocked, scan outward at these laneStep MULTIPLES (inside-first, then
+   * outside) for an OPEN lane to weave into — so a racer actively finds a gap instead of dozing
+   * nose-to-tail behind an equal/faster rival (the "어리버리" stack). [1, 2] = one then two lanes
+   * over. Larger/more entries → looks harder for room; only the FIRST open distance is taken.
+   */
+  weaveSteps: [1, 2],
+  /**
+   * 🎁 Box-seek weight (적극 획득). A racer with a reachable item box ahead leans its lane target
+   * toward the box's lane by this fraction (0 = ignore, 1 = go straight to it). Gentle — items are
+   * a side-grab, not an override of overtaking — but enough that a trailer steers out to claim a
+   * wide box instead of the inner-rail leader auto-hoovering everything. The reach window itself
+   * (how near/ahead a box must be) lives in the ITEM block (engine), which knows trackLength.
+   */
+  boxSeekGain: 0.45,
 } as const;
 
 /**
@@ -243,4 +258,64 @@ export const STATS = {
 export const BEAR_SHOVE = {
   /** Lateral nudge applied to a shoved rival, per contact frame (lane units, outward). */
   lanePush: 0.03,
+} as const;
+
+/**
+ * 🐶 강아지 패시브 — 스턴 떨치기. 다른 동물(원숭이 바나나·곰 roar·구미호 분신 충돌)이나
+ * 아이템에 스턴당하면, 걸린 순간 남은 스턴 시간을 이 비율로 줄여 남들보다 빨리 일어난다.
+ * 모든 스턴 소스를 "이번 프레임 새로 스턴된 레이서" 중앙 패스에서 한 번에 처리(결정론, RNG 없음).
+ * 작게(0.5 = 절반) 시작 — 정밀 세기는 밸런스 패스에서 튜닝.
+ */
+export const DOG_STUN_RECOVER = 0.5;
+
+/**
+ * 🐧 펭귄 패시브 — 막판 스퍼트(스테미너). 마지막 바퀴의 마지막 커브를 빠져나와 결승선으로
+ * 향하는 홈 스트레치(직선)에서만, 펭귄의 직선 가속력이 평소(cornering 2 = "sprint 4")보다 빨라져
+ * 가장 빠른 직선러(강아지 cornering 1 = "sprint 5")까지 앞지르는 "sprint 6"가 된다.
+ *
+ * `sprintCornering`은 그 윈도우 동안의 *유효* cornering 값(0 = sprint 6, 스케일 밖의 강한 직선편향).
+ * 엔진은 같은 게인 상수(STATS.corneringGain)로 `sectionSpeedBias(sprintCornering, false)`를 계산해
+ * 평소 펭귄 직선 바이어스와의 *차이*만 보너스로 더한다 — 결승선까지의 직선에서만, 속도만(레인 중립).
+ * 곡선/일반 바퀴엔 영향 없음. 순수 lap-phase/lapIdx 계산이라 결정론(RNG 없음). 작게 시작.
+ */
+export const PENGUIN_SPURT = {
+  /** Effective cornering during the home-stretch window (0 → "sprint 6"; lower = stronger). */
+  sprintCornering: 0,
+} as const;
+
+/**
+ * 🐱 고양이 패시브 — 코너 탈출 가속. 잽싼 고양이가 곡선을 빠져나와 직선으로 들어서는 순간
+ * (직전 프레임 onCurve=true → 이번 프레임 onCurve=false), `windowFrames` 동안 speed에
+ * `× (1 + boost)`의 짧은 가속을 받는다. 순수 구간/프레임 계산(RNG 없음 → 결정론), 속도만
+ * (레인 중립). 작게 시작 — 정밀 세기는 밸런스 패스에서.
+ */
+export const CAT_CORNER_EXIT = {
+  /** Speed multiplier bonus during the corner-exit window (× (1 + boost)). */
+  boost: 0.06,
+  /** Window length in frames after the curve→straight transition (~0.25s at 60fps). */
+  windowFrames: 15,
+} as const;
+
+/**
+ * 🐵 원숭이 패시브 — 아이템 잔머리. 박스에서 추첨된 아이템을 상황에 맞게 바꿔 쓴다(RaceEngine
+ * applyItemPickup의 monkeyRemapItem):
+ *   - shell & 원숭이가 1등 → fart (등껍질은 선두를 때리는데 자기가 선두면 손해 → 뒤 견제 방귀)
+ *   - fart & 원숭이가 1등 아님 → shell (추격 중 쓸모없는 방귀 대신 선두 저격)
+ *   - lightning → 확률 `lightningToStarChance`로 star (최강템이라 항상 변환은 사기 → 확률 게이트)
+ * 확률 roll은 메인 추첨(itemRng.range) 드로 순서를 흔들지 않게 안정 라벨 서브스트림에서 뽑는다.
+ * 작게 시작 — 정밀 세기는 밸런스 패스에서.
+ */
+export const MONKEY_ITEM = {
+  /** Chance a monkey's rolled lightning is upgraded to a star. */
+  lightningToStarChance: 0.4,
+} as const;
+
+/**
+ * 🦊 구미호 패시브 — 빠른 출발 (1초 헤드스타트). 구미호는 출발선에서 다른 동물보다 이만큼 먼저
+ * 달리기 시작한다(나머지는 그동안 출발선에 정지). fox.ts의 `headStartMs`로 데이터 주도(트레이트),
+ * 이 상수는 그 시작값. 순수 프레임 계산이라 결정론(RNG 없음), 레인 중립.
+ */
+export const FOX_HEADSTART = {
+  /** Fox head start in ms (others are held this long at the gun). */
+  ms: 1000,
 } as const;

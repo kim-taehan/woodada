@@ -65,6 +65,38 @@ export interface CharacterData {
    * boost either, just no contact). Default false.
    */
   airborne?: boolean;
+  /**
+   * Immune to AREA-OF-EFFECT disruption skills (e.g. the bear's roar stagger). Read by
+   * AOE skill handlers to skip this racer (a dodge gag). A trait, not an id check, so any
+   * future AOE skill can honour it. Distinct from `airborne` (ground-hazard exemption like
+   * the icefield) — don't double-cover the ice here. Default false.
+   */
+  aoeImmune?: boolean;
+  /**
+   * Wall-crawl grip (벽타기): the fraction of the CURVE outer-rail distance penalty
+   * (LANE.distLoss) this racer shrugs off — 0 = full penalty (normal), 1 = no penalty
+   * (runs the outside arc for free). Read by the engine's laneDistanceFactor so a gripper
+   * loses less ground swinging wide through the bends. Trait, not an id check. Speed-neutral
+   * (only the lane→distance conversion is eased; the "lane never affects speed" rule holds).
+   * Default 0 (omitted) → normal outer-rail penalty.
+   */
+  outerGrip?: number;
+  /**
+   * Small-target ranged evasion (작은 표적): probability (0..1) that an incoming RANGED
+   * disruption simply misses this racer — the banana throw, the spider's web, the shell.
+   * Read by those handlers (a trait, not an id check) to whiff the hit and emit a dodge.
+   * Resolved deterministically per (target id, frame) like the catwalk dodge, so multiple
+   * attackers in one frame agree. Default 0 (omitted) → no evasion.
+   */
+  rangedEvade?: number;
+  /**
+   * Head start (빠른 출발): how many ms earlier than the rest of the field this racer begins
+   * running. At the gun, every racer is held in place (progress 0, speed 0) for
+   * `max(headStartMs across the field) − ownHeadStartMs`, so the racer with the largest head
+   * start launches first and the others follow once their hold lapses. A field with no head-start
+   * racer (all 0) is held 0ms = the classic simultaneous start. Trait, not an id check. Default 0.
+   */
+  headStartMs?: number;
   skill: SkillSpec;
   lines: CharacterLines;
 }
@@ -87,8 +119,8 @@ export type ScoringId =
  */
 export type TeamScoringId = 'firstPlace' | 'rankSum' | 'relay';
 
-/** Default team flavor when none is chosen (preserves the old fixed teamRankSum). */
-export const defaultTeamScoringId: TeamScoringId = 'rankSum';
+/** Default team flavor when none is chosen (relay = 이어달리기). */
+export const defaultTeamScoringId: TeamScoringId = 'relay';
 
 /** Maps a selectable team flavor to its engine scoring strategy id. */
 export const TEAM_SCORING_TO_ID: Record<TeamScoringId, ScoringId> = {

@@ -56,6 +56,10 @@ export const bananaHandler: SkillHandler = (ctx) => {
     ctx.emit({ variant: 'dodge', targetId: target.id });
     return;
   }
+  if (ctx.tryRangedEvade(target)) { // 🦔 작은 표적: the throw misses the small low hedgehog
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
 
   if (rng.bool(Number(params.dodgeChance))) {
     ctx.emit({ variant: 'dodge', targetId: target.id, line: ctx.lines.dodge ?? '어… 빗나갔네' });

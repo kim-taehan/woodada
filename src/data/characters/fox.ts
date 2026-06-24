@@ -1,4 +1,5 @@
 import type { CharacterData } from '../schema.ts';
+import { FOX_HEADSTART } from '../../engine/tuning.ts';
 
 export const fox: CharacterData = {
   id: 'fox',
@@ -19,6 +20,8 @@ export const fox: CharacterData = {
   renderScale: 1.0,
   // Sly dasher: sharp through bends, trades straight-line pace for agility.
   cornering: 4,
+  // 빠른 출발: the gumiho slips off the line a beat early — others are held this long at the gun.
+  headStartMs: FOX_HEADSTART.ms,
   skill: {
     type: 'illusionClone',
     cooldownMs: [5000, 7000],
