@@ -104,6 +104,8 @@ export interface CharacterData {
   catchupBoost?: number;
   skill: SkillSpec;
   lines: CharacterLines;
+  /** Optional extra line pools for specific events (e.g., zoomies hit lines). */
+  hitLines?: string[];
 }
 
 export type CharacterCatalog = Record<string, CharacterData>;

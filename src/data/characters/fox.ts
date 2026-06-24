@@ -19,18 +19,18 @@ export const fox: CharacterData = {
   renderScale: 1.0,
   // Sly dasher: sharp through bends, trades straight-line pace for agility.
   cornering: 4,
-  // 구미호 본능: 선두와 거리 멀수록 최대 14% 속도 부스트 (역전 특화).
-  catchupBoost: 0.14,
+  // 작은 표적: 교묘하게 힘을 숨겨 원거리 방해 (바나나/거미줄/등껍질) 를 15% 회피.
+  rangedEvade: 0.15,
   skill: {
     type: 'illusionClone',
-    cooldownMs: [5000, 7000],
+    cooldownMs: [5000, 7000],  // 4~5.5 초 → 5~7 초 (빈도 감소)
     params: {
       cloneCount: 2,
-      cloneDuration: 3000,
+      cloneDuration: 2000,  // 3000ms → 2000ms (지속시간 단축)
       collisionStun: 500,
-      laneSpread: 0,    // inline — clones trail/lead on the same lane as the body
-      bodyLenUnits: 38, // tightened from 57 (too far apart per user) — ~0.67 body so heads sit near tails, no overlap
-      gapJitter: 0.4,   // random extra gap on top (0.4 → 1.0~1.4× spread); lowered with the tighter base
+      laneSpread: 0,
+      bodyLenUnits: 38,
+      gapJitter: 0.4,
     },
   },
   lines: {

@@ -37,7 +37,17 @@ export const bananaHandler: SkillHandler = (ctx) => {
 
   const target = candidates[0];
   ctx.emit({ variant: 'activate' });
-  if (!target) return; // nobody to throw at — silent whiff
+  if (!target) {
+    const noTargetLines = [
+      '누구한테 던질 사람이 없네…',
+      '에잇, 다 갔어?!',
+      '허공에 던지나… 🍌',
+      '상대가 없군 ㅋ',
+      '쓸데없이 던졌다…',
+    ];
+    ctx.emit({ variant: 'whiff', line: noTargetLines[frame % noTargetLines.length] });
+    return;
+  }
 
   if ((target.skill.starUntil ?? 0) > frame) { // ⭐ star deflects the banana
     ctx.emit({ variant: 'dodge', targetId: target.id });

@@ -17,6 +17,7 @@ const LINES: Record<string, string[]> = {
   'divebomb:self': ['어이쿠! {n} 도박 실패로 자기가 처박혔다 ㅋㅋ', '{n} 헛박치기! 혼자 땅에 꼴아박았다 ㅋㅋㅋ', '{n} 박치기 빗나가 자폭! 별이 빙글빙글~'],
   'roar:activate': ['{n} 크아앙! 주변 다 같이 움찔!', '{n} 포효 발동! 근처가 얼어붙는다!'],
   'bristle:activate': ['{n} 등 가시 곤두세웠다! 붙지 말라잖아 ㅋㅋ', '{n} 까칠모드 발동! 뒤에 누구냐!', '{n} 따끔 주의보! 가시 쫙 폈다!'],
+  'banana:whiff': ['누구한테 던질 사람이 없네…', '에잇, 다 갔어?!', '허공에 던지나… 🍌', '상대가 없군 ㅋ', '쓸데없이 던졌다…'],
 
   // — disruptions that LAND on a target: {n} did it to {t} —
   'banana:hit': ['{n}가 {t}한테 바나나 투척 — 명중! {t} 미끄덩 ㅋㅋ', '{n}의 바나나가 {t} 발밑에! {t} 쭉 미끄러졌다!', '{n}가 {t}한테 한 방 먹였다! 바나나 직격 ㅋㅋㅋ'],
@@ -119,6 +120,7 @@ export function leadLine(name: string, seed: number): string {
 const BANANA_FAIL = ['어? 빗나갔다!', '에이~ 피했네 🍌', '아 깝다… 헛던졌다 ㅋㅋ', '으악 안 맞았어!'];
 const CAT_PUNCH = ['냥펀치!!', '냥펀치! 탁 쳐냈다 🐾', '그런 거 안 통해! 냥펀치!'];
 const CAT_WALK = ['냐옹~ 사뿐', '캣워크로 슉 흘림 😼', '냐옹, 안 맞지롱'];
+const PENGUIN_ICE_IMMUNE = ['빙판에서는 안 맞아~ 🧊', '이곳은 내 홈이야! 😼', '으흐흐~ 미끄러울 뿐이지!', '빙판 무적! 헛수고咯!'];
 
 const BANANA_HIT = ['맞았다!! 🍌', '으하하, 직빵~! 🐒', '찰떡 명중! ㅋㅋ', '바나나 성공! 가랏!'];
 
@@ -162,6 +164,8 @@ const ABDUCT_ACTIVATE = [
   '내 줄에 걸렸어! ㅋ',
   '스르르… 당겨라! 🕸️',
 ];
+const ABDUCT_HIT = ['끌려와~ ㅋㅋ 🕸️', '거미줄 명중! 쑤욱!', '잡았어!! 당겨라~', '내 줄 맛 좀 봐! 🕷️'];
+const ABDUCT_DODGE = ['어? 빗나갔네…', '피했다고?! 에잇', '이번엔 놓쳤다ㅠ', '다음엔 못 피해! 🕸️'];
 const ROAR_ACTIVATE = [
   '크아앙!! 🐻',
   '나는 곰이다~~!',
@@ -186,6 +190,8 @@ export function catwalkActivateBubble(seed: number): string { return pick(CATWAL
 export function illusionActivateBubble(seed: number): string { return pick(ILLUSION_ACTIVATE, seed); }
 export function bristleActivateBubble(seed: number): string { return pick(BRISTLE_ACTIVATE, seed); }
 export function abductActivateBubble(seed: number): string { return pick(ABDUCT_ACTIVATE, seed); }
+export function abductHitBubble(seed: number): string { return pick(ABDUCT_HIT, seed); }
+export function abductDodgeBubble(seed: number): string { return pick(ABDUCT_DODGE, seed); }
 export function bananaFailBubble(seed: number): string {
   return pick(BANANA_FAIL, seed);
 }
@@ -197,6 +203,10 @@ export function bananaHitBubble(seed: number): string {
 export function catDodgeBubble(attackType: string, seed: number): string {
   const pool = attackType === 'abduct' || attackType === 'banana' ? CAT_PUNCH : CAT_WALK;
   return pick(pool, seed);
+}
+
+export function penguinIceImmuneBubble(seed: number): string {
+  return pick(PENGUIN_ICE_IMMUNE, seed);
 }
 
 /**

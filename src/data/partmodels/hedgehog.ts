@@ -110,7 +110,7 @@ export const hedgehogModel: PartModel = {
     run: {},
     // bristle: spikes snap up & out (scale) while the body hunches low and the
     // head tucks down into a wary ball. (rot is DEGREES; scale is a multiplier.)
-    skill: { spikes: { scaleX: 1.2, scaleY: 1.28, dy: -3 }, body: { scaleY: 0.92, dy: 3 }, head: { dy: 4, rot: 8 }, tail: { rot: -12 } },
+    skill: { spikes: { scaleX: 1.35, scaleY: 1.42, dy: -6 }, body: { scaleY: 0.88, dy: 5 }, head: { dy: 6, rot: 12 }, tail: { rot: -18 } },
     // victory: spikes proudly puffed, head up
     win: { spikes: { scaleX: 1.1, scaleY: 1.14 }, head: { dy: -5 }, tail: { rot: -20 } },
     // tumble: head snaps over

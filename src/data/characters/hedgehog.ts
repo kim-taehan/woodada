@@ -20,26 +20,20 @@ export const hedgehog: CharacterData = {
   renderScale: 0.95,
   // Prickly defender: tiny body hugs the bends — corner specialist.
   cornering: 5,
-  // 작은 표적: small and low to the ground, so ranged hits (banana / web / shell) often miss.
-  rangedEvade: 0.3,
+  // 역전 특화: 꼴등일수록 빨라짐 (선두와 거리 멀수록 최대 6% 속도 부스트).
+  catchupBoost: 0.06,
   skill: {
-    // Bristle (반응형 카운터 연출): on a short cooldown, if a racer is chasing just
-    // behind within `range`, the hedgehog flares its spikes — `triggerChance` to
-    // shove that chaser back (progress -= pushBack) and slow them (speed *= slowMul
-    // for slowMs). A spiky recoil also nudges the hedgehog itself forward
-    // (recoilBurst for recoilMs) so it isn't purely defensive (keeps it off the
-    // win-rate floor). The mechanic is the engine `onOvertaken` hook (TODO #7):
-    // it fires the exact frame a non-teammate crosses ahead of the hedgehog, so
-    // triggerChance is the per-overtake counter odds. Values are provisional —
-    // balance-tuner does the final tuning.
+    // Bristle (주기적 뒤 저격): 매 2~3 초마다 바로 뒤 등수의 레이서를 가시로 밀쳐냄.
+    // 최하위 (뒤에 상대 없음) 일 때는 발동 안 함. 방어적 카운터에서 능동적 저격으로 변경.
     type: 'bristle',
-    cooldownMs: [1500, 2500],
-    params: { range: 40, triggerChance: 0.75, pushBack: 10, slowMs: 600, slowMul: 0.6, recoilBurst: 0.42, recoilMs: 700 },
+    cooldownMs: [2000, 3000],
+    params: { pushBack: 15, slowMs: 1000, slowMul: 0.4, recoilBurst: 0.42, recoilMs: 700 },
   },
-  lines: {
-    skill: '따끔! 붙지 마! 🦔',
-    win: '가까이 오지 말랬지?',
-    lose: '으… 가시가 무뎌졌나…',
-    dodge: '내 등은 못 건드려~',
-  },
-};
+   lines: {
+     skill: '따끔! 붙지 마! 🦔',
+     win: '가까이 오지 말랐지?',
+     lose: '으… 가시가 무뎌졌나…',
+     dodge: '내 등은 못 건드려~',
+   },
+   hitLines: ['따끔!', '쏘네!', '닿지마!', '아파!'],
+ };

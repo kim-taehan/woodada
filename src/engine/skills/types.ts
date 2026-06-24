@@ -23,6 +23,8 @@ export interface SkillContext {
   emit(e: Pick<SkillEvent, 'variant'> & Partial<Omit<SkillEvent, 'variant'>>): void;
   /** Character lines for speech bubbles. */
   lines: { skill: string; win: string; lose: string; dodge?: string };
+  /** Optional extra line pools (e.g., zoomies hit lines). */
+  hitLines?: string[];
   /** The skill type of another racer's character — for situational activation. */
   skillTypeOf(id: RacerId): string | undefined;
   /** The skill params of another racer's character (for mimic copy). */

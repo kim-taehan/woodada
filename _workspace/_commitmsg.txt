@@ -1,0 +1,23 @@
+feat: spider + alien 로스터, 독수리 제거, 폴리시 패스
+
+캐릭터:
+- 거미(spider, abduct: 앞선 표적 위치강등+거미줄 속박) 추가
+- 외계인(alien, mimic: 가장 가까운 주자 스킬 카피) 추가
+- 독수리(eagle)와 전용 divebomb 스킬 제거 (mimic 안전 확인)
+- 고양이 → 검은 날카로운 외형, 거미 → 밝은 파스텔(더 귀엽게)
+
+엔진/렌더러:
+- abduct reel-in: 타겟이 텔레포트 대신 거미줄에 끌려오는 화면 보간(렌더러 전용, 엔진 불변)
+- abduct pullGap 90→14: 표적을 거미 바로 뒤로
+- 저트래픽(1대1) 자리싸움: 추격자가 근접 시 선두 레인으로 lean (레인 속도중립·결정론 불변)
+
+셸:
+- 초기 참가자 기본 2명 시드, 기본 바퀴 1→5
+
+문서/밸런스:
+- character-guide.md 능력치 중복(스피드/속도) 통일·수치 보류, 독수리 제거 반영
+- bear 미세 버프(engine-bias floor)
+
+typecheck·build green, 단위테스트 51/51 통과.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>

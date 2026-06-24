@@ -1,91 +1,88 @@
-import type { SkillDef } from './types.ts';
+import type { SkillHandler } from './types.ts';
 import { DT_MS } from '../types.ts';
 
 /**
- * 고슴도치 가시 밀치기 (bristle): a reactive counter-shove. The hedgehog flares its
- * spines at whoever just OVERTOOK it and (probabilistically) shoves them back +
- * briefly slows them, and gets a small forward "spine recoil" kick for itself.
- * Defensive identity preserved — the recoil pays out only when it actually
- * blocks an overtake (on a successful shove), never on a whiff.
- *
- * TODO #7: this used to reconstruct "I am being overtaken" from a cooldown-gated
- * scan (nearest closing chaser within range). It is now driven by the real
- * `onOvertaken` engine hook — `ctx.passer` IS the racer that just crossed ahead
- * of the hedgehog this frame, so the false-positive (closing but not yet past)
- * and false-negative (passed at equal speed) cases of the old scan are gone. The
- * hook shares bristle's cooldown + `skill:<id>` sub-stream with self-activation
- * (bristle has no tick handler now, so there is no double-fire), and the engine
- * only invokes it while off cooldown — so the rng draw order stays stable.
- *
- *   target = ctx.passer (the overtaker).
- *   Lane is intentionally NOT checked: passing happens by weaving into a *different*
- *   lane, so a same-lane requirement would mean the skill never fires. We counter
- *   whoever just passed, regardless of lane.
- *   Teammates are exempt (team-exclusion preserved): a teammate overtaking → hold.
- *
- * The probabilistic "hold" emits NOTHING so the engine reads 'declined to fire'
- * and retries on RETRY_COOLDOWN_MS (not the full cooldown) — a failed roll feels
- * like "the pass slipped past the spines this time". RNG is only drawn once a
- * (non-teammate) passer exists, so the substream draw order is stable.
- *
- * On a successful trigger: 'activate', then (consistent with divebomb)
- *   - ⭐ star on the passer → 'dodge' (the shove glances off), no effect.
- *   - catwalk dodge window (ctx.tryDodge) → 'dodge', no effect.
- *   - otherwise → shove the passer back (progress -= pushBack, clamped ≥ 0) and
- *     slow it (slowUntil/slowMul, the same field the engine multiplies into speed
- *     and that the lightning item uses); emit 'hit' (targetId = passer).
+ * 고슴도치 가시 저격 (bristle): 주기적으로 바로 뒤 등수의 레이서를 가시로 밀쳐냄.
+ * - 쿨다운 (2~3 초) 마다 자동 발동
+ * - 타겟: 바로 뒤 등수 (progress 가 가장 가까운 뒤 레이서)
+ * - 최하위 (뒤에 상대 없음) 일 때는 발동 안 함
+ * - 효과: 뒤로 밀쳐내기 + 감속 + 고슴도치自身 반동 부스트
  */
-export const bristleHandler: SkillDef = {
-  onOvertaken(ctx) {
-    const { self, passer, rng, params, frame } = ctx;
+export const bristleHandler: SkillHandler = (ctx) => {
+  const { self, rng, params, frame, all, hitLines } = ctx;
 
-    // Team-exclusion: never counter a teammate that pulls ahead.
-    if (self.teamId !== undefined && passer.teamId === self.teamId) return;
-    // Inert passers (finished/waiting/stunned) aren't a real threat → hold.
-    if (
-      passer.phase === 'finished' ||
-      passer.phase === 'waiting' ||
-      passer.phase === 'stunned' ||
-      passer.phase === 'eliminated'
-    )
-      return;
+  // 뒤 등수 타겟 찾기: progress 가 self 보다 조금 작은 레이서 중 가장 가까운 것
+  let target: typeof self | undefined;
+  let minGap = Infinity;
 
-    // Probabilistic counter: only roll once a real passer exists (stable draw order).
-    if (!rng.bool(Number(params.triggerChance))) return; // the pass slipped by — hold
-
-    ctx.emit({ variant: 'activate' });
-
-    if ((passer.skill.starUntil ?? 0) > frame) { // ⭐ star shrugs off the spines
-      ctx.emit({ variant: 'dodge', targetId: passer.id });
-      return;
+  for (const other of all) {
+    if (other.id === self.id) continue;
+    if (other.phase !== 'running') continue;
+    // self 보다 뒤인 레이서만 (progress 가 작은 것)
+    const gap = self.progress - other.progress;
+    if (gap <= 0) continue; // 앞에 있거나 같은 위치
+    // 팀메이트는 제외 (팀모드에서 팀메이트 저격 방지)
+    if (self.teamId !== undefined && other.teamId === self.teamId) continue;
+    // 가장 가까운 뒤 레이서 찾기
+    if (gap < minGap) {
+      minGap = gap;
+      target = other;
     }
-    if ((passer.skill.skillInvulnUntil ?? 0) > frame) { // skill i-frames: spines glance off
-      ctx.emit({ variant: 'dodge', targetId: passer.id });
-      return;
-    }
-    if (ctx.tryDecoyGuard(passer)) { // gumiho decoy eats the shove instead (퐁!)
-      ctx.emit({ variant: 'dodge', targetId: passer.id });
-      return;
-    }
-    if (ctx.tryDodge(passer)) { // catwalk slips past the spines
-      ctx.emit({ variant: 'dodge', targetId: passer.id });
-      return;
-    }
+  }
 
-    // Shove the passer back + briefly slow it.
-    passer.progress = Math.max(0, passer.progress - Number(params.pushBack));
-    const slowFrames = Math.round(Number(params.slowMs) / DT_MS);
-    passer.skill.slowUntil = frame + slowFrames;
-    passer.skill.slowMul = Number(params.slowMul);
+  // 뒤에 상대가 없으면 (최하위) 발동 안 함
+  if (!target) {
+    // 쿨다운만 소모하고 발동 안 함 (재시도 쿨다운 사용)
+    return;
+  }
 
-    // Spine recoil: a small forward kick for the hedgehog, ON A SUCCESSFUL SHOVE
-    // ONLY (not on whiff/dodge/hold). Same burst mechanism as divebomb's dive
-    // momentum — keeps the defensive identity (only profits when actually blocking
-    // an overtake) while giving it enough forward edge to clear the win-rate floor.
-    self.skill.burst = Number(params.recoilBurst);
-    self.skill.effectUntil = frame + Math.round(Number(params.recoilMs) / DT_MS);
-    self.phase = 'straying';
+  // 타겟이 이미 finished/waiting/stunned/eliminated 이면 발동 안 함
+  if (
+    target.phase === 'finished' ||
+    target.phase === 'waiting' ||
+    target.phase === 'stunned' ||
+    target.phase === 'eliminated'
+  ) {
+    return;
+  }
 
-    ctx.emit({ variant: 'hit', targetId: passer.id });
-  },
+  // 팀메이트는 저격 안 함
+  if (self.teamId !== undefined && target.teamId === self.teamId) {
+    return;
+  }
+
+  ctx.emit({ variant: 'activate' });
+
+  // 무적/회피 체크
+  if ((target.skill.starUntil ?? 0) > frame) { // ⭐ star
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
+  if ((target.skill.skillInvulnUntil ?? 0) > frame) { // skill i-frames
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
+  if (ctx.tryDecoyGuard(target)) { // 구미호 분신
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
+  if (ctx.tryDodge(target)) { // 고양이 catwalk
+    ctx.emit({ variant: 'dodge', targetId: target.id });
+    return;
+  }
+
+  // 타겟 밀쳐내기 + 감속
+  target.progress = Math.max(0, target.progress - Number(params.pushBack));
+  const slowFrames = Math.round(Number(params.slowMs) / DT_MS);
+  target.skill.slowUntil = frame + slowFrames;
+  target.skill.slowMul = Number(params.slowMul);
+
+  // 고슴도치自身 반동 부스트
+  self.skill.burst = Number(params.recoilBurst);
+  self.skill.effectUntil = frame + Math.round(Number(params.recoilMs) / DT_MS);
+  self.phase = 'straying';
+
+  // 랜덤 hit 멘트 (상대 머리 위에 표시)
+  const line = hitLines && hitLines.length > 0 ? hitLines[rng.int(hitLines.length)] : undefined;
+  ctx.emit({ variant: 'hit', targetId: target.id, line });
 };

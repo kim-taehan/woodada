@@ -18,6 +18,9 @@ import { DT_MS } from '../types.ts';
 export const icefieldHandler: SkillHandler = (ctx) => {
   const { self, params } = ctx;
   const durationFrames = Math.round(Number(params.durationMs) / DT_MS);
+  
+  self.skill.skillInvulnUntil = Math.max(self.skill.skillInvulnUntil ?? 0, (ctx as any).frame + durationFrames);
+  
   ctx.addIceZone({
     startProgress: self.progress + Number(params.aheadOffset),
     length: Number(params.zoneLength),

@@ -342,11 +342,7 @@ export function createRaceEngine(
    */
   function tryCatwalkDodge(cat: RacerState, events: SkillEvent[]): boolean {
     const character = config.characters[cat.characterId];
-    if (character?.skill.type !== 'catwalk') return false;
-    // Already resolved this frame → reuse the decision (no re-roll, no double spend).
-    if (cat.skill.dodgeFrame === frame) return cat.skill.dodgeRoll === true;
-    // Cooldown gate: a worn-out catwalk can't dodge. Memoise the miss so later
-    // attackers this frame agree (no per-attacker re-check once decided).
+    if (!character || character.skill.type !== 'catwalk') return false;
     if (frame < cat.skillCooldownUntil) {
       cat.skill.dodgeFrame = frame;
       cat.skill.dodgeRoll = false;
@@ -370,8 +366,14 @@ export function createRaceEngine(
     return true;
   }
 
+  function isPenguinOnIce(racer: RacerState): boolean {
+    if (racer.characterId !== 'penguin') return false;
+    const lapPos = racer.progress % config.trackLength;
+    return internal.iceZones.some((z) => frame < z.expire && inZone(lapPos, z));
+  }
+
   /**
-   * 🦔 작은 표적 (see CHARACTER PASSIVES): resolve `target`'s ranged-evade against an incoming
+   * 🦊 작은 표적 (see CHARACTER PASSIVES): resolve `target`'s ranged-evade against an incoming
    * RANGED disruption (banana / web / shell). Trait-driven (CharacterData.rangedEvade) — not an
    * id check. The roll is on the TARGET's own seeded sub-stream, memoised per (target id, frame)
    * so several attackers in one frame agree (attacker-order independent). No cooldown, no side
@@ -420,6 +422,7 @@ export function createRaceEngine(
       participants: participantsById,
       frame,
       lines: character.lines,
+      hitLines: character.hitLines,
       skillTypeOf: (id: RacerId) => {
         const cid = participantsById[id]?.characterId;
         return cid ? config.characters[cid]?.skill.type : undefined;
@@ -433,7 +436,10 @@ export function createRaceEngine(
       // hand the alien) — treated like 'mimic' itself (uncopyable).
       canCopySkill: (copiedType: string) =>
         copiedType !== 'mimic' && copiedType !== 'illusionClone' && skills.get(copiedType) !== undefined,
-      tryDodge: (target: RacerState) => tryCatwalkDodge(target, events),
+      tryDodge: (target: RacerState) => {
+        if (isPenguinOnIce(target)) return true; // 빙판 위 펭귄은 방해 스킬 무적
+        return tryCatwalkDodge(target, events);
+      },
       tryRangedEvade: (target: RacerState) => tryHedgehogEvade(target),
       addIceZone: (z: Parameters<SkillContext['addIceZone']>[0]) => {
         const start = ((z.startProgress % config.trackLength) + config.trackLength) % config.trackLength;

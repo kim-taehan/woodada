@@ -27,7 +27,9 @@ export const dog: CharacterData = {
     type: 'zoomies',
     cooldownMs: [3000, 6000],
     // burst = extra forward speed (units/frame) for burstMs; strayChance pushes lane outward.
-    params: { burstMin: 0.42, burstMax: 0.92, burstMs: 470, strayChance: 0.32, strayLane: 0.45 },
+    // stunMinMs/stunMaxMs: 정면 충돌 시 상대의 스턴 지속시간 (0.5~1 초).
+    params: { burstMin: 0.42, burstMax: 0.92, burstMs: 600, strayChance: 0.32, strayLane: 0.45, stunMinMs: 500, stunMaxMs: 1000 },
   },
   lines: { skill: '우다다다다!!!', win: '왈왈!', lose: '깨갱…' },
+  hitLines: ['받아!', '꺼져!', '비켜!', '으악!'],
 };
