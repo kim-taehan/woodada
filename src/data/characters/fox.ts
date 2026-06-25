@@ -19,14 +19,14 @@ export const fox: CharacterData = {
   renderScale: 1.0,
   // Sly dasher: sharp through bends, trades straight-line pace for agility.
   cornering: 4,
-  // 작은 표적: 교묘하게 힘을 숨겨 원거리 방해 (바나나/거미줄/등껍질) 를 15% 회피.
-  rangedEvade: 0.15,
+  // 작은 표적: 교묘하게 힘을 숨겨 원거리 방해 (바나나/거미줄/등껍질) 를 5% 회피.
+  rangedEvade: 0.05,  // 15% → 5% (대폭 감소)
   skill: {
     type: 'illusionClone',
-    cooldownMs: [5000, 7000],  // 4~5.5 초 → 5~7 초 (빈도 감소)
+    cooldownMs: [5000, 7000],
     params: {
-      cloneCount: 2,
-      cloneDuration: 2000,  // 3000ms → 2000ms (지속시간 단축)
+      cloneCount: 2,  // 1 → 2 (분신 개수 복원)
+      cloneDuration: 2000,  // 3000ms → 2000ms (지속시간 단축 유지)
       collisionStun: 500,
       laneSpread: 0,
       bodyLenUnits: 38,

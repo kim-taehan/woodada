@@ -33,10 +33,10 @@ export const zoomiesHandler: SkillHandler = (ctx) => {
     // 상대를 끝레인 (lane 1) 으로 날려보냄 (아웃코스)
     target.lane = 1.0;
     target.phase = 'straying';  // 레인 변경 애니메이션용
-    // 감속 추가: 0.5 초간 50% 감속 (실제 저지 효과 확보)
-    const slowFrames = Math.round(500 / DT_MS);
+    // 감속 추가: 0.3 초간 35% 감속 (부드러운 저지 효과)
+    const slowFrames = Math.round(300 / DT_MS);
     target.skill.slowUntil = frame + slowFrames;
-    target.skill.slowMul = 0.5;
+    target.skill.slowMul = 0.35;
 
     hitCount++;
   }

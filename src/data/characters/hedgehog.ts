@@ -23,11 +23,11 @@ export const hedgehog: CharacterData = {
   // 역전 특화: 꼴등일수록 빨라짐 (선두와 거리 멀수록 최대 6% 속도 부스트).
   catchupBoost: 0.06,
   skill: {
-    // Bristle (주기적 뒤 저격): 매 2~3 초마다 바로 뒤 등수의 레이서를 가시로 밀쳐냄.
+    // Bristle (주기적 뒤 저격): 매 3~4 초마다 바로 뒤 등수의 레이서를 가시로 밀쳐냄.
     // 최하위 (뒤에 상대 없음) 일 때는 발동 안 함. 방어적 카운터에서 능동적 저격으로 변경.
     type: 'bristle',
-    cooldownMs: [2000, 3000],
-    params: { pushBack: 15, slowMs: 1000, slowMul: 0.4, recoilBurst: 0.42, recoilMs: 700 },
+    cooldownMs: [3000, 4000],  // 4~6 초 → 3~4 초 (빈도 증가)
+    params: { pushBack: 12, slowMs: 1000, slowMul: 0.4, recoilBurst: 0.42, recoilMs: 700 },  // 8 → 12 (밀어내기 증가)
   },
    lines: {
      skill: '따끔! 붙지 마! 🦔',
