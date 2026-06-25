@@ -267,12 +267,11 @@ export const BEAR_SHOVE = {
 } as const;
 
 /**
- * 🐶 강아지 패시브 — 스턴 떨치기. 다른 동물(원숭이 바나나·곰 roar·구미호 분신 충돌)이나
+ * 🐶 강아지 패시브 — 스턴 떨치기. 다른 동물 (원숭이 바나나·곰 roar·구미호 분신 충돌) 이나
  * 아이템에 스턴당하면, 걸린 순간 남은 스턴 시간을 이 비율로 줄여 남들보다 빨리 일어난다.
- * 모든 스턴 소스를 "이번 프레임 새로 스턴된 레이서" 중앙 패스에서 한 번에 처리(결정론, RNG 없음).
- * 작게(0.5 = 절반) 시작 — 정밀 세기는 밸런스 패스에서 튜닝.
+ * 모든 스턴 소스를 "이번 프레임 새로 스턴된 레이서" 중앙 패스에서 한 번에 처리 (결정론, RNG 없음).
  */
-export const DOG_STUN_RECOVER = 0.5;
+export const DOG_STUN_RECOVER = 0.2;
 
 /**
  * 🐧 펭귄 패시브 — 막판 스퍼트(스테미너). 마지막 바퀴의 마지막 커브를 빠져나와 결승선으로
@@ -297,9 +296,9 @@ export const PENGUIN_SPURT = {
  */
 export const CAT_CORNER_EXIT = {
   /** Speed multiplier bonus during the corner-exit window (× (1 + boost)). */
-  boost: 0.06,
-  /** Window length in frames after the curve→straight transition (~0.25s at 60fps). */
-  windowFrames: 15,
+  boost: 0.20,
+  /** Window length in frames after the curve→straight transition (~0.8s at 60fps). */
+  windowFrames: 50,
 } as const;
 
 /**

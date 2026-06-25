@@ -56,6 +56,7 @@ export interface SkillContext {
     durationFrames: number;
     boostFactor: number;
     slowFactor: number;
+    sinkChance?: number;  // 확률로 상대를 '물에 빠뜨림' (eliminated)
   }): void;
   /**
    * Alien mimic: dispatch the registered handler for `copiedType` with `self` (the

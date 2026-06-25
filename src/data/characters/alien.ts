@@ -29,8 +29,8 @@ export const alien: CharacterData = {
   // Rides a UFO — floats above the track, so ground hazards like the penguin's
   // icefield can't slip it (no boost either; nothing to skid on).
   airborne: true,
-  // Otherworldly: shrugs off area-of-effect disruption (e.g. the bear's roar stagger).
-  // The icefield is already covered by `airborne`; this adds AOE-skill immunity.
+  // Otherworldly: immune to all area-of-effect disruption (e.g. the bear's roar stagger).
+  // The icefield is already covered by `airborne`; this adds full AOE-skill immunity.
   aoeImmune: true,
   skill: {
     // Mimic scan (의태 스캔, 변수형 카피): copy & fire the nearest racer's skill

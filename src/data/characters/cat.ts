@@ -26,7 +26,7 @@ export const cat: CharacterData = {
     cooldownMs: [3000, 5000],
     // Opens a dodge window: during it, each incoming disruption is avoided with
     // `dodgeChance` (not guaranteed), plus a small forward slip (`slipBoost`).
-    params: { windowMs: 1350, dodgeChance: 0.52, slipBoost: 0.11 },
+    params: { windowMs: 1350, dodgeChance: 0.85, slipBoost: 0.11 },
   },
   lines: { skill: '캣워크~ 😼', win: '냥, 1등은 내 거지.', lose: '흥, 봐준 거야.', dodge: '냐옹, 안 맞지롱' },
 };

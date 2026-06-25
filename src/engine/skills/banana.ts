@@ -17,7 +17,20 @@ import { DT_MS } from '../types.ts';
 export const bananaHandler: SkillHandler = (ctx) => {
   const { self, all, rng, params, frame } = ctx;
 
-  const dir = params.target === 'back' ? -1 : params.target === 'front' ? 1 : rng.bool(0.5) ? 1 : -1;
+  // 🐵 원숭이 바나나: 자기보다 순위가 높은 동물들에게만 던짐 (1 등일 때만 랜덤 앞/뒤)
+  // 현재 내 progress 를 기준으로 순위 계산
+  const sorted = all.filter(r => r.phase === 'running' && r.id !== self.id).sort((a, b) => b.progress - a.progress);
+  const myRank = sorted.findIndex(r => r.id === self.id) + 1;
+  const isLeader = myRank <= 0; // 1 등인 경우
+
+  let dir: number;
+  if (isLeader) {
+    // 1 등일 때만 랜덤 앞/뒤
+    dir = rng.bool(0.5) ? 1 : -1;
+  } else {
+    // 1 등 아닐 때: 자기보다 순위가 높은 동물들 (progress 가 더 큰 사람들) 만 타겟
+    dir = 1; // 앞쪽으로만 던짐
+  }
 
   const candidates = all
     .filter(

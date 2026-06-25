@@ -22,10 +22,9 @@ export const bear: CharacterData = {
   skill: {
     type: 'roar',
     // Roar that staggers every racer within range for staggerMs. Widened range +
-    // longer stagger + faster recharge so the tank's only offence actually bites
-    // the pack over long races (was a near-dead char at laps=10).
+    // longer stagger so the tank's AOE actually impacts the pack.
     cooldownMs: [3000, 5200],
-    params: { range: 28, staggerMs: 430 },
+    params: { range: 45, staggerMs: 650 },
   },
   lines: { skill: '크아앙!!', win: '으르렁!', lose: '끄응…' },
 };

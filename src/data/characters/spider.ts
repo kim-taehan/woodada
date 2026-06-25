@@ -39,8 +39,8 @@ export const spider: CharacterData = {
     // tangleMs/immuneMs (ms). Values per engine-dev's abduct contract; balance-tuner
     // does the final tuning (catch within range, yank pullGap behind the spider).
     type: 'abduct',
-    cooldownMs: [2600, 4200],
-    // pullGap: 거미 '바로 뒤'에 떨군다(작은 간격 — 레인이 달라 겹치지 않음). 이전 90(≈9%)에서
+    cooldownMs: [3000, 5000],  // 2.0~3.5 초 → 3.0~5.0 초 (발동 빈도 감소)
+    // pullGap: 거미 '바로 뒤'에 떨군다 (작은 간격 — 레인이 달라 겹치지 않음). 이전 90(≈9%) 에서
     // 축소 → 멀리 내던지지 않고 표적을 자기 등 뒤로 바짝 끌어붙인다.
     params: { range: 130, minRange: 16, pullGap: 14, tangleMul: 0.55, tangleMs: 900, immuneMs: 1000 },
   },

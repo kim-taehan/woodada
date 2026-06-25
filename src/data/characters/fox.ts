@@ -23,10 +23,10 @@ export const fox: CharacterData = {
   rangedEvade: 0.05,  // 15% → 5% (대폭 감소)
   skill: {
     type: 'illusionClone',
-    cooldownMs: [5000, 7000],
+    cooldownMs: [6000, 9000],  // 5~7 초 → 6~9 초 (발동 빈도 감소)
     params: {
-      cloneCount: 2,  // 1 → 2 (분신 개수 복원)
-      cloneDuration: 2000,  // 3000ms → 2000ms (지속시간 단축 유지)
+      cloneCount: 2,
+      cloneDuration: 2000,  // 원복
       collisionStun: 500,
       laneSpread: 0,
       bodyLenUnits: 38,

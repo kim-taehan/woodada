@@ -88,6 +88,8 @@ interface IceZone {
   boostFactor: number;
   /** Speed multiplier for everyone else inside the zone. */
   slowFactor: number;
+  /** 확률로 상대를 '물에 빠뜨림' (eliminated). */
+  sinkChance?: number;
 }
 
 export interface RaceEngine {
@@ -712,21 +714,24 @@ export function createRaceEngine(
    * fires on contact rather than only when fully boxed in, so it pays off in a brawl pack.
    * Pure position math, no RNG → deterministic. Runs after progress is final for the frame.
    */
-  function applyBearShove(): void {
-    for (const bear of internal.racers) {
-      if (bear.characterId !== 'bear') continue;
-      if (bear.phase === 'finished' || bear.phase === 'waiting' || bear.phase === 'eliminated') continue;
-      for (const other of internal.racers) {
-        if (other.id === bear.id) continue;
-        if (other.phase === 'finished' || other.phase === 'waiting' || other.phase === 'eliminated') continue;
-        const gap = other.progress - bear.progress;
-        if (gap < 0 || gap > ZONE.minGap) continue; // only a rival in front-contact
-        if (Math.abs(other.lane - bear.lane) > OVERTAKE.laneNear) continue; // same lane band
-        // Shove outward (toward lane 1), clamped to the racing band the overtake model uses.
-        other.lane = Math.min(0.95, other.lane + BEAR_SHOVE.lanePush);
-      }
-    }
-  }
+   function applyBearShove(): void {
+     for (const bear of internal.racers) {
+       if (bear.characterId !== 'bear') continue;
+       if (bear.phase === 'finished' || bear.phase === 'waiting' || bear.phase === 'eliminated') continue;
+       // 팀전에서는 몸통 밀치기 비활성화 (밸런스)
+       if (bear.teamId !== undefined) continue;
+       for (const other of internal.racers) {
+         if (other.id === bear.id) continue;
+         if (other.phase === 'finished' || other.phase === 'waiting' || other.phase === 'eliminated') continue;
+         const gap = other.progress - bear.progress;
+         const bearReach = ZONE.minGap * 2; // 곰만 2 배 더 넓은 접촉 범위 (24 유닛)
+         if (gap < 0 || gap > bearReach) continue; // only a rival in front-contact (relaxed for bear)
+         if (Math.abs(other.lane - bear.lane) > OVERTAKE.laneNear * 1.5) continue; // 레인 범위도 1.5 배 완화
+         // Shove outward (toward lane 1), clamped to the racing band the overtake model uses.
+         other.lane = Math.min(0.95, other.lane + BEAR_SHOVE.lanePush);
+       }
+     }
+   }
 
   /**
    * True once `self` has passed the LAST curve of its final lap and is on the bottom-straight
@@ -844,9 +849,9 @@ export function createRaceEngine(
     self.speed *= catchupFactor(self);
 
     const laneHold = inStartStraight || ((self.skill['laneHoldUntil'] as number | undefined ?? 0) > frame);
-    applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame, nearestBoxLane(self), laneHold);
+     applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame, nearestBoxLane(self), laneHold);
 
-    applyIce(self);
+     applyIce(self, events);
     // slowMul (bristle / lightning / fart).
     if ((self.skill.slowUntil ?? 0) > frame) {
       self.speed *= Number(self.skill.slowMul ?? 1);
@@ -1148,34 +1153,82 @@ export function createRaceEngine(
    * dodging the slow that frame. Stacks multiplicatively if (rarely) inside
    * several zones; deterministic.
    */
-  function applyIce(self: RacerState): void {
-    if (internal.iceZones.length === 0) { self.skill.iceJumping = false; return; }
-    const lapPos = self.progress % config.trackLength;
-    const zone = internal.iceZones.find((z) => frame < z.expire && inZone(lapPos, z));
-    if (!zone) { self.skill.iceJumping = false; self.skill.iceZoneId = undefined; return; }
-    if ((self.skill.starUntil ?? 0) > frame) return; // ⭐ star: immune to ice
-    // Airborne racers (e.g. the alien's UFO) float over the ice — no contact, so
-    // neither the penguin boost nor the runner slow applies. Trait-driven, not
-    // id-hardcoded.
-    if (config.characters[self.characterId]?.airborne) return;
+   function applyIce(self: RacerState, events: SkillEvent[]): void {
+     if (internal.iceZones.length === 0) { self.skill.iceJumping = false; return; }
+     const lapPos = self.progress % config.trackLength;
+     
+     // Find all zones the racer is currently in
+     const activeZones = internal.iceZones.filter((z) => frame < z.expire && inZone(lapPos, z));
+     if (activeZones.length === 0) { 
+       self.skill.iceJumping = false; 
+       self.skill.iceZoneId = undefined; 
+       return; 
+     }
+     
+     if ((self.skill.starUntil ?? 0) > frame) return; // ⭐ star: immune to ice
+     // Airborne racers (e.g. the alien's UFO) float over the ice — no contact, so
+     // neither the penguin boost nor the runner slow applies. Trait-driven, not
+     // id-hardcoded.
+     if (config.characters[self.characterId]?.airborne) return;
 
-    if (self.characterId === 'cat') {
-      // Decide ONCE per zone entry: jump clear over the ice (no slow) with the cat's
-      // dodgeChance. `iceJumping` is exposed for the renderer to play the hop.
-      if (self.skill.iceZoneId !== zone.id) {
-        self.skill.iceZoneId = zone.id;
-        self.skill.iceJumping = internal.skillRng
-          .get(self.id)!
-          .fork(`icejump:${zone.id}`)
-          .bool(Number(config.characters.cat.skill.params.dodgeChance ?? 0));
+     // 🐧 펭귄: 얼음판 위에서는 스턴 무효 (스턴 중에도 얼음판 위면 정상 이동)
+     if (self.characterId === 'penguin' && self.phase === 'stunned') {
+       self.phase = 'running';
+       self.speed = self.baseSpeed * activeZones[0].boostFactor;
+       return;
+     }
+
+     if (self.characterId === 'cat') {
+       // Decide ONCE per zone entry: jump clear over the ice (no slow) with the cat's
+       // dodgeChance. `iceJumping` is exposed for the renderer to play the hop.
+       const zone = activeZones[0];
+       if (self.skill.iceZoneId !== zone.id) {
+         self.skill.iceZoneId = zone.id;
+         self.skill.iceJumping = internal.skillRng
+           .get(self.id)!
+           .fork(`icejump:${zone.id}`)
+           .bool(Number(config.characters.cat.skill.params.dodgeChance ?? 0));
+       }
+       if (self.skill.iceJumping) return; // jumped clear — no slow
+       // Cat on ice: apply slow factor (capped at 0.50)
+       self.speed *= Math.max(0.50, activeZones[0].slowFactor);
+       return;
+     }
+     
+      // 🐧 펭귄 얼음판: 감속/부스트 누적 방지 (최대 50% 감속, 18% 부스트)
+      // 펭귄 본인만 부스트, 나머지는 감속 (팀메이트도 영향 없음 = 1.0)
+      const isPenguin = self.characterId === 'penguin';
+      const owner = internal.racers.find(r => r.id === activeZones[0].ownerId);
+      const isTeammate = owner?.teamId !== undefined && owner.teamId === self.teamId;
+      const isPenguinOrTeammate = isPenguin || isTeammate;
+      
+      // 팀메이트는 얼음판 영향 없음 (1.0), 펭귄은 부스트, 나머지는 감속
+      if (isTeammate && !isPenguin) {
+        // 팀메이트: 영향 없음
+        return;
       }
-      if (self.skill.iceJumping) return; // jumped clear — no slow
-      self.speed *= zone.slowFactor;
-      return;
-    }
-    self.speed *=
-      self.characterId === 'penguin' ? zone.boostFactor : zone.slowFactor;
-  }
+      
+      let finalFactor = isPenguin ? 1.18 : 0.50;
+      
+      // If multiple zones, take the minimum (most severe) factor, but cap at limits
+      for (const zone of activeZones) {
+        const zoneFactor = isPenguin ? zone.boostFactor : zone.slowFactor;
+        if (isPenguin) {
+          finalFactor = Math.max(finalFactor, zoneFactor);  // max boost
+        } else {
+          finalFactor = Math.min(finalFactor, zoneFactor);  // min (most severe) slow
+        }
+      }
+      
+      // Cap at limits: max 50% slow (0.50), max 18% boost (1.18)
+      if (!isPenguin) {
+        finalFactor = Math.max(0.50, finalFactor);
+      } else {
+        finalFactor = Math.min(1.18, finalFactor);
+      }
+      
+      self.speed *= finalFactor;
+   }
 
   /**
    * 🐵 원숭이 잔머리 (see CHARACTER PASSIVES): remap a rolled item kind to a smarter one for a

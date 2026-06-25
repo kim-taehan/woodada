@@ -110,6 +110,10 @@ export interface SkillRuntime {
   iceJumping?: boolean;
   /** id of the ice zone the cat last decided on (one jump roll per zone entry). */
   iceZoneId?: string;
+  /** 🐱 cat corner-exit: previous frame's onCurve flag for transition detection. */
+  prevOnCurve?: boolean;
+  /** 🐱 cat corner-exit: frame index until which the corner-exit boost is active. */
+  cornerExitUntil?: number;
   /** Generic flag bag for handlers. */
   [k: string]: number | string | boolean | undefined;
 }
@@ -209,14 +213,12 @@ export interface SkillEvent {
     | 'out'
     /** Gumiho illusionClone: decoys spawned (racerId = the gumiho). */
     | 'clone'
-    /** A decoy bumped a racer → that racer is stunned (racerId = the victim, line "어?"). */
+    /** Gumiho illusionClone: decoy collision hit (targetId = the decoy). */
     | 'clonehit'
-    /** A decoy absorbed an incoming disruption for the gumiho → it pops ("퐁!"). */
-    | 'clonepop'
-    /** Gumiho teleports forward to the lead decoy when the clones expire ("스르르…퐁!"). */
-    | 'teleport';
+    /** Penguin icefield: racer sank into water (targetId = sunk racer). */
+    | 'sink'
+    ;
   targetId?: RacerId;
-  /** Speech-bubble text (from character.lines). */
   line?: string;
 }
 

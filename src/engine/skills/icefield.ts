@@ -7,6 +7,7 @@ import { DT_MS } from '../types.ts';
  * affected by SPECIES, not team:
  *   - characterId === 'penguin'  → speeds up (boostFactor): glides on home ice.
  *   - everyone else              → slows down (slowFactor): slips and skids.
+ *   - everyone else (sinkChance) → 확률로 '물에 빠짐' (eliminated).
  * This is purely environmental (team-agnostic, identical in solo / team / relay)
  * and is NOT a "direct disruption", so catwalk's dodge does not apply to it.
  *
@@ -16,7 +17,7 @@ import { DT_MS } from '../types.ts';
  * per-frame speed multipliers and exposes the zone on EngineFrame.iceZones.
  */
 export const icefieldHandler: SkillHandler = (ctx) => {
-  const { self, params } = ctx;
+  const { self, params, rng } = ctx;
   const durationFrames = Math.round(Number(params.durationMs) / DT_MS);
   
   self.skill.skillInvulnUntil = Math.max(self.skill.skillInvulnUntil ?? 0, (ctx as any).frame + durationFrames);
@@ -27,6 +28,7 @@ export const icefieldHandler: SkillHandler = (ctx) => {
     durationFrames,
     boostFactor: Number(params.boostFactor),
     slowFactor: Number(params.slowFactor),
+    sinkChance: Number(params.sinkChance ?? 0),
   });
   ctx.emit({ variant: 'activate' });
 };
