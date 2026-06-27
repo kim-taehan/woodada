@@ -3,10 +3,10 @@ import { DT_MS } from '../types.ts';
 
 /**
  * 고슴도치 가시 저격 (bristle): 주기적으로 바로 뒤 등수의 레이서를 가시로 밀쳐냄.
- * - 쿨다운 (2~3 초) 마다 자동 발동
+ * - 쿨다운 (3~5 초) 마다 자동 발동
  * - 타겟: 바로 뒤 등수 (progress 가 가장 가까운 뒤 레이서)
- * - 최하위 (뒤에 상대 없음) 일 때는 발동 안 함
- * - 효과: 뒤로 밀쳐내기 + 감속 + 고슴도치自身 반동 부스트
+ * - 최하위 (뒤에 상대 없음) 거나 타겟이 maxGap 밖이면 발동 안 함
+ * - 효과: 뒤로 밀쳐내기 + 감속 + 고슴도치自身 반동 부스트(축소판)
  */
 export const bristleHandler: SkillHandler = (ctx) => {
   const { self, rng, params, frame, all, hitLines } = ctx;
@@ -33,6 +33,13 @@ export const bristleHandler: SkillHandler = (ctx) => {
   // 뒤에 상대가 없으면 (최하위) 발동 안 함
   if (!target) {
     // 쿨다운만 소모하고 발동 안 함 (재시도 쿨다운 사용)
+    return;
+  }
+
+  // 바로 뒤 상대가 가시 사거리(maxGap) 밖이면 (거리 차이) 발동 안 함.
+  // 가시는 근접 저격 — 멀리 떨어진 뒤 등수는 건드리지 못함.
+  const maxGap = Number(params.maxGap);
+  if (maxGap > 0 && minGap > maxGap) {
     return;
   }
 
@@ -77,7 +84,7 @@ export const bristleHandler: SkillHandler = (ctx) => {
   target.skill.slowUntil = frame + slowFrames;
   target.skill.slowMul = Number(params.slowMul);
 
-  // 고슴도치自身 반동 부스트
+  // 고슴도치自身 반동 부스트 (대폭 축소: 가시가 주 추진력이 되지 않도록 0.75→0.25)
   self.skill.burst = Number(params.recoilBurst);
   self.skill.effectUntil = frame + Math.round(Number(params.recoilMs) / DT_MS);
   self.phase = 'straying';

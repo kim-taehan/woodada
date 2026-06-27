@@ -22,11 +22,13 @@ export const penguin: CharacterData = {
   cornering: 2,
   skill: {
     type: 'icefield',
-    cooldownMs: [9000, 14000],
+    // 멀티랩/팀/릴레이에서 얼음판 반복 발동으로 독주 → 기능은 유지, 수치만 너프.
+    // 발동 빈도↓(쿨다운↑), 펭귄 자기 가속↓(boostFactor), 남들 감속 완화↑(slowFactor).
+    cooldownMs: [12000, 17000],
     // Lays an ice patch ahead (start = progress + aheadOffset, length zoneLength)
     // for durationMs. Species-based, team-agnostic: penguins glide faster
     // (boostFactor) across it; everyone else slips slower (slowFactor).
-    params: { zoneLength: 130, durationMs: 4000, slowFactor: 0.50, boostFactor: 1.25, aheadOffset: 40 },
+    params: { zoneLength: 130, durationMs: 4000, slowFactor: 0.68, boostFactor: 1.12, aheadOffset: 40 },
   },
   lines: {
     skill: '빙판 깔기! 미끌미끌~ 🧊',

@@ -20,12 +20,13 @@ export const monkey: CharacterData = {
   cornering: 4,
   skill: {
     type: 'banana',
-    cooldownMs: [1800, 3000],  // 2.1~3.8 초 → 1.8~3.0 초 (더 자주)
+    cooldownMs: [1600, 2700],  // 1.8~3.0 → 1.6~2.7 초 (소폭 단축)
     // Targets the nearest neighbour ahead OR behind (random each throw, 'either');
     // hitStun freezes them; dodgeChance misses. Bidirectional so a leading monkey can
     // still throw backward — always has a target + adds variety.
     // immuneMs: anti-stack window after the stun lifts (blocks relay chain-stuns).
-    params: { target: 'either', hitStunMs: 1050, dodgeChance: 0.10, range: 0.45, immuneMs: 900 },
+    // hitStunMs 1050→1200, dodgeChance 0.10→0.06: 팀/릴레이 효과 소폭 강화.
+    params: { target: 'either', hitStunMs: 1200, dodgeChance: 0.06, range: 0.45, immuneMs: 900 },
   },
   lines: { skill: '받아라! (까득)', win: '우끼끼!', lose: '끼…', dodge: '어… 빗나갔네' },
 };

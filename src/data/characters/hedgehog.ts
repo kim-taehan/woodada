@@ -21,13 +21,18 @@ export const hedgehog: CharacterData = {
   // Prickly defender: tiny body hugs the bends — corner specialist.
   cornering: 5,
   // 역전 특화: 꼴등일수록 빨라짐 (선두와 거리 멀수록 최대 8% 속도 부스트).
+  // 가시 자기부스트 축소로 추진력이 줄어 바닥권 → 역전 아이덴티티 값(0.08)으로 원복해 보완.
   catchupBoost: 0.08,
   skill: {
-    // Bristle (주기적 뒤 저격): 매 2~3 초마다 바로 뒤 등수의 레이서를 가시로 밀쳐냄.
+    // Bristle (주기적 뒤 저격): 매 3~5 초마다 바로 뒤 등수의 레이서를 가시로 밀쳐냄.
     // 최하위 (뒤에 상대 없음) 일 때는 발동 안 함. 방어적 카운터에서 능동적 저격으로 변경.
     type: 'bristle',
-    cooldownMs: [2000, 3000],
-    params: { pushBack: 30, slowMs: 1000, slowMul: 0.4, recoilBurst: 0.75, recoilMs: 900 },
+    cooldownMs: [3000, 5000],
+    // maxGap: 바로 뒤 상대가 이 progress 거리(trackLength=1000) 안에 있어야 발동.
+    // 멀리 떨어져 있으면 (거리 차이) 가시가 닿지 않아 발동 안 함. collideDist=10(≈⅔몸길이) 기준 ~8몸길이.
+    // 60은 개인전(솔로 분산)에서 발동=추진력을 굶겨 바닥권 → 110으로 완화(먼 표적 차단 의도는 유지).
+    // recoilBurst: 발동 시 자기 반동 부스트. baseSpeed≈1.4 대비 0.75는 과해 주 추진력화 → 0.45로 축소.
+    params: { pushBack: 30, slowMs: 1000, slowMul: 0.4, maxGap: 110, recoilBurst: 0.45, recoilMs: 900 },
   },
    lines: {
      skill: '따끔! 붙지 마! 🦔',

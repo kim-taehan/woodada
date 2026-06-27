@@ -851,7 +851,7 @@ export function createRaceEngine(
     const laneHold = inStartStraight || ((self.skill['laneHoldUntil'] as number | undefined ?? 0) > frame);
      applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame, nearestBoxLane(self), laneHold);
 
-     applyIce(self, events);
+     applyIce(self);
     // slowMul (bristle / lightning / fart).
     if ((self.skill.slowUntil ?? 0) > frame) {
       self.speed *= Number(self.skill.slowMul ?? 1);
@@ -1153,7 +1153,7 @@ export function createRaceEngine(
    * dodging the slow that frame. Stacks multiplicatively if (rarely) inside
    * several zones; deterministic.
    */
-   function applyIce(self: RacerState, events: SkillEvent[]): void {
+   function applyIce(self: RacerState): void {
      if (internal.iceZones.length === 0) { self.skill.iceJumping = false; return; }
      const lapPos = self.progress % config.trackLength;
      
@@ -1200,8 +1200,7 @@ export function createRaceEngine(
       const isPenguin = self.characterId === 'penguin';
       const owner = internal.racers.find(r => r.id === activeZones[0].ownerId);
       const isTeammate = owner?.teamId !== undefined && owner.teamId === self.teamId;
-      const isPenguinOrTeammate = isPenguin || isTeammate;
-      
+
       // 팀메이트는 얼음판 영향 없음 (1.0), 펭귄은 부스트, 나머지는 감속
       if (isTeammate && !isPenguin) {
         // 팀메이트: 영향 없음

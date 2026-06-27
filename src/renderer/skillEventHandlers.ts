@@ -82,7 +82,7 @@ const SKILL_HANDLERS: Record<string, SkillHandler> = {
     fx.speedLines(self.x, self.y - 6, dir, clock);
     bubbles.spawn(e.racerId, zoomiesActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
   },
-  'zoomies:hit': ({ e, fx, at, clock }) => {
+  'zoomies:hit': ({ fx, at, clock }) => {
     // 🐶 강아지 부스트 충돌: 상대를 아웃코스로 밀어내는 충격 이펙트
     if (at) {
       fx.stars(at.x, at.y, clock);  // 충격 별
@@ -223,7 +223,7 @@ const SKILL_HANDLERS: Record<string, SkillHandler> = {
     fx.bristle(self.x, self.y, spikeTint, clock);
     bubbles.spawn(e.racerId, bristleActivateBubble(curFrameIdx), v.tint, self.x, self.y - 64, clock);
   },
-  'bristle:hit': ({ e, fx, bubbles, at, v2, spikeTintOf, clock, curFrameIdx }) => {
+  'bristle:hit': ({ e, fx, bubbles, at, v2, spikeTintOf, clock }) => {
     // 🦔 The chaser (just behind) gets bounced BACKWARD off the spines: a sharp
     // impact + quill shards + a dust skid the way it recoils. `at.heading` gives
     // the chaser's travel sign so spikeShove flings it opposite. It is also

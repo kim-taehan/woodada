@@ -217,6 +217,12 @@ export interface SkillEvent {
     | 'clonehit'
     /** Penguin icefield: racer sank into water (targetId = sunk racer). */
     | 'sink'
+    /** Monkey banana: thrown with no valid target ahead (whiffed). */
+    | 'whiff'
+    /** Gumiho illusionClone: a decoy was popped on contact (racerId = decoy owner). */
+    | 'clonepop'
+    /** Gumiho illusionClone: owner teleported forward to the lead decoy. */
+    | 'teleport'
     ;
   targetId?: RacerId;
   line?: string;
