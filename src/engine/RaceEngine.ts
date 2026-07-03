@@ -157,6 +157,61 @@ interface Internals {
   spreadBehind: number;
 }
 
+/**
+ * Anti-runaway multiplier (see CATCHUP). Pure function of this racer's gap to
+ * the field mean (in laps) — no RNG, no character/lane term, so it is
+ * deterministic and unbiased. Trailers are nudged up, runaway leaders down,
+ * within a small clamped band that never overrides a skill burst outright.
+ *
+ * Field-size reshaping (CATCHUP.spread): in a crowded field the trailer
+ * tailwind is faded (let the pack string out front-to-back) via `ctx.spreadBehind`
+ * (see spreadBehindFor). The leader drag is left at its base value (amplifying it
+ * both re-bunches the field and skews slot fairness — see tuning note).
+ */
+export function catchupFactor(
+  self: RacerState,
+  ctx: { meanProgress: number; spreadBehind: number; trackLength: number },
+): number {
+  const gapLaps = (ctx.meanProgress - self.progress) / ctx.trackLength;
+  if (gapLaps > CATCHUP.deadZone) {
+    return Math.min(
+      CATCHUP.maxBoost,
+      1 + (gapLaps - CATCHUP.deadZone) * CATCHUP.behindGain * ctx.spreadBehind,
+    );
+  }
+  if (gapLaps < -CATCHUP.deadZone) {
+    return Math.max(CATCHUP.minBoost, 1 + (gapLaps + CATCHUP.deadZone) * CATCHUP.aheadDrag);
+  }
+  return 1;
+}
+
+/**
+ * Field-size trailer-tailwind fade (see CATCHUP.spread). Pure function of the
+ * active-runner count: at/below the knee it is 1 (small-field feel preserved);
+ * above it the tailwind fades toward `behindMin` so a crowd strings out.
+ */
+export function spreadBehindFor(active: number): number {
+  const s = CATCHUP.spread;
+  const over = Math.max(0, active - s.kneeAt);
+  return Math.max(s.behindMin, 1 - over * s.behindFade);
+}
+
+/**
+ * 🐵 원숭이 잔머리 (see CHARACTER PASSIVES): remap a rolled item kind to a smarter one for a
+ * monkey-witted racer, given whether it is currently the leader. Pure (the only randomness is the
+ * passed-in `rng`, a stable-label sub-stream so it never shifts the main item draw order):
+ *   - shell while leading → fart   (the shell would stun the monkey itself)
+ *   - fart while NOT leading → shell (a chasing fart hits no one useful; snipe the leader)
+ *   - lightning → star with `lightningToStarChance` (gated: star is the strongest item)
+ *   - otherwise unchanged.
+ */
+export function monkeyRemapItem(kind: ItemKind, isLeader: boolean, rng: Rng): ItemKind {
+  if (kind === 'shell' && isLeader) return 'fart';
+  if (kind === 'fart' && !isLeader) return 'shell';
+  if (kind === 'lightning' && rng.bool(MONKEY_ITEM.lightningToStarChance)) return 'star';
+  return kind;
+}
+
 export function createRaceEngine(
   config: RaceConfig,
   skills: SkillRegistry,
@@ -620,33 +675,6 @@ export function createRaceEngine(
     for (const { overtaken, passer } of passes) fireSkill(overtaken, events, passer);
   }
 
-  /**
-   * Anti-runaway multiplier (see CATCHUP). Pure function of this racer's gap to
-   * the field mean (in laps) — no RNG, no character/lane term, so it is
-   * deterministic and unbiased. Trailers are nudged up, runaway leaders down,
-   * within a small clamped band that never overrides a skill burst outright.
-   *
-   * Field-size reshaping (CATCHUP.spread): in a crowded field the trailer
-   * tailwind is faded (let the pack string out front-to-back). The leader drag is
-   * left at its base value (amplifying it both re-bunches the field and skews
-   * slot fairness — see tuning note). The fade comes from `meanProgress`'s
-   * active-runner count, cached once per frame, so the result stays a
-   * deterministic function of the count.
-   */
-  function catchupFactor(self: RacerState): number {
-    const gapLaps = (internal.meanProgress - self.progress) / config.trackLength;
-    if (gapLaps > CATCHUP.deadZone) {
-      return Math.min(
-        CATCHUP.maxBoost,
-        1 + (gapLaps - CATCHUP.deadZone) * CATCHUP.behindGain * internal.spreadBehind,
-      );
-    }
-    if (gapLaps < -CATCHUP.deadZone) {
-      return Math.max(CATCHUP.minBoost, 1 + (gapLaps + CATCHUP.deadZone) * CATCHUP.aheadDrag);
-    }
-    return 1;
-  }
-
   /** Racers currently on track (relay `waiting`/`finished` excluded). */
   function activeRunnerCount(): number {
     let n = 0;
@@ -655,17 +683,6 @@ export function createRaceEngine(
       n++;
     }
     return n;
-  }
-
-  /**
-   * Field-size trailer-tailwind fade (see CATCHUP.spread). Pure function of the
-   * active-runner count: at/below the knee it is 1 (small-field feel preserved);
-   * above it the tailwind fades toward `behindMin` so a crowd strings out.
-   */
-  function spreadBehindFor(active: number): number {
-    const s = CATCHUP.spread;
-    const over = Math.max(0, active - s.kneeAt);
-    return Math.max(s.behindMin, 1 - over * s.behindFade);
   }
 
   /** Mean progress over racers currently on track (catch-up reference point). */
@@ -873,7 +890,11 @@ export function createRaceEngine(
     // Per-racer character speed passives (penguin spurt, cat corner-exit) — see CHARACTER PASSIVES.
     applyCharacterSpeedPassives(self, onCurve, jitter, condition);
 
-    self.speed *= catchupFactor(self);
+    self.speed *= catchupFactor(self, {
+      meanProgress: internal.meanProgress,
+      spreadBehind: internal.spreadBehind,
+      trackLength: config.trackLength,
+    });
 
     const laneHold = inStartStraight || ((self.skill['laneHoldUntil'] as number | undefined ?? 0) > frame);
      applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame, nearestBoxLane(self), laneHold);
@@ -1255,22 +1276,6 @@ export function createRaceEngine(
       
       self.speed *= finalFactor;
    }
-
-  /**
-   * 🐵 원숭이 잔머리 (see CHARACTER PASSIVES): remap a rolled item kind to a smarter one for a
-   * monkey, given whether it is currently the leader. Pure (the only randomness is the passed-in
-   * `rng`, a stable-label sub-stream so it never shifts the main item draw order):
-   *   - shell while leading → fart   (the shell would stun the monkey itself)
-   *   - fart while NOT leading → shell (a chasing fart hits no one useful; snipe the leader)
-   *   - lightning → star with `lightningToStarChance` (gated: star is the strongest item)
-   *   - otherwise unchanged.
-   */
-  function monkeyRemapItem(kind: ItemKind, isLeader: boolean, rng: Rng): ItemKind {
-    if (kind === 'shell' && isLeader) return 'fart';
-    if (kind === 'fart' && !isLeader) return 'shell';
-    if (kind === 'lightning' && rng.bool(MONKEY_ITEM.lightningToStarChance)) return 'star';
-    return kind;
-  }
 
   /** A gamble box, on pickup, rolls one of four effects (weighted). */
   function applyItemPickup(self: RacerState, order: RacerState[], events: SkillEvent[]): void {
