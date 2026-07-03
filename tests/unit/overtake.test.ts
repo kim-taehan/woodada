@@ -2,25 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { applyOvertake, OVERTAKE, laneDistanceFactor } from '../../src/engine/overtake.ts';
 import { LANE } from '../../src/engine/tuning.ts';
 import { createRng } from '../../src/engine/prng.ts';
-import type { RacerState } from '../../src/engine/types.ts';
-
-function racer(over: Partial<RacerState>): RacerState {
-  return {
-    id: 'x',
-    characterId: 'dog',
-    progress: 0,
-    lane: 0.5,
-    homeLane: 0.5,
-    speed: 3,
-    baseSpeed: 3,
-    phase: 'running',
-    facing: 0,
-    skillCooldownUntil: 0,
-    startHoldUntil: 0,
-    skill: {},
-    ...over,
-  };
-}
+import { makeRacer as racer } from './fixtures.ts';
 
 describe('overtake / blocking', () => {
   it('clear ahead → drifts back toward its home lane', () => {

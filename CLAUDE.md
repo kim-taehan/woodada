@@ -7,7 +7,9 @@ Vite + TypeScript + PixiJS v8. 물리엔진 없음(규칙 + 시드 PRNG).
 ```bash
 npm run dev        # 개발 서버 (http://localhost:5173, 점유 시 5174)
 npm run typecheck  # tsc --noEmit (커밋 전 필수)
-npm run test       # Vitest 엔진 단위테스트
+npm run test       # Vitest 엔진 단위테스트 (빠른 루프, engine-bias 제외 — 커밋 전 필수)
+npm run test:stats # engine-bias 통계 공정성 게이트 (~5분). 밸런스/엔진 로직 변경 시 필수
+npm run test:coverage  # 커버리지 리포트 (src/engine 대상)
 npm run e2e        # Playwright 시각 검증 (시스템 Chrome 사용: channel 'chrome')
 npm run build      # 프로덕션 번들
 npx vite-node scripts/balance.ts   # 밸런스 하니스(승률·역전 횟수 출력)
