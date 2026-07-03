@@ -65,12 +65,15 @@ describe('overtake / blocking', () => {
 });
 
 describe('laneDistanceFactor — 벽타기 (outerGrip)', () => {
-  it('on a STRAIGHT, lane (and grip) never cost distance', () => {
+  it('on a STRAIGHT, the outer rail costs distance exactly as on a curve (onCurve ignored)', () => {
     for (const lane of [0, 0.5, 1]) {
-      expect(laneDistanceFactor(lane, false, 0)).toBe(1);
-      expect(laneDistanceFactor(lane, false, 0.5)).toBe(1);
-      expect(laneDistanceFactor(lane, false, 1)).toBe(1);
+      for (const grip of [0, 0.5, 1]) {
+        expect(laneDistanceFactor(lane, false, grip)).toBe(laneDistanceFactor(lane, true, grip));
+      }
     }
+    // Inner rail is free; outer rail pays the full distLoss without grip.
+    expect(laneDistanceFactor(0, false, 0)).toBe(1);
+    expect(laneDistanceFactor(1, false, 0)).toBeCloseTo(1 - LANE.distLoss, 10);
   });
 
   it('on a CURVE, outerGrip eases the outer-rail distance penalty (and never reverses it)', () => {

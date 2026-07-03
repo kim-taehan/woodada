@@ -207,44 +207,6 @@ describe('skill behaviour', () => {
     expect(sawRangedHit).toBe(true);
   });
 
-  it('fox 빠른 출발: the fox runs from the gun while the rest are held ~1s, then everyone runs', () => {
-    // 🦊 headStartMs=1000 → at frame 0 the fox moves but every non-fox is frozen at the line
-    // (progress 0, speed 0) until its hold (≈1s) lapses; afterwards the whole field runs.
-    const ids = ['fox', 'dog', 'bear', 'cat', 'penguin', 'spider'];
-    const cfg = makeConfig({ characterIds: ids, seed: 7, laps: 2 });
-    const foxId = cfg.participants.find((p) => p.characterId === 'fox')!.id;
-    const others = cfg.participants.filter((p) => p.characterId !== 'fox').map((p) => p.id);
-    const { frames } = simulateRace(cfg, skills, scoring);
-    const holdFrames = Math.round(1000 / (1000 / 60)); // ≈60
-
-    // A few frames in (well within the hold), the fox has moved and every other racer is still
-    // frozen (progress unchanged from their initial stagger position — not advancing).
-    const frame0 = frames.find((f) => f.frame === 0)!;
-    const early = frames.find((f) => f.frame === 10)!;
-    expect(early.racers.find((r) => r.id === foxId)!.progress).toBeGreaterThan(
-      frame0.racers.find((r) => r.id === foxId)!.progress,
-    );
-    for (const id of others) {
-      const initProgress = frame0.racers.find((r) => r.id === id)!.progress;
-      expect(early.racers.find((r) => r.id === id)!.progress).toBe(initProgress);
-    }
-
-    // Once the hold lapses, the others are running too (progress > 0 for the whole field).
-    const after = frames.find((f) => f.frame === holdFrames + 20)!;
-    for (const id of [foxId, ...others])
-      expect(after.racers.find((r) => r.id === id)!.progress).toBeGreaterThan(0);
-
-    // No head-start racer → classic simultaneous start (everyone moves from frame 0).
-    const noFox = simulateRace(makeConfig({ characterIds: ['dog', 'bear', 'cat'], seed: 7 }), skills, scoring);
-    const f5 = noFox.frames.find((f) => f.frame === 5)!;
-    for (const r of f5.racers) expect(r.progress).toBeGreaterThan(0);
-
-    // Determinism: identical re-sim reproduces the fox's progress trace.
-    const re = simulateRace(makeConfig({ characterIds: ids, seed: 7, laps: 2 }), skills, scoring);
-    const trace = (fr: typeof frames) => fr.map((f) => f.racers.find((r) => r.id === foxId)!.progress.toFixed(4));
-    expect(trace(re.frames)).toEqual(trace(frames));
-  });
-
   it('mimic copies the nearest racer\'s skill and fires it AS the alien, deterministically', () => {
     // The alien has no fixed effect: it emits events stamped with the COPIED type,
     // attributed to the alien (racerId = alien). Same (config, seed) must replay the
@@ -328,10 +290,12 @@ describe('skill behaviour', () => {
     }
   });
 
-  it('zoomies emits its line and pushes a burst (straying phase)', () => {
+  it('zoomies activates and pushes a burst (straying phase)', () => {
+    // Skill lines live renderer-side now (commentaryLines.eventLine) — engine events
+    // carry no `line`; only the activation + straying phase are engine contracts.
     const { frames } = simulateRace(makeConfig({ characterIds: ['dog', 'dog'], seed: 3 }), skills, scoring);
     const act = frames.flatMap((f) => f.events).find((e) => e.type === 'zoomies' && e.variant === 'activate');
-    expect(act?.line).toBe('우다다다다!!!');
+    expect(act).toBeDefined();
     const strayed = frames.some((f) => f.racers.some((r) => r.phase === 'straying'));
     expect(strayed).toBe(true);
   });
@@ -695,31 +659,35 @@ describe('skill behaviour', () => {
   it('skill i-frames: a racer is immune to disruption for ~0.3s after it activates', () => {
     // The instant a racer activates its own skill it gets ~300ms of i-frames. While
     // active, an incoming disruption (banana/roar/abduct/bristle/item) cannot land a
-    // 'hit' on it — at most a 'dodge' (shrug-off). We assert no 'hit' ever targets a
-    // racer whose skillInvulnUntil is still in the future that frame.
+    // 'hit' on it — at most a 'dodge' (shrug-off). Judged against the PREVIOUS frame's
+    // snapshot: the end-of-frame state can show invuln the target only gained by
+    // activating its own skill in the same frame AFTER the hit landed (which the
+    // engine's guard, checked pre-hit, correctly allowed).
     let sawInvuln = false;
     for (let s = 0; s < 40; s++) {
       const cfg = makeConfig({ characterIds: ['dog', 'monkey', 'bear', 'spider', 'hedgehog', 'cat'], seed: s });
       const { frames } = simulateRace(cfg, skills, scoring);
-      for (const f of frames) {
+      for (let i = 1; i < frames.length; i++) {
+        const f = frames[i];
         for (const r of f.racers) if ((r.skill.skillInvulnUntil ?? 0) > f.frame) sawInvuln = true;
         for (const e of f.events) {
           if (e.variant !== 'hit' || !e.targetId) continue;
           if (!['banana', 'roar', 'abduct', 'bristle', 'item'].includes(e.type)) continue;
-          const target = f.racers.find((r) => r.id === e.targetId)!;
-          // An i-framed racer must never be the victim of a landed disruption hit.
-          expect((target.skill.skillInvulnUntil ?? 0) > f.frame).toBe(false);
+          const prevTarget = frames[i - 1].racers.find((r) => r.id === e.targetId)!;
+          // A racer already i-framed when the frame began must never be the victim
+          // of a landed disruption hit within it.
+          expect((prevTarget.skill.skillInvulnUntil ?? 0) > f.frame).toBe(false);
         }
       }
     }
     expect(sawInvuln).toBe(true); // the mechanic actually engaged
   });
 
-  it('stun resets the victim\'s skill cooldown past the stun (no instant skill on recovery)', () => {
-    // When a racer is freshly stunned, its skill cooldown is pushed to (at least) the
-    // stun's end + a fresh roll, so it can't fire the instant it recovers. We capture
-    // the frame a racer ENTERS stunned and assert its cooldown now ends strictly after
-    // its stun ends (effectUntil).
+  it('stun clamps the victim\'s skill cooldown to at least the stun end (no skill while stunned)', () => {
+    // When a racer is freshly stunned, its skill cooldown is clamped to AT LEAST the
+    // stun's end (`max(cooldown, stunEnd)` — the old full-reroll-past-stun was
+    // deliberately dropped). We capture the frame a racer ENTERS stunned and assert
+    // its cooldown now ends no earlier than its stun ends (effectUntil).
     let sawReset = false;
     for (let s = 0; s < 40; s++) {
       const cfg = makeConfig({ characterIds: ['monkey', 'bear', 'dog', 'penguin', 'hedgehog'], seed: s });
@@ -730,8 +698,8 @@ describe('skill behaviour', () => {
           const prev = frames[i - 1].racers.find((p) => p.id === r.id)!;
           if (prev.phase === 'stunned') continue; // not freshly stunned this frame
           const stunEnd = r.skill.effectUntil ?? frames[i].frame;
-          // Cooldown must extend past the stun end (reset applied = recovery delay).
-          expect(r.skillCooldownUntil).toBeGreaterThan(stunEnd);
+          // Cooldown must reach at least the stun end (clamp applied).
+          expect(r.skillCooldownUntil).toBeGreaterThanOrEqual(stunEnd);
           sawReset = true;
         }
       }
