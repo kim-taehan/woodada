@@ -159,6 +159,22 @@ export interface RacerState {
    * 선두와 gap ≥ trackLength * 0.5 이면 최대치 적용. Trait, not an id check.
    */
   catchupBoost?: number;
+  /** 빙판 활공 (copied from CharacterData at init). See CharacterData.iceGlide. Undefined → false. */
+  iceGlide?: boolean;
+  /** 막판 스퍼트 (copied from CharacterData at init). See CharacterData.finalSpurt. Undefined → false. */
+  finalSpurt?: boolean;
+  /** 얼음 회피 점프 (copied from CharacterData at init). See CharacterData.iceHop. Undefined → false. */
+  iceHop?: boolean;
+  /** 코너 탈출 가속 (copied from CharacterData at init). See CharacterData.cornerExit. Undefined → false. */
+  cornerExit?: boolean;
+  /** Lane-change speed multiplier (copied from CharacterData at init). See CharacterData.laneDriftMul. Undefined → 1. */
+  laneDriftMul?: number;
+  /** 몸통 밀치기 (copied from CharacterData at init). See CharacterData.bodyShove. Undefined → false. */
+  bodyShove?: boolean;
+  /** 아이템 잔머리 (copied from CharacterData at init). See CharacterData.itemWit. Undefined → false. */
+  itemWit?: boolean;
+  /** 스턴 떨치기 비율 (copied from CharacterData at init). See CharacterData.stunRecover. Undefined → 0. */
+  stunRecover?: number;
   /**
    * Head start (빠른 출발): frame index until which this racer is held at the start line
    * (progress 0, speed 0) before it begins running. Computed at init from the field-wide head

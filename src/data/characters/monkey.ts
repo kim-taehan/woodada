@@ -18,6 +18,8 @@ export const monkey: CharacterData = {
   renderScale: 0.82,
   // Prankster all-rounder: neutral on both straights and bends.
   cornering: 4,
+  // 아이템 잔머리: 박스 아이템을 상황에 맞게 바꿔 쓴다.
+  itemWit: true,
   skill: {
     type: 'banana',
     cooldownMs: [1600, 2700],  // 1.8~3.0 → 1.6~2.7 초 (소폭 단축)

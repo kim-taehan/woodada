@@ -23,6 +23,8 @@ export const dog: CharacterData = {
   // Zoomies mascot: straight sprinter — surges down the straights, drops back through the bends.
   // cornering 1→2: 팀/릴레이에서 코너 페널티 완화. 스트레이트 특화 identity 유지.
   cornering: 2,
+  // 스턴 떨치기: 스턴당하면 남은 시간을 20%로 줄여 남들보다 빨리 일어난다.
+  stunRecover: 0.2,
 
   skill: {
     type: 'zoomies',

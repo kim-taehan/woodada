@@ -20,6 +20,9 @@ export const penguin: CharacterData = {
   renderScale: 0.9,
   // Belly-slider: straight-ahead waddle, sluggish through bends.
   cornering: 2,
+  // 빙판 활공 (얼음판 위 스턴 무효 + 부스트 + 방해 무적) + 막판 스퍼트 (홈 스트레치 가속).
+  iceGlide: true,
+  finalSpurt: true,
   skill: {
     type: 'icefield',
     // 멀티랩/팀/릴레이에서 얼음판 반복 발동으로 독주 → 기능은 유지, 수치만 너프.

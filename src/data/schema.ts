@@ -102,6 +102,49 @@ export interface CharacterData {
    * (0..1). 선두와의 거리가 trackLength * 0.5 이상이면 최대 보너스 적용. Trait, not an id check.
    */
   catchupBoost?: number;
+  /**
+   * 빙판 활공 (아이스 글라이드): on an ice zone this racer is immune to stun (keeps running),
+   * gets boosted instead of slowed (capped by `ICE_LIMITS.boostCeil`), and is fully immune to
+   * ranged/dodge-checked disruption skills while on the ice. Trait, not an id check. Default false.
+   */
+  iceGlide?: boolean;
+  /**
+   * 막판 스퍼트: on the final home-stretch straight (last curve of the last lap → the finish),
+   * this racer's straight-line pace jumps to `PENGUIN_SPURT.sprintCornering`. Trait, not an id
+   * check. Default false.
+   */
+  finalSpurt?: boolean;
+  /**
+   * 얼음 회피 점프: on entering an ice zone, this racer rolls ONCE (its own skill's
+   * `dodgeChance` param) to hop clear over it for that zone visit — no slow if it lands the
+   * jump. Trait, not an id check. Default false.
+   */
+  iceHop?: boolean;
+  /**
+   * 코너 탈출 가속: on a curve→straight transition, this racer gets a short
+   * `CAT_CORNER_EXIT.boost` speed kick. Trait, not an id check. Default false.
+   */
+  cornerExit?: boolean;
+  /**
+   * Lane-change speed multiplier applied to `OVERTAKE.laneDrift` (민첩한 발). 1 = normal rate.
+   * Trait, not an id check. Default 1 (omitted).
+   */
+  laneDriftMul?: number;
+  /**
+   * 몸통 밀치기: every frame, nudges a rival it's in front-contact with OUTWARD (lane).
+   * Trait, not an id check. Default false.
+   */
+  bodyShove?: boolean;
+  /**
+   * 아이템 잔머리: remaps a rolled item box kind to a smarter pick (monkeyRemapItem). Trait,
+   * not an id check. Default false.
+   */
+  itemWit?: boolean;
+  /**
+   * 스턴 떨치기: fraction (0..1) to shrink remaining stun duration by the instant this racer
+   * is stunned. Trait, not an id check. Default 0 (omitted) → no recovery.
+   */
+  stunRecover?: number;
   skill: SkillSpec;
   lines: CharacterLines;
   /** Optional extra line pools for specific events (e.g., zoomies hit lines). */

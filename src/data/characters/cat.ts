@@ -21,6 +21,10 @@ export const cat: CharacterData = {
   renderScale: 0.88,
   // Nimble dodger: agile through bends, loses a little on the straights.
   cornering: 4,
+  // 얼음 회피 점프 + 코너 탈출 가속 + 민첩한 발 (라인 변경 70% 빠름).
+  iceHop: true,
+  cornerExit: true,
+  laneDriftMul: 1.7,
   skill: {
     type: 'catwalk',
     cooldownMs: [3000, 5000],

@@ -267,11 +267,16 @@ export const BEAR_SHOVE = {
 } as const;
 
 /**
- * 🐶 강아지 패시브 — 스턴 떨치기. 다른 동물 (원숭이 바나나·곰 roar·구미호 분신 충돌) 이나
- * 아이템에 스턴당하면, 걸린 순간 남은 스턴 시간을 이 비율로 줄여 남들보다 빨리 일어난다.
- * 모든 스턴 소스를 "이번 프레임 새로 스턴된 레이서" 중앙 패스에서 한 번에 처리 (결정론, RNG 없음).
+ * 얼음판 효과 한도 (`iceGlide` trait). Caps how far any ice zone can push a racer's speed,
+ * regardless of how many overlapping zones stack: a slow never drops below `slowFloor`, a
+ * glider's boost never exceeds `boostCeil`. Pure clamp constants — no RNG, no id check.
  */
-export const DOG_STUN_RECOVER = 0.2;
+export const ICE_LIMITS = {
+  /** Floor on an ice-zone slow (never below 50% speed). */
+  slowFloor: 0.5,
+  /** Ceiling on an ice-glide boost (never above +18% speed). */
+  boostCeil: 1.18,
+} as const;
 
 /**
  * 🐧 펭귄 패시브 — 막판 스퍼트(스테미너). 마지막 바퀴의 마지막 커브를 빠져나와 결승선으로

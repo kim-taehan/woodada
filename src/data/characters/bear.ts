@@ -20,6 +20,8 @@ export const bear: CharacterData = {
   // (Passive body-check identity now lives in the engine as a passive — engine-dev.)
   // cornering 2→3: 팀/릴레이에서 구조적 약점(코너 손실) 완화. 스트레이트 강함 identity 유지.
   cornering: 3,
+  // 몸통 밀치기: 접촉한 앞쪽 상대를 바깥 레인으로 민다.
+  bodyShove: true,
   skill: {
     type: 'roar',
     // Roar that staggers every racer within range for staggerMs.

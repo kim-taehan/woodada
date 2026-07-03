@@ -8,7 +8,7 @@ import { createRng, type Rng } from './prng.ts';
 import { applyOvertake, laneDistanceFactor } from './overtake.ts';
 import { sectionSpeedBias } from './stats.ts';
 import { isCurve, lapPhase } from './track.ts';
-import { SPEED_JITTER, RETRY_COOLDOWN_MS, COOLDOWN_SCALE, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE, DOG_STUN_RECOVER, PENGUIN_SPURT, CAT_CORNER_EXIT, MONKEY_ITEM } from './tuning.ts';
+import { SPEED_JITTER, RETRY_COOLDOWN_MS, COOLDOWN_SCALE, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE, ICE_LIMITS, PENGUIN_SPURT, CAT_CORNER_EXIT, MONKEY_ITEM } from './tuning.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
@@ -270,6 +270,14 @@ export function createRaceEngine(
         outerGrip: stats?.outerGrip,
         rangedEvade: stats?.rangedEvade,
         catchupBoost: stats?.catchupBoost,
+        iceGlide: stats?.iceGlide,
+        finalSpurt: stats?.finalSpurt,
+        iceHop: stats?.iceHop,
+        cornerExit: stats?.cornerExit,
+        laneDriftMul: stats?.laneDriftMul,
+        bodyShove: stats?.bodyShove,
+        itemWit: stats?.itemWit,
+        stunRecover: stats?.stunRecover,
         // 빠른 출발: held at the gun for (field max − own) head start, then runs (frame 0 for the fox).
         startHoldUntil: Math.round((fieldMaxHeadStartMs - (stats?.headStartMs ?? 0)) / DT_MS),
         leg,
@@ -388,7 +396,7 @@ export function createRaceEngine(
   }
 
   function isPenguinOnIce(racer: RacerState): boolean {
-    if (racer.characterId !== 'penguin') return false;
+    if (!racer.iceGlide) return false;
     const lapPos = racer.progress % config.trackLength;
     return internal.iceZones.some((z) => frame < z.expire && inZone(lapPos, z));
   }
@@ -713,7 +721,7 @@ export function createRaceEngine(
   // Per-character always-on effects (distinct from cooldown skills). They hook in at different
   // points by nature, so they can't share one call site — this index keeps them findable:
   //   🐻 bear  — applyBearShove()              : whole-field, after progress resolves (lane push)
-  //   🐶 dog   — fresh-stun loop (DOG_STUN_RECOVER) : in the per-frame stun-recovery pass
+  //   🐶 dog   — fresh-stun loop (stunRecover trait) : in the per-frame stun-recovery pass
   //   🐧 penguin / 🐱 cat — applyCharacterSpeedPassives() : per-racer speed, inside advance()
   //   🐵 monkey — monkeyRemapItem()            : remaps a rolled item kind in applyItemPickup
   //   🦔 hedgehog — tryHedgehogEvade() (rangedEvade) : whiffs an incoming ranged hit
@@ -735,7 +743,7 @@ export function createRaceEngine(
    */
    function applyBearShove(): void {
      for (const bear of internal.racers) {
-       if (bear.characterId !== 'bear') continue;
+       if (!bear.bodyShove) continue;
        if (bear.phase === 'finished' || bear.phase === 'waiting' || bear.phase === 'eliminated') continue;
        // 팀전에서는 몸통 밀치기 비활성화 (밸런스)
        if (bear.teamId !== undefined) continue;
@@ -780,12 +788,12 @@ export function createRaceEngine(
    *       speed gets a × (1 + CAT_CORNER_EXIT.boost) kick (the cat darts out of the bend).
    */
   function applyCharacterSpeedPassives(self: RacerState, onCurve: boolean, jitter: number, condition: number): void {
-    if (self.characterId === 'penguin' && !onCurve && inFinalHomeStretch(self)) {
+    if (self.finalSpurt && !onCurve && inFinalHomeStretch(self)) {
       const bonus = sectionSpeedBias(PENGUIN_SPURT.sprintCornering, false) - sectionSpeedBias(self.cornering, false);
       self.speed += bonus * jitter * condition;
     }
 
-    if (self.characterId === 'cat') {
+    if (self.cornerExit) {
       // Latch the corner-exit window on the curve→straight transition (prev curve, now straight).
       const wasOnCurve = self.skill.prevOnCurve === true;
       self.skill.prevOnCurve = onCurve;
@@ -1190,59 +1198,59 @@ export function createRaceEngine(
      // id-hardcoded.
      if (config.characters[self.characterId]?.airborne) return;
 
-     // 🐧 펭귄: 얼음판 위에서는 스턴 무효 (스턴 중에도 얼음판 위면 정상 이동)
-     if (self.characterId === 'penguin' && self.phase === 'stunned') {
+     // 🐧 아이스 글라이드: 얼음판 위에서는 스턴 무효 (스턴 중에도 얼음판 위면 정상 이동)
+     if (self.iceGlide && self.phase === 'stunned') {
        self.phase = 'running';
        self.speed = self.baseSpeed * activeZones[0].boostFactor;
        return;
      }
 
-     if (self.characterId === 'cat') {
-       // Decide ONCE per zone entry: jump clear over the ice (no slow) with the cat's
-       // dodgeChance. `iceJumping` is exposed for the renderer to play the hop.
+     if (self.iceHop) {
+       // Decide ONCE per zone entry: jump clear over the ice (no slow) with this racer's own
+       // skill's dodgeChance. `iceJumping` is exposed for the renderer to play the hop.
        const zone = activeZones[0];
        if (self.skill.iceZoneId !== zone.id) {
          self.skill.iceZoneId = zone.id;
          self.skill.iceJumping = internal.skillRng
            .get(self.id)!
            .fork(`icejump:${zone.id}`)
-           .bool(Number(config.characters.cat.skill.params.dodgeChance ?? 0));
+           .bool(Number(config.characters[self.characterId]?.skill.params.dodgeChance ?? 0));
        }
        if (self.skill.iceJumping) return; // jumped clear — no slow
-       // Cat on ice: apply slow factor (capped at 0.50)
-       self.speed *= Math.max(0.50, activeZones[0].slowFactor);
+       // On ice: apply slow factor (capped at the ice-limits floor)
+       self.speed *= Math.max(ICE_LIMITS.slowFloor, activeZones[0].slowFactor);
        return;
      }
-     
+
       // 🐧 펭귄 얼음판: 감속/부스트 누적 방지 (최대 50% 감속, 18% 부스트)
-      // 펭귄 본인만 부스트, 나머지는 감속 (팀메이트도 영향 없음 = 1.0)
-      const isPenguin = self.characterId === 'penguin';
+      // 아이스 글라이더만 부스트, 나머지는 감속 (팀메이트도 영향 없음 = 1.0)
+      const isGlider = Boolean(self.iceGlide);
       const owner = internal.racers.find(r => r.id === activeZones[0].ownerId);
       const isTeammate = owner?.teamId !== undefined && owner.teamId === self.teamId;
 
-      // 팀메이트는 얼음판 영향 없음 (1.0), 펭귄은 부스트, 나머지는 감속
-      if (isTeammate && !isPenguin) {
+      // 팀메이트는 얼음판 영향 없음 (1.0), 글라이더는 부스트, 나머지는 감속
+      if (isTeammate && !isGlider) {
         // 팀메이트: 영향 없음
         return;
       }
-      
-      let finalFactor = isPenguin ? 1.18 : 0.50;
-      
+
+      let finalFactor: number = isGlider ? ICE_LIMITS.boostCeil : ICE_LIMITS.slowFloor;
+
       // If multiple zones, take the minimum (most severe) factor, but cap at limits
       for (const zone of activeZones) {
-        const zoneFactor = isPenguin ? zone.boostFactor : zone.slowFactor;
-        if (isPenguin) {
+        const zoneFactor = isGlider ? zone.boostFactor : zone.slowFactor;
+        if (isGlider) {
           finalFactor = Math.max(finalFactor, zoneFactor);  // max boost
         } else {
           finalFactor = Math.min(finalFactor, zoneFactor);  // min (most severe) slow
         }
       }
-      
-      // Cap at limits: max 50% slow (0.50), max 18% boost (1.18)
-      if (!isPenguin) {
-        finalFactor = Math.max(0.50, finalFactor);
+
+      // Cap at limits: max 50% slow, max 18% boost
+      if (!isGlider) {
+        finalFactor = Math.max(ICE_LIMITS.slowFloor, finalFactor);
       } else {
-        finalFactor = Math.min(1.18, finalFactor);
+        finalFactor = Math.min(ICE_LIMITS.boostCeil, finalFactor);
       }
       
       self.speed *= finalFactor;
@@ -1283,7 +1291,7 @@ export function createRaceEngine(
     // seed derives from the rng's BASE seed (not its live state), so the label must carry a
     // per-pickup discriminator or every pickup would roll identically — a monotonic per-racer
     // pickup counter gives each pickup its own deterministic sub-stream. Determinism holds.
-    if (self.characterId === 'monkey') {
+    if (self.itemWit) {
       const pick = Number(self.skill.monkeyItemPicks ?? 0);
       self.skill.monkeyItemPicks = pick + 1;
       kind = monkeyRemapItem(kind, leader?.id === self.id, irng.fork(`monkeyitem:${pick}`));
@@ -1503,9 +1511,9 @@ export function createRaceEngine(
       // 스킬 쿨다운은 스턴 종료 시점까지만 밀림(새 롤 없음 — 기존 쿨타임 유지).
       for (const self of order) {
         if (self.phase !== 'stunned' || wasStunned.has(self.id)) continue;
-        if (self.characterId === 'dog' && self.skill.effectUntil !== undefined) {
+        if (self.stunRecover && self.skill.effectUntil !== undefined) {
           const remaining = self.skill.effectUntil - frame;
-          if (remaining > 0) self.skill.effectUntil = frame + Math.max(1, Math.round(remaining * DOG_STUN_RECOVER));
+          if (remaining > 0) self.skill.effectUntil = frame + Math.max(1, Math.round(remaining * self.stunRecover));
         }
         const stunEnd = self.skill.effectUntil ?? frame;
         self.skillCooldownUntil = Math.max(self.skillCooldownUntil, stunEnd);

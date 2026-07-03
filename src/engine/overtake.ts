@@ -199,8 +199,8 @@ export function applyOvertake(
 
   // Sum → clamp → single rate-limited drift. All influences composed additively above.
   const target = clamp(base + offset, 0.05, 0.95);
-  // 🐱 고양이 — 민첩한 발: 라인 변경 속도가 남들보다 70% 빠름
-  const laneDrift = self.characterId === 'cat' ? OVERTAKE.laneDrift * 1.7 : OVERTAKE.laneDrift;
+  // 민첩한 발 (laneDriftMul trait): 라인 변경 속도 배율. 기본 1.
+  const laneDrift = OVERTAKE.laneDrift * (self.laneDriftMul ?? 1);
   self.lane = moveToward(self.lane, target, laneDrift);
 }
 
