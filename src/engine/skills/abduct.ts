@@ -25,6 +25,21 @@ import { DT_MS } from '../types.ts';
  * Anti-stack: like banana, a grabbed target gets brief immunity to *further*
  * abducts (`abductImmuneUntil` = end of tangle + `immuneMs`) so a relay spider team
  * can't chain-yank one victim leg after leg.
+ *
+ * Self-propulsion (자기 추진, laps-gated, engine-dev): abduct only demotes the TARGET's
+ * position — the spider itself never gets faster, so over a long race its slow body (no
+ * speed mechanic of its own) falls behind even while successfully yanking rivals back
+ * (structural laps=10 floor gap). A successful grab, once the spider has BEATEN at least
+ * one full lap (`lapsDone = max(0, floor(progress/lapDistance) - 1) > 0`), gives it a self
+ * speed burst (`selfBurst` for `selfBurstMs`, the same burst/effectUntil field
+ * advance() already reads — mirrors hedgehog's bristle recoil / bear's roar self-burst),
+ * scaled by that lap count (see roar.ts's header for why the `-1` — without it a laps=1
+ * race's finish stretch still crosses one lapDistance and leaks in right at the finish
+ * line). Gated to 0 (not just small) at lapsDone=0 so a laps=1 race gets no extra edge at
+ * all — a flat burst would also buff the spider's already-sufficient laps=1 share and
+ * squeeze the field's other thin-margin characters. `lapDistance` defaults to 1000 (same absolute-progress
+ * convention as `range`/`minRange`/`pullGap` above). Optional (`selfBurst` defaults to 0
+ * → no-op) so it is purely additive to the existing yank/tangle effect.
  */
 export const abductHandler: SkillHandler = (ctx) => {
   const { self, all, params, frame } = ctx;
@@ -89,6 +104,23 @@ export const abductHandler: SkillHandler = (ctx) => {
   // Anti-stack: no further abduct until the tangle lifts + a buffer.
   const immuneFrames = Math.round(Number(params.immuneMs ?? 0) / DT_MS);
   target.skill.abductImmuneUntil = frame + tangleFrames + immuneFrames;
+
+  // 자기 추진 (see file header): a successful grab also gives the spider itself a
+  // laps-gated speed burst — its only source of raw pace, since the yank/tangle above
+  // affects only the target.
+  const selfBurst = Number(params.selfBurst ?? 0);
+  if (selfBurst > 0) {
+    const lapDistance = Number(params.lapDistance ?? 1000);
+    // -1: see file header — a laps=1 race's finish stretch still crosses one lapDistance,
+    // so this keeps lapsDone at 0 there instead of leaking in right at the finish line.
+    const lapsDone = Math.max(0, Math.floor(self.progress / lapDistance) - 1);
+    // Gated: a laps=1 race gets NO self-burst at all until a full lap is genuinely beaten.
+    if (lapsDone > 0) {
+      const growth = Number(params.selfBurstGrowth ?? 0);
+      self.skill.burst = selfBurst * (1 + lapsDone * growth);
+      self.skill.effectUntil = frame + Math.round(Number(params.selfBurstMs ?? 0) / DT_MS);
+    }
+  }
 
   ctx.emit({ variant: 'hit', targetId: target.id });
 };

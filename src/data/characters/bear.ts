@@ -23,14 +23,22 @@ export const bear: CharacterData = {
   skill: {
     type: 'roar',
     // Roar that staggers every racer within range for staggerMs.
-    // range 45 유지(80 시 fox decoy 부작용 발생).
-    // 18인 필드(곰 2기 AOE 중첩) laps=1 밀집 팩에서 슬롯 ceil 초과(독주) → AOE 대폭 약화.
-    // staggerMs 780→420, cooldown [2200,4000]→[3400,5400]: laps=1 슬롯 ceil 통과(24.5%).
-    // ⚠ 구조적 한계: 이 수치는 laps=1 독주는 잡지만 laps=10 floor(3.3%)를 통과 못함(2.3%).
-    // 곰은 밀집 단거리 AOE 지배 ↔ 장거리(코너 누적손실) 생존이 같은 roar 파라미터에 얽혀
-    // 어떤 조합으로도 양쪽을 동시에 만족 불가 → roar 로직 보강(중첩 방지/군집 감쇠) 필요(engine-dev 회부).
+    // 엔진 보강(engine-dev): roar에 (1) anti-stack 면역(roarImmuneUntil, immuneMs) — 밀집 팩/
+    // 2기 곰이 같은 대상을 연쇄 재기절시키지 못하게 막음. (2) 바퀴 수 비례 자기 반동 부스트
+    // (selfBurst × (1 + lapsDone×selfBurstGrowth)) — roar는 순수 디버프라 장거리에서 곰 자신은
+    // 코너링 누적손실만 지고 아무 보상이 없던 구조적 약점을 보완. laps=1은 완주 전 끝나
+    // lapsDone=0(부스트 = 기본값)이라 기존 laps=1 페어니스(특히 여우 floor)에 영향 없음.
+    // collateral(range/staggerMs/cooldown)은 원래 안전 수치 그대로 유지.
     cooldownMs: [3400, 5400],
-    params: { range: 45, staggerMs: 420 },
+    params: {
+      range: 45,
+      staggerMs: 420,
+      immuneMs: 700,
+      selfBurst: 0.45,
+      selfBurstMs: 1200,
+      selfBurstGrowth: 0.4,
+      lapDistance: 1000,
+    },
   },
   lines: { skill: '크아앙!!', win: '으르렁!', lose: '끄응…' },
 };

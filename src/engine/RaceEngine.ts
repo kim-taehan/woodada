@@ -218,6 +218,24 @@ export function createRaceEngine(
     ...config.participants.map((p) => config.characters[p.characterId]?.headStartMs ?? 0),
   );
 
+  // Deterministic per-race permutation of home-lane SPREAD RANKS (Fisher-Yates on a stable
+  // sub-stream). The spread formula below assigns the innermost..outermost cruise lane by rank;
+  // without shuffling, rank == array index, so the SAME participant slot is always the most-outer
+  // (or most-inner) starter in every race. That fixed assignment measurably skews win rate by
+  // start slot (engine-bias tests): the outer-lane distance loss and the START_STAGGER head start
+  // interact non-linearly across the field, and whichever slot always sits at the tail of the
+  // spread always eats (or reaps) that interaction every single race. Shuffling the rank keeps
+  // the full lane spread (fair, even coverage of the track) but decorrelates it from array order,
+  // so the bias averages out across seeds instead of pinning to a slot.
+  const laneRanks = config.participants.map((_, i) => i);
+  {
+    const shuffleRng = rng.fork('laneRanks');
+    for (let i = laneRanks.length - 1; i > 0; i--) {
+      const j = shuffleRng.int(i + 1);
+      [laneRanks[i], laneRanks[j]] = [laneRanks[j], laneRanks[i]];
+    }
+  }
+
   const internal: Internals = {
     racers: config.participants.map((p, i, arr) => {
       const r = rng.fork(`base:${p.id}`);
@@ -226,8 +244,9 @@ export function createRaceEngine(
       // Personal cruising lane, spread across the track + a little jitter. The
       // spread is inside-weighted (exponent > 1) so more racers home toward the
       // inner lanes — purely a positional skew; lane never affects speed.
+      const rank = laneRanks[i];
       const spread =
-        arr.length > 1 ? HOME_LANE.lo + Math.pow(i / (arr.length - 1), HOME_LANE.exp) * HOME_LANE.span : 0.5;
+        arr.length > 1 ? HOME_LANE.lo + Math.pow(rank / (arr.length - 1), HOME_LANE.exp) * HOME_LANE.span : 0.5;
       const homeLane = Math.max(
         HOME_LANE.clampMin,
         Math.min(HOME_LANE.clampMax, spread + r.range(-HOME_LANE.jitter, HOME_LANE.jitter)),

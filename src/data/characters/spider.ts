@@ -42,11 +42,23 @@ export const spider: CharacterData = {
     // 개인전(밀집 필드) 스타브 → 선두를 더 먼 곳에서/자주 낚아채 상대 위치 강등.
     // cooldown [3000,5000]→[2600,4300], range 130→155, pullGap 14→26.
     // (170/36 이상은 2기 낚아채기 루프로 경주 무한정체 → 안전권으로 제한.)
-    // ⚠ 구조적 한계: laps=1/3 floor는 통과선까지 끌어올리나 laps=10 floor(3.3%)는 미달(2.0%).
-    // abduct는 상대 위치강등만 하고 거미 자기추진이 없어 장거리에서 느린 몸이 뒤처짐 →
-    // params로 더 세게 하면 무한정체. 거미 자기추진/장거리 catchup 로직 보강 필요(engine-dev 회부).
+    // 엔진 보강(engine-dev): abduct 성공 시 거미 자기 자신에게도 바퀴 수 비례 가속
+    // (selfBurst × (1 + lapsDone×selfBurstGrowth))을 부여 — 상대 위치강등만 하고
+    // 자기추진이 없어 장거리에서 뒤처지던 구조적 약점을 보완(곰 roar와 동일 패턴).
+    // laps=1/3 floor는 이미 통과선 이상이라 base selfBurst는 작게, growth로 장거리만 보강.
     cooldownMs: [2600, 4300],
-    params: { range: 155, minRange: 16, pullGap: 26, tangleMul: 0.55, tangleMs: 900, immuneMs: 1000 },
+    params: {
+      range: 155,
+      minRange: 16,
+      pullGap: 26,
+      tangleMul: 0.55,
+      tangleMs: 900,
+      immuneMs: 1000,
+      selfBurst: 0.2,
+      selfBurstMs: 1000,
+      selfBurstGrowth: 0.35,
+      lapDistance: 1000,
+    },
   },
   lines: {
     skill: '거기 서! 줄로 콱! 🕸️',
