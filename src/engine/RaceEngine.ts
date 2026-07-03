@@ -8,7 +8,7 @@ import { createRng, type Rng } from './prng.ts';
 import { applyOvertake, laneDistanceFactor } from './overtake.ts';
 import { sectionSpeedBias } from './stats.ts';
 import { isCurve, lapPhase } from './track.ts';
-import { SPEED_JITTER, RETRY_COOLDOWN_MS, COOLDOWN_SCALE, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE, ICE_LIMITS, PENGUIN_SPURT, CAT_CORNER_EXIT, MONKEY_ITEM } from './tuning.ts';
+import { SPEED_JITTER, RETRY_COOLDOWN_MS, COOLDOWN_SCALE, CATCHUP, BASE_SPEED, HOME_LANE, COOLDOWN_FIELD, OVERTAKE, ZONE, CONDITION, BEAR_SHOVE, PENGUIN_SPURT, CAT_CORNER_EXIT } from './tuning.ts';
 import {
   DT_MS,
   FINISH_OFFSET_FRAC,
@@ -24,73 +24,18 @@ import {
 import type { SkillContext, SkillRegistry } from './skills/types.ts';
 import { rollDodge, rollRangedEvade } from './skills/dodge.ts';
 import type { ScoringRegistry } from './scoring/types.ts';
+import { ITEM, type ItemBox, updateBoxes } from './items.ts';
+import { type IceZone, applyIce, inZone } from './ice.ts';
+import { updateDecoys } from './decoys.ts';
 
 // Engine tuning knobs (SPEED_JITTER, RETRY_COOLDOWN_MS, CATCHUP, BASE_SPEED,
-// HOME_LANE, OVERTAKE, STATS) live in one place: engine/tuning.ts.
-
-// Item boxes spawn at random times + positions during the race (never at the
-// start), live briefly, and vanish when collected or after their lifetime.
-const ITEM = {
-  collectDist: 7, // progress units
-  // Lane-DEPENDENT pickup (위치 경쟁): you must actually be near the box's lane to grab it, so a
-  // box isn't auto-collected by whoever reaches its progress first (usually the inner-rail leader).
-  // ≈ one lane band — paired with the box-seek lean (overtake.ts) so trailers steer out to claim it.
-  collectLane: 0.15,
-  // Box-seek reach (적극 획득): a racer leans toward a box at most `seekReach` progress units ahead
-  // (lap-aware) AND within `seekLaneReach` lanes — close enough to be worth detouring for.
-  seekReach: 60,
-  seekLaneReach: 0.5,
-  maxBoxes: 3,
-  firstSpawnMs: [1500, 3000] as [number, number],
-  spawnGapMs: [1800, 4000] as [number, number],
-  lifeMs: [5000, 8000] as [number, number],
-  // Effect tunables for the gamble-box item pool (lightning / fart / shell / star).
-  lightningSlowMs: 850, lightningMul: 0.5, // ⚡ slows everyone else
-  fartRange: 90, fartSlowMs: 1000, fartMul: 0.55, // 💨 slows racers behind
-  shellStunMs: 750, // 🐢 stuns the current leader (even the picker)
-  starBoost: 1.4, starMs: 2400, // 🌟 self speed + full immunity
-} as const;
-
-/** The four gamble-box outcomes (decoupled from the weight roll so the monkey can remap one). */
-type ItemKind = 'star' | 'lightning' | 'shell' | 'fart';
+// HOME_LANE, OVERTAKE, STATS) live in one place: engine/tuning.ts. Item-box
+// (ITEM/ItemBox), ice-field (IceZone) and decoy (DECOY) subsystem data/logic
+// live in items.ts / ice.ts / decoys.ts respectively (see imports above).
 
 // Skill-activation i-frames: ~0.3s of immunity to incoming disruption granted the
 // instant a racer activates its own skill (so it isn't interrupted mid-cast).
 const SKILL_INVULN_FRAMES = Math.round(300 / DT_MS);
-
-// Gumiho illusionClone decoys (NON-scoring). A decoy bumps a rival within this
-// progress + lane proximity, stunning it once (then the decoy pops). Collision is
-// purely geometric (no RNG): same (config, seed) → identical bumps.
-const DECOY = {
-  collideDist: 10, // progress units (≈ ⅔ body-length; reaches adjacent traffic)
-  collideLane: 0.18, // lane proximity (≈ OVERTAKE.laneNear)
-  // A bumped racer is briefly immune to *further* decoy bumps, so one gumiho's
-  // clones can't chain-stun the same victims lap after lap (anti-accumulation,
-  // mirrors banana's bananaImmuneUntil). Keeps the field from over-rebunching.
-  rebumpImmuneMs: 1200,
-} as const;
-
-interface ItemBox {
-  id: string;
-  progress: number;
-  lane: number;
-  expire: number;
-}
-
-interface IceZone {
-  id: string;
-  /** Lap-space start, 0..trackLength (already wrapped). */
-  startProgress: number;
-  length: number;
-  expire: number;
-  ownerId: RacerId;
-  /** Speed multiplier for the penguin species inside the zone. */
-  boostFactor: number;
-  /** Speed multiplier for everyone else inside the zone. */
-  slowFactor: number;
-  /** 확률로 상대를 '물에 빠뜨림' (eliminated). */
-  sinkChance?: number;
-}
 
 export interface RaceEngine {
   readonly config: RaceConfig;
@@ -194,22 +139,6 @@ export function spreadBehindFor(active: number): number {
   const s = CATCHUP.spread;
   const over = Math.max(0, active - s.kneeAt);
   return Math.max(s.behindMin, 1 - over * s.behindFade);
-}
-
-/**
- * 🐵 원숭이 잔머리 (see CHARACTER PASSIVES): remap a rolled item kind to a smarter one for a
- * monkey-witted racer, given whether it is currently the leader. Pure (the only randomness is the
- * passed-in `rng`, a stable-label sub-stream so it never shifts the main item draw order):
- *   - shell while leading → fart   (the shell would stun the monkey itself)
- *   - fart while NOT leading → shell (a chasing fart hits no one useful; snipe the leader)
- *   - lightning → star with `lightningToStarChance` (gated: star is the strongest item)
- *   - otherwise unchanged.
- */
-export function monkeyRemapItem(kind: ItemKind, isLeader: boolean, rng: Rng): ItemKind {
-  if (kind === 'shell' && isLeader) return 'fart';
-  if (kind === 'fart' && !isLeader) return 'shell';
-  if (kind === 'lightning' && rng.bool(MONKEY_ITEM.lightningToStarChance)) return 'star';
-  return kind;
 }
 
 export function createRaceEngine(
@@ -453,7 +382,7 @@ export function createRaceEngine(
   function isPenguinOnIce(racer: RacerState): boolean {
     if (!racer.iceGlide) return false;
     const lapPos = racer.progress % config.trackLength;
-    return internal.iceZones.some((z) => frame < z.expire && inZone(lapPos, z));
+    return internal.iceZones.some((z) => frame < z.expire && inZone(lapPos, z, config.trackLength));
   }
 
   /**
@@ -899,7 +828,14 @@ export function createRaceEngine(
     const laneHold = inStartStraight || ((self.skill['laneHoldUntil'] as number | undefined ?? 0) > frame);
      applyOvertake(self, internal.racers, internal.racerRng.get(self.id)!, frame, nearestBoxLane(self), laneHold);
 
-     applyIce(self);
+     applyIce(self, {
+       frame,
+       trackLength: config.trackLength,
+       iceZones: internal.iceZones,
+       racers: internal.racers,
+       characters: config.characters,
+       skillRngFor: (id) => internal.skillRng.get(id)!,
+     });
     // slowMul (bristle / lightning / fart).
     if ((self.skill.slowUntil ?? 0) > frame) {
       self.speed *= Number(self.skill.slowMul ?? 1);
@@ -1049,344 +985,6 @@ export function createRaceEngine(
     }
   }
 
-  /**
-   * Gumiho illusionClone decoy update (runs once per frame, AFTER advance so the
-   * owner's progress is final). Pure + deterministic (no RNG here — offsets were
-   * drawn at spawn time):
-   *   1. Re-anchor each live decoy to its owner (decoys move in lock-step, holding
-   *      their spawn-time offset). A finished/eliminated/waiting owner kills its
-   *      decoys instantly.
-   *   2. Collision stun: a live decoy within (progress + lane) proximity of a
-   *      non-owner active racer stuns that racer for `collisionStun` ("어?"), then
-   *      the decoy pops. star / skill i-frames are respected (no stun, no pop).
-   *      Decoys are scanned in list (spawn) order; victims in stable procKey order.
-   *   3. Expiry: at `expireFrame`, if the LEAD decoy is still alive AND ahead of the
-   *      owner, the owner teleports up to it (a gentle forward hop, "스르르…퐁!").
-   *      Then every one of that owner's decoys despawns.
-   * Dead/expired decoys are pruned at the end.
-   */
-  function updateDecoys(events: SkillEvent[]): void {
-    if (internal.decoys.length === 0) return;
-
-    for (const d of internal.decoys) {
-      if (!d.alive) continue;
-      const owner = internal.racers.find((r) => r.id === d.ownerId);
-      // Owner gone / parked / out → decoys vanish (no teleport from a dead owner).
-      if (
-        !owner ||
-        owner.phase === 'finished' ||
-        owner.phase === 'waiting' ||
-        owner.phase === 'eliminated'
-      ) {
-        d.alive = false;
-        continue;
-      }
-      // Forward progress. While the owner runs normally the decoy re-anchors to the
-      // owner (owner.progress + spawn offset), keeping the formation tight. But a
-      // STUNNED owner is frozen — the decoy must keep running on its OWN, so it instead
-      // advances by the owner's cruise speed (baseSpeed). The front decoy thus pulls
-      // further ahead during the stun; the expiry teleport (to the lead decoy) then lets
-      // the body catch up — an intended stun-escape synergy. The decoy NEVER moves
-      // backward: re-anchoring is clamped to its current progress, so a decoy that
-      // pulled ahead during a stun keeps that lead after the owner recovers (no snap
-      // back) until the owner's own advance catches the formation up to it.
-      // Deterministic: baseSpeed is fixed per racer, no RNG.
-      const anchored = owner.phase === 'stunned' ? d.progress + owner.baseSpeed : owner.progress + d.offset;
-      d.progress = Math.max(d.progress, anchored, 0);
-      // Lane always tracks the owner's lane (+ fixed offset), even during a stun.
-      d.lane = Math.max(0, Math.min(1, owner.lane + d.laneOffset));
-    }
-
-    // Collision stun: each live decoy bumps EXACTLY ONE racer — the single nearest
-    // qualifying rival (NOT an AoE / multi-target pulse). The decoy is consumed on
-    // that one bump. "Nearest" = smallest progress gap; procKey tie-break (stable,
-    // draw-order independent, no RNG) so the pick is deterministic.
-    const stunFrames = (ms: number) => Math.round(ms / DT_MS);
-    for (const d of internal.decoys) {
-      if (!d.alive) continue;
-      const owner = internal.racers.find((r) => r.id === d.ownerId);
-      if (!owner) continue;
-      const collisionMs = Number(config.characters[owner.characterId]?.skill.params.collisionStun ?? 500);
-      let victim: RacerState | undefined;
-      let victimGap = Infinity;
-      for (const v of internal.racers) {
-        if (v.id === d.ownerId) continue;
-        if (
-          v.phase === 'finished' ||
-          v.phase === 'waiting' ||
-          v.phase === 'stunned' ||
-          v.phase === 'eliminated'
-        )
-          continue;
-        const gap = Math.abs(v.progress - d.progress);
-        if (gap > DECOY.collideDist) continue;
-        if (Math.abs(v.lane - d.lane) > DECOY.collideLane) continue;
-        // Respect invulnerability (consistent with every other disruption source).
-        if ((v.skill.starUntil ?? 0) > frame) continue;
-        if ((v.skill.skillInvulnUntil ?? 0) > frame) continue;
-        // Anti-accumulation: a recently-bumped racer is briefly immune to further
-        // decoy bumps (mirrors banana's anti-stack) so a gumiho's clones can't
-        // chain-stun the same victims lap after lap and over-rebunch the field.
-        if (frame < Number(v.skill.decoyImmuneUntil ?? 0)) continue;
-        // Keep the nearest qualifying rival (procKey tie-break for determinism).
-        if (
-          gap < victimGap ||
-          (gap === victimGap && victim && internal.procKey.get(v.id)! < internal.procKey.get(victim.id)!)
-        ) {
-          victim = v;
-          victimGap = gap;
-        }
-      }
-      if (victim) {
-        // Bump! Stun the single nearest victim and consume this decoy (one bump).
-        victim.phase = 'stunned';
-        victim.speed = 0;
-        victim.skill.burst = 0;
-        victim.skill.effectUntil = frame + stunFrames(collisionMs);
-        victim.skill.decoyImmuneUntil = frame + stunFrames(collisionMs) + stunFrames(DECOY.rebumpImmuneMs);
-        events.push({ frame, racerId: victim.id, type: 'illusionClone', variant: 'clonehit', line: '어?' });
-        d.alive = false; // decoy spent — it can't bump a second racer
-      }
-    }
-
-    // Expiry → teleport: when an owner's decoys reach expireFrame, the owner hops up
-    // to its LEAD decoy if that decoy is still alive and ahead. Group by owner so the
-    // teleport happens once per owner set.
-    const expiringOwners = new Set<RacerId>();
-    for (const d of internal.decoys) {
-      if (frame >= d.expireFrame) expiringOwners.add(d.ownerId);
-    }
-    for (const ownerId of expiringOwners) {
-      const owner = internal.racers.find((r) => r.id === ownerId);
-      const lead = internal.decoys.find(
-        (d) => d.ownerId === ownerId && d.lead && d.alive && frame >= d.expireFrame,
-      );
-      if (
-        owner &&
-        lead &&
-        owner.phase !== 'finished' &&
-        owner.phase !== 'waiting' &&
-        owner.phase !== 'eliminated' &&
-        lead.progress > owner.progress
-      ) {
-        // Hop all the way to the lead decoy's position. With inline 1-body-length
-        // spacing the lead sits ≈1 body-length ahead, so the body advances by that
-        // gap (≈57u ≈ 7 마디) — the confirmed "lead-decoy teleport" forward jump.
-        owner.progress = lead.progress;
-        events.push({ frame, racerId: owner.id, type: 'illusionClone', variant: 'teleport', line: '스르르…퐁!' });
-      }
-      // Despawn the whole expiring set for this owner.
-      for (const d of internal.decoys) if (d.ownerId === ownerId && frame >= d.expireFrame) d.alive = false;
-    }
-
-    // Prune dead / despawned decoys.
-    internal.decoys = internal.decoys.filter((d) => d.alive);
-  }
-
-  /** True if `lapPos` (0..trackLength) lies inside the zone, accounting for wrap. */
-  function inZone(lapPos: number, zone: IceZone): boolean {
-    const len = config.trackLength;
-    const end = zone.startProgress + zone.length;
-    if (end <= len) return lapPos >= zone.startProgress && lapPos < end;
-    // Wrapped zone: [start, len) ∪ [0, end - len).
-    return lapPos >= zone.startProgress || lapPos < end - len;
-  }
-
-  /**
-   * Penguin icefield (environmental, species-based, team-agnostic). A racer whose
-   * lap-position is inside any active zone has its speed scaled: penguins glide
-   * faster (boostFactor), every other species slips slower (slowFactor). The cat
-   * is nimble: each frame it can *jump over* the ice with probability equal to its
-   * catwalk `dodgeChance` (deterministic per (cat, frame) via its own sub-stream),
-   * dodging the slow that frame. Stacks multiplicatively if (rarely) inside
-   * several zones; deterministic.
-   */
-   function applyIce(self: RacerState): void {
-     if (internal.iceZones.length === 0) { self.skill.iceJumping = false; return; }
-     const lapPos = self.progress % config.trackLength;
-     
-     // Find all zones the racer is currently in
-     const activeZones = internal.iceZones.filter((z) => frame < z.expire && inZone(lapPos, z));
-     if (activeZones.length === 0) { 
-       self.skill.iceJumping = false; 
-       self.skill.iceZoneId = undefined; 
-       return; 
-     }
-     
-     if ((self.skill.starUntil ?? 0) > frame) return; // ⭐ star: immune to ice
-     // Airborne racers (e.g. the alien's UFO) float over the ice — no contact, so
-     // neither the penguin boost nor the runner slow applies. Trait-driven, not
-     // id-hardcoded.
-     if (config.characters[self.characterId]?.airborne) return;
-
-     // 🐧 아이스 글라이드: 얼음판 위에서는 스턴 무효 (스턴 중에도 얼음판 위면 정상 이동)
-     if (self.iceGlide && self.phase === 'stunned') {
-       self.phase = 'running';
-       self.speed = self.baseSpeed * activeZones[0].boostFactor;
-       return;
-     }
-
-     if (self.iceHop) {
-       // Decide ONCE per zone entry: jump clear over the ice (no slow) with this racer's own
-       // skill's dodgeChance. `iceJumping` is exposed for the renderer to play the hop.
-       const zone = activeZones[0];
-       if (self.skill.iceZoneId !== zone.id) {
-         self.skill.iceZoneId = zone.id;
-         self.skill.iceJumping = internal.skillRng
-           .get(self.id)!
-           .fork(`icejump:${zone.id}`)
-           .bool(Number(config.characters[self.characterId]?.skill.params.dodgeChance ?? 0));
-       }
-       if (self.skill.iceJumping) return; // jumped clear — no slow
-       // On ice: apply slow factor (capped at the ice-limits floor)
-       self.speed *= Math.max(ICE_LIMITS.slowFloor, activeZones[0].slowFactor);
-       return;
-     }
-
-      // 🐧 펭귄 얼음판: 감속/부스트 누적 방지 (최대 50% 감속, 18% 부스트)
-      // 아이스 글라이더만 부스트, 나머지는 감속 (팀메이트도 영향 없음 = 1.0)
-      const isGlider = Boolean(self.iceGlide);
-      const owner = internal.racers.find(r => r.id === activeZones[0].ownerId);
-      const isTeammate = owner?.teamId !== undefined && owner.teamId === self.teamId;
-
-      // 팀메이트는 얼음판 영향 없음 (1.0), 글라이더는 부스트, 나머지는 감속
-      if (isTeammate && !isGlider) {
-        // 팀메이트: 영향 없음
-        return;
-      }
-
-      let finalFactor: number = isGlider ? ICE_LIMITS.boostCeil : ICE_LIMITS.slowFloor;
-
-      // If multiple zones, take the minimum (most severe) factor, but cap at limits
-      for (const zone of activeZones) {
-        const zoneFactor = isGlider ? zone.boostFactor : zone.slowFactor;
-        if (isGlider) {
-          finalFactor = Math.max(finalFactor, zoneFactor);  // max boost
-        } else {
-          finalFactor = Math.min(finalFactor, zoneFactor);  // min (most severe) slow
-        }
-      }
-
-      // Cap at limits: max 50% slow, max 18% boost
-      if (!isGlider) {
-        finalFactor = Math.max(ICE_LIMITS.slowFloor, finalFactor);
-      } else {
-        finalFactor = Math.min(ICE_LIMITS.boostCeil, finalFactor);
-      }
-      
-      self.speed *= finalFactor;
-   }
-
-  /** A gamble box, on pickup, rolls one of four effects (weighted). */
-  function applyItemPickup(self: RacerState, order: RacerState[], events: SkillEvent[]): void {
-    const irng = internal.itemRng.get(self.id)!;
-    const active = (r: RacerState) =>
-      r.phase !== 'finished' && r.phase !== 'waiting' && r.phase !== 'stunned' && r.phase !== 'eliminated';
-    // Immune to this item's disruption: ⭐ star OR brief skill-activation i-frames.
-    const immune = (r: RacerState) => (r.skill.starUntil ?? 0) > frame || isSkillInvuln(r);
-
-    // Current leader = active racer with max progress (shared by the shell effect + monkey remap).
-    let leader: RacerState | undefined;
-    for (const r of order) if (active(r) && (!leader || r.progress > leader.progress)) leader = r;
-
-    const x = irng.range(0, 8); // weights: star 1 / lightning 2 / shell 2 / fart 3
-    let kind: ItemKind = x < 1 ? 'star' : x < 3 ? 'lightning' : x < 5 ? 'shell' : 'fart';
-    // 🐵 Monkey remap: situational re-pick. The roll is on a SUB-stream forked off this racer's
-    // itemRng so the main `x` draw order (and thus everyone else's items) is untouched. The fork
-    // seed derives from the rng's BASE seed (not its live state), so the label must carry a
-    // per-pickup discriminator or every pickup would roll identically — a monotonic per-racer
-    // pickup counter gives each pickup its own deterministic sub-stream. Determinism holds.
-    if (self.itemWit) {
-      const pick = Number(self.skill.monkeyItemPicks ?? 0);
-      self.skill.monkeyItemPicks = pick + 1;
-      kind = monkeyRemapItem(kind, leader?.id === self.id, irng.fork(`monkeyitem:${pick}`));
-    }
-
-    if (kind === 'star') {
-      // 🌟 star: self speed boost + full immunity for a while.
-      const until = frame + Math.round(ITEM.starMs / DT_MS);
-      self.skill.burst = ITEM.starBoost;
-      self.skill.effectUntil = until;
-      self.skill.starUntil = until;
-      self.phase = 'straying';
-      events.push({ frame, racerId: self.id, type: 'item', variant: 'star', line: '무적! ⭐' });
-    } else if (kind === 'lightning') {
-      // ⚡ lightning: every other racer slows briefly.
-      const until = frame + Math.round(ITEM.lightningSlowMs / DT_MS);
-      for (const r of order) {
-        if (r.id === self.id || !active(r) || immune(r)) continue;
-        r.skill.slowUntil = until;
-        r.skill.slowMul = ITEM.lightningMul;
-      }
-      events.push({ frame, racerId: self.id, type: 'item', variant: 'lightning', line: '⚡ 번개!' });
-    } else if (kind === 'shell') {
-      // 🐢 shell: stuns the current leader — even if the picker IS the leader.
-      events.push({ frame, racerId: self.id, type: 'item', variant: 'shell', line: '🐢 등껍질!' });
-      if (leader && !immune(leader)) {
-        // 🦔 작은 표적: a hedgehog leader can duck the shell (ranged) — whiff, no stun.
-        if (tryHedgehogEvade(leader)) {
-          events.push({ frame, racerId: self.id, type: 'item', variant: 'dodge', targetId: leader.id });
-        } else {
-          leader.phase = 'stunned';
-          leader.speed = 0;
-          leader.skill.burst = 0;
-          leader.skill.effectUntil = frame + Math.round(ITEM.shellStunMs / DT_MS);
-          events.push({ frame, racerId: self.id, type: 'item', variant: 'shellhit', targetId: leader.id });
-        }
-      }
-    } else {
-      // 💨 fart: racers behind the picker (within range) slow briefly.
-      const until = frame + Math.round(ITEM.fartSlowMs / DT_MS);
-      for (const r of order) {
-        if (r.id === self.id || !active(r) || immune(r)) continue;
-        if (r.progress >= self.progress || self.progress - r.progress > ITEM.fartRange) continue;
-        r.skill.slowUntil = until;
-        r.skill.slowMul = ITEM.fartMul;
-      }
-      events.push({ frame, racerId: self.id, type: 'item', variant: 'fart', line: '뿌웅~ 💨' });
-    }
-  }
-
-  function updateBoxes(order: RacerState[], events: SkillEvent[]): void {
-    // Drop expired boxes.
-    internal.boxes = internal.boxes.filter((b) => frame <= b.expire);
-
-    // Collect boxes by proximity.
-    const collected = new Set<string>();
-    for (const self of order) {
-      if (
-        self.phase === 'finished' ||
-        self.phase === 'waiting' ||
-        self.phase === 'stunned' ||
-        self.phase === 'eliminated'
-      )
-        continue;
-      const lapProgress = self.progress % config.trackLength;
-      for (const box of internal.boxes) {
-        if (collected.has(box.id)) continue;
-        if (Math.abs(lapProgress - box.progress) > ITEM.collectDist) continue;
-        if (Math.abs(self.lane - box.lane) > ITEM.collectLane) continue;
-
-        collected.add(box.id);
-        applyItemPickup(self, order, events);
-      }
-    }
-    if (collected.size) internal.boxes = internal.boxes.filter((b) => !collected.has(b.id));
-
-    // Spawn a new box at a random time + position (never collected at the line).
-    if (frame >= internal.nextBoxFrame) {
-      if (internal.boxes.length < ITEM.maxBoxes) {
-        internal.boxes.push({
-          id: `box${internal.boxCounter++}`,
-          progress: internal.boxRng.range(0.12, 0.95) * config.trackLength,
-          lane: internal.boxRng.range(0.12, 0.88),
-          expire: frame + Math.round(internal.boxRng.range(...ITEM.lifeMs) / DT_MS),
-        });
-      }
-      internal.nextBoxFrame = frame + Math.round(internal.boxRng.range(...ITEM.spawnGapMs) / DT_MS);
-    }
-  }
-
   function boxStates(): { id: string; progress: number; lane: number; active: boolean }[] {
     return internal.boxes.map((b) => ({ id: b.id, progress: b.progress, lane: b.lane, active: true }));
   }
@@ -1508,9 +1106,21 @@ export function createRaceEngine(
 
       // Gumiho illusionClone: move decoys with their owner, bump rivals (stun),
       // and run expiry teleport. After advance/elimination so progress is final.
-      updateDecoys(events);
+      updateDecoys(internal, events, {
+        frame,
+        racers: internal.racers,
+        characters: config.characters,
+        procKey: internal.procKey,
+      });
 
-      updateBoxes(order, events);
+      updateBoxes(internal, order, events, {
+        frame,
+        trackLength: config.trackLength,
+        boxRng: internal.boxRng,
+        itemRngFor: (id) => internal.itemRng.get(id)!,
+        isSkillInvuln,
+        tryHedgehogEvade,
+      });
 
       // 🐶 강아지 패시브: 스턴을 남들보다 빨리 떨치고 일어난다.
       // 스킬 쿨다운은 스턴 종료 시점까지만 밀림(새 롤 없음 — 기존 쿨타임 유지).

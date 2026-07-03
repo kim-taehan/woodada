@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { catchupFactor, spreadBehindFor, monkeyRemapItem } from '../../src/engine/RaceEngine.ts';
+import { catchupFactor, spreadBehindFor } from '../../src/engine/RaceEngine.ts';
+import { monkeyRemapItem } from '../../src/engine/items.ts';
 import { CATCHUP } from '../../src/engine/tuning.ts';
 import { createRng } from '../../src/engine/prng.ts';
 import { makeRacer as racer } from './fixtures.ts';
