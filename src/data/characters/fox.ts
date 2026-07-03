@@ -23,11 +23,13 @@ export const fox: CharacterData = {
   rangedEvade: 0.05,  // 15% → 5% (대폭 감소)
   skill: {
     type: 'illusionClone',
-    cooldownMs: [6000, 9000],  // 5~7 초 → 6~9 초 (발동 빈도 감소)
+    // 개인전 floor 미달 → 분신 방해력 상향(추격자 스턴 강화)으로 선두 유지 보완.
+    // cooldown [6000,9000]→[5000,7500], collisionStun 500→700 (cloneCount는 2 유지 — 밀집 필드 정체 방지).
+    cooldownMs: [5000, 7500],
     params: {
       cloneCount: 2,
       cloneDuration: 2000,  // 원복
-      collisionStun: 500,
+      collisionStun: 700,
       laneSpread: 0,
       bodyLenUnits: 38,
       gapJitter: 0.4,

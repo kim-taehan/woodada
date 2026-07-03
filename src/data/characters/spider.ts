@@ -39,10 +39,14 @@ export const spider: CharacterData = {
     // tangleMs/immuneMs (ms). Values per engine-dev's abduct contract; balance-tuner
     // does the final tuning (catch within range, yank pullGap behind the spider).
     type: 'abduct',
-    cooldownMs: [3000, 5000],  // 2.0~3.5 초 → 3.0~5.0 초 (발동 빈도 감소)
-    // pullGap: 거미 '바로 뒤'에 떨군다 (작은 간격 — 레인이 달라 겹치지 않음). 이전 90(≈9%) 에서
-    // 축소 → 멀리 내던지지 않고 표적을 자기 등 뒤로 바짝 끌어붙인다.
-    params: { range: 130, minRange: 16, pullGap: 14, tangleMul: 0.55, tangleMs: 900, immuneMs: 1000 },
+    // 개인전(밀집 필드) 스타브 → 선두를 더 먼 곳에서/자주 낚아채 상대 위치 강등.
+    // cooldown [3000,5000]→[2600,4300], range 130→155, pullGap 14→26.
+    // (170/36 이상은 2기 낚아채기 루프로 경주 무한정체 → 안전권으로 제한.)
+    // ⚠ 구조적 한계: laps=1/3 floor는 통과선까지 끌어올리나 laps=10 floor(3.3%)는 미달(2.0%).
+    // abduct는 상대 위치강등만 하고 거미 자기추진이 없어 장거리에서 느린 몸이 뒤처짐 →
+    // params로 더 세게 하면 무한정체. 거미 자기추진/장거리 catchup 로직 보강 필요(engine-dev 회부).
+    cooldownMs: [2600, 4300],
+    params: { range: 155, minRange: 16, pullGap: 26, tangleMul: 0.55, tangleMs: 900, immuneMs: 1000 },
   },
   lines: {
     skill: '거기 서! 줄로 콱! 🕸️',
