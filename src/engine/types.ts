@@ -114,8 +114,21 @@ export interface SkillRuntime {
   prevOnCurve?: boolean;
   /** 🐱 cat corner-exit: frame index until which the corner-exit boost is active. */
   cornerExitUntil?: number;
-  /** Generic flag bag for handlers. */
-  [k: string]: number | string | boolean | undefined;
+  /** roar anti-stack (군집 감쇠): immune to further roar staggers until this frame. */
+  roarImmuneUntil?: number;
+  /** abduct anti-stack: web-immune to further grabs until this frame. */
+  abductImmuneUntil?: number;
+  /** decoy-collision anti-stack: immune to further clone bumps until this frame. */
+  decoyImmuneUntil?: number;
+  /** Per-lap condition speed multiplier, and the lap index it was rolled for. */
+  condition?: number;
+  conditionLap?: number;
+  /** Overtake weave-hold latch: keep the committed weave side until this frame. */
+  weaveHold?: number;
+  /** Hold the current lane (no weaving) until this frame (relay handoff settle). */
+  laneHoldUntil?: number;
+  /** 🐒 monkey item wit: count of item picks remapped so far (rng fork label seq). */
+  monkeyItemPicks?: number;
 }
 
 export interface RacerState {
