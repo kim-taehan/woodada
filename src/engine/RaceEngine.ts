@@ -21,7 +21,8 @@ import {
   type RacerState,
   type SkillEvent,
 } from './types.ts';
-import type { SkillContext, SkillRegistry } from './skills/types.ts';
+import type { SkillRegistry } from './skills/types.ts';
+import { buildSkillContext } from './skills/context.ts';
 import { rollDodge, rollRangedEvade } from './skills/dodge.ts';
 import type { ScoringRegistry } from './scoring/types.ts';
 import { ITEM, type ItemBox, updateBoxes } from './items.ts';
@@ -425,111 +426,22 @@ export function createRaceEngine(
     if (!reaction && !tick) return;
 
     const before = events.length;
-    // Bits of the context shared by the racer's OWN skill and any skill the alien
-    // copies through invokeSkill (the actor `self` is the same in both — only
-    // params/rng/type-stamping differ for a copied skill).
-    const shared = {
-      self,
-      all: internal.racers,
-      byId: (id: RacerId) => internal.racers.find((r) => r.id === id),
-      participants: participantsById,
+    const ctx = buildSkillContext(self, events, {
       frame,
-      lines: character.lines,
-      hitLines: character.hitLines,
-      skillTypeOf: (id: RacerId) => {
-        const cid = participantsById[id]?.characterId;
-        return cid ? config.characters[cid]?.skill.type : undefined;
-      },
-      skillParamsOf: (id: RacerId) => {
-        const cid = participantsById[id]?.characterId;
-        return cid ? config.characters[cid]?.skill.params : undefined;
-      },
-      // Pure check (no dispatch / RNG): copyable = registered tick handler, not mimic.
-      // illusionClone is banned from being mimicked (the decoy kit is too strong to
-      // hand the alien) — treated like 'mimic' itself (uncopyable).
-      canCopySkill: (copiedType: string) =>
-        copiedType !== 'mimic' && copiedType !== 'illusionClone' && skills.get(copiedType) !== undefined,
+      trackLength: config.trackLength,
+      racers: internal.racers,
+      participants: participantsById,
+      characters: config.characters,
+      character,
+      rng: internal.skillRng.get(self.id)!,
+      getTick: (type) => skills.get(type),
       tryDodge: (target: RacerState) => {
         if (isPenguinOnIce(target)) return true; // 빙판 위 펭귄은 방해 스킬 무적
         return tryCatwalkDodge(target, events);
       },
       tryRangedEvade: (target: RacerState) => tryHedgehogEvade(target),
-      addIceZone: (z: Parameters<SkillContext['addIceZone']>[0]) => {
-        const start = ((z.startProgress % config.trackLength) + config.trackLength) % config.trackLength;
-        internal.iceZones.push({
-          id: `ice${internal.iceCounter++}`,
-          startProgress: start,
-          length: z.length,
-          expire: frame + z.durationFrames,
-          ownerId: self.id,
-          boostFactor: z.boostFactor,
-          slowFactor: z.slowFactor,
-        });
-      },
-      // Gumiho illusionClone: register non-scoring decoys for `self`. One set per
-      // owner at a time — refuse (return 0) while live decoys remain.
-      spawnDecoys: (specs: { offset: number; laneOffset: number; lead: boolean }[], durationMs: number) => {
-        if (internal.decoys.some((d) => d.ownerId === self.id && d.alive)) return 0;
-        const expireFrame = frame + Math.round(durationMs / DT_MS);
-        for (const s of specs) {
-          internal.decoys.push({
-            id: `decoy:${self.id}:${internal.decoyCounter++}`,
-            ownerId: self.id,
-            offset: s.offset,
-            laneOffset: s.laneOffset,
-            progress: Math.max(0, self.progress + s.offset),
-            lane: Math.max(0, Math.min(1, self.lane + s.laneOffset)), // inline (0) or fanned
-            spawnedAt: frame,
-            expireFrame,
-            lead: s.lead,
-            alive: true,
-          });
-        }
-        return specs.length;
-      },
-      // Gumiho illusionClone defence: a live decoy of `target` intercepts an
-      // incoming disruption (pops, emitting clonepop) instead of the owner.
-      tryDecoyGuard: (target: RacerState) => {
-        const shield = internal.decoys.find((d) => d.ownerId === target.id && d.alive);
-        if (!shield) return false;
-        shield.alive = false;
-        events.push({ frame, racerId: target.id, type: 'illusionClone', variant: 'clonepop', line: '퐁!' });
-        return true;
-      },
-    };
-    const ctx: SkillContext = {
-      ...shared,
-      rng: internal.skillRng.get(self.id)!,
-      params: character.skill.params,
-      emit: (e) => events.push({ frame, racerId: self.id, type: character.skill.type, ...e }),
-      // Alien mimic dispatch: run another skill's handler with `self` (the alien)
-      // as the actor, the scanned racer's params, and an alien-only stable rng fork.
-      // Refuses 'mimic' (recursion) and reaction-only skills (no tick handler);
-      // returns whether the copied handler actually fired (emitted an event).
-      invokeSkill: (copiedType, paramsOverride) => {
-        if (copiedType === 'mimic') return false; // recursion guard
-        if (copiedType === 'illusionClone') return false; // banned: too strong to mimic
-        const copiedTick = skills.get(copiedType);
-        if (!copiedTick) return false; // reaction-only (e.g. 'bristle') or unknown → uncopyable
-        const copiedBefore = events.length;
-        const copiedCtx: SkillContext = {
-          ...shared,
-          // Alien-only sub-stream per copied type: isolates the copied skill's draws
-          // from the scanned racer's stream and keeps the order stable/deterministic.
-          rng: internal.skillRng.get(self.id)!.fork(`mimic:${copiedType}`),
-          params: paramsOverride,
-          // Stamp the COPIED type so commentary/renderer read it as the alien using
-          // that skill (actor stays the alien via racerId = self.id).
-          emit: (e) => events.push({ frame, racerId: self.id, type: copiedType, ...e }),
-          // A copied skill may not itself copy again (defence in depth; the registry
-          // refusal above already blocks 'mimic', this also blocks nested chains).
-          invokeSkill: () => false,
-          canCopySkill: () => false,
-        };
-        copiedTick(copiedCtx);
-        return events.length > copiedBefore;
-      },
-    };
+      state: internal,
+    });
     if (reaction && passer) reaction({ ...ctx, passer });
     else if (tick) tick(ctx);
 
