@@ -1,0 +1,35 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden frame digests (refactor determinism gate) > deathmatch (elimination) 1`] = `
+{
+  "deathmatch last seed=0": "bc2a07ac",
+  "deathmatch last seed=1": "a53d7143",
+}
+`;
+
+exports[`golden frame digests (refactor determinism gate) > individual, full roster 1`] = `
+{
+  "individual laps=1 seed=0": "c69ed18e",
+  "individual laps=1 seed=1": "9864e0ae",
+  "individual laps=1 seed=2": "cb617594",
+  "individual laps=1 seed=3": "705d09a1",
+  "individual laps=1 seed=4": "b2cefb19",
+  "individual laps=3 seed=0": "7cf39053",
+}
+`;
+
+exports[`golden frame digests (refactor determinism gate) > relay 1`] = `
+{
+  "relay legs=3 seed=0": "b95a8eaa",
+  "relay legs=3 seed=1": "82348ea2",
+  "relay legs=3 seed=2": "0625e7a8",
+}
+`;
+
+exports[`golden frame digests (refactor determinism gate) > team rank-sum 1`] = `
+{
+  "team laps=1 seed=0": "0487149d",
+  "team laps=1 seed=1": "a2ba6907",
+  "team laps=1 seed=2": "e0bcba04",
+}
+`;
