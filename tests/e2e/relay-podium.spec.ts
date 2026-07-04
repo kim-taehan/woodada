@@ -1,21 +1,21 @@
 import { test, expect } from '@playwright/test';
 
-const BASE = 'http://localhost:5180/';
 const OUT = 'tests/e2e/__screens__/relay-podium';
 
 // Live verification of the relay podium: whole winning TEAM celebrates (not just
-// the anchor). Drive setup → 팀전 + 릴레이 + members per team → 출발 → skip → finish
-// gate → 시상식 보러가기 → podium. Then confirm a cluster of same-team animals
-// celebrates on the 1st block. (Also captures a race frame to eyeball the finish
-// tape moving to 0.21.) Port 5173 is taken by another app → woodada runs on 5180.
+// the anchor). Drive setup → 팀전 + 이어달리기 + members per team → 출발 → skip →
+// finish gate → 시상식 보러가기 → podium. Then confirm a cluster of same-team
+// animals celebrates on the 1st block. (Also captures a race frame to eyeball the
+// finish tape.) Uses the config's webServer/baseURL like the other specs.
 test('relay winning team celebrates on the podium', async ({ page }) => {
   test.setTimeout(240000);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(BASE);
+  await page.goto('/');
 
-  // Team mode + relay. Keep it short (2 laps → 2 legs) so the race finishes fast.
+  // Team mode + relay. Relay is now the '이어달리기' team-scoring option (no
+  // separate toggle). Keep it short (2 laps → 2 legs) so the race finishes fast.
   await page.locator('button.mode-btn', { hasText: '팀전' }).click();
-  await page.locator('label.relay-toggle input[type="checkbox"]').check();
+  await page.locator('select[aria-label="팀 모드"]').selectOption('relay');
   await page.locator('select[aria-label="바퀴 수"]').selectOption('2');
 
   // Add 3 members to each of the 2 default teams.

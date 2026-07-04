@@ -29,7 +29,6 @@ import {
   crowding,
   fieldSizeScale,
   fieldBandMul,
-  speciesLabel,
   fieldSizeOf,
   hexNum,
   lapPosInZones,
@@ -38,6 +37,8 @@ import {
   easeOutCubic,
 } from './renderUtils.ts';
 import { dispatchSkillEvent } from './skillEventHandlers.ts';
+import { createPodiumScene, type PodiumHandle } from './ui/PodiumScene.ts';
+import { createLaneIntro, type LaneIntroHandle } from './effects/LaneIntro.ts';
 
 export interface RacerView {
   character: PartsCharacter;
@@ -234,27 +235,12 @@ export function createRaceRenderer(): RaceRenderer {
   let width = 800;
   let height = 600;
 
-  // Lane-intro ("athlete introduction") state. Renderer-only spotlight reel that
-  // runs BEFORE the race plays (no engine step). A full-screen dim overlay drops
-  // the field into shadow; each racer in turn is lifted above it under a bright
-  // spotlight, its name banner popped, and it waves (PartsCharacter.greet). All
-  // driven by introTick off the Pixi ticker; idempotent teardown via cleanup.
-  let introActive = false;
-  let introTick: ((ticker: { deltaMS: number }) => void) | null = null;
-  let introDone: (() => void) | null = null; // onDone, fired exactly once
-  let introDim: Graphics | null = null; // full-screen shadow
-  let introSpot: Graphics | null = null; // bright spotlight under the current racer
-  let introBanner: Container | null = null; // popped name banner for the current racer
+  // Lane-intro ("athlete introduction") reel — the controller lives in
+  // effects/LaneIntro.ts (built once below, after its deps are declared).
+  let laneIntro: LaneIntroHandle;
 
-  // Victory podium state.
-  let podiumScene: Container | null = null;
-  // Each podium occupant carries the pose it should hold and `winner` (the bigger
-  // bounce for the 1st-place team / block). `phase`: 'celebrate' = 깝치기(1등팀 only),
-  // 'finished' = neutral win-stance (2·3등팀 + individual non-jig), 'dejected' =
-  // slump for teams that didn't make the podium (4등팀↓, team mode only).
-  let podiumChars: { char: PartsCharacter; winner: boolean; phase: 'celebrate' | 'finished' | 'dejected' }[] = [];
-  let podiumClock = 0;
-  let podiumTick: ((ticker: { deltaMS: number }) => void) | null = null;
+  // Victory podium state — the scene itself lives in ui/PodiumScene.ts.
+  let podiumHandle: PodiumHandle | null = null;
 
   // Lap counter + final-lap emphasis.
   let lapText: Text | null = null;
@@ -282,6 +268,18 @@ export function createRaceRenderer(): RaceRenderer {
   let crowdEase = 0;
 
   charLayer.sortableChildren = true;
+
+  laneIntro = createLaneIntro({
+    app,
+    charLayer,
+    views,
+    charIdById,
+    getConfig: () => config,
+    getNamesById: () => namesById,
+    getWidth: () => width,
+    getHeight: () => height,
+    isReducedMotion: () => reducedMotion,
+  });
 
   function playBell(): void {
     try {
@@ -345,15 +343,8 @@ export function createRaceRenderer(): RaceRenderer {
   }
 
   function clearPodium(): void {
-    if (podiumTick) {
-      app.ticker.remove(podiumTick);
-      podiumTick = null;
-    }
-    podiumChars = [];
-    if (podiumScene) {
-      podiumScene.destroy({ children: true });
-      podiumScene = null;
-    }
+    podiumHandle?.destroy();
+    podiumHandle = null;
   }
 
   function makeBoxSprite(): Container {
@@ -782,118 +773,6 @@ export function createRaceRenderer(): RaceRenderer {
     posById.set(r.id, { x, y, heading: 1 });
   }
 
-  // ── Lane-intro (athlete-introduction) reel ──────────────────────────────────
-  // Renderer-only spotlight tour over the start line, run BEFORE the race plays.
-  // Per-racer beat timing (seconds): a spotlight slide-in, a hold while the racer
-  // waves, then move on. introLayer sits above charLayer so the lifted racer + its
-  // spotlight draw over the dim shadow. Tweak these two to retune the pacing — the
-  // entrance ease, card pop, and dim ramp all key off INTRO_IN. Beat is ~1.35s
-  // (a touch leisurely so each racer registers; the skip button covers impatience).
-  const INTRO_IN = 0.3; // spotlight/card ease-in for each racer (entrance not too snappy)
-  const INTRO_HOLD = 1.05; // hold (racer waves)
-  const INTRO_BEAT = INTRO_IN + INTRO_HOLD; // total per racer ≈ 1.35s
-  const introLayer = new Container();
-  introLayer.sortableChildren = true;
-  // Which view is currently lifted into introLayer (so it can be restored to
-  // charLayer at the next beat / on cleanup). null between beats / when idle.
-  let introLifted: RacerView | null = null;
-
-  /** Move a racer's body + tag back down into the normal char layer. */
-  function lowerIntroRacer(): void {
-    if (!introLifted) return;
-    introLifted.tag.root.visible = false; // hide again until the race reveals all tags
-    charLayer.addChild(introLifted.character.root, introLifted.tag.root);
-    introLifted = null;
-  }
-
-  /** Tear down all intro visuals (idempotent). Does NOT fire onDone. */
-  function clearIntroVisuals(): void {
-    if (introTick) {
-      app.ticker.remove(introTick);
-      introTick = null;
-    }
-    lowerIntroRacer();
-    introDim?.destroy();
-    introDim = null;
-    introSpot?.destroy();
-    introSpot = null;
-    introBanner?.destroy();
-    introBanner = null;
-    introLayer.removeFromParent();
-    // Re-reveal all racer name tags the reel hid (no-op if it never ran).
-    if (introActive) for (const vw of views.values()) vw.tag.root.visible = true;
-    introActive = false;
-  }
-
-  /**
-   * Build the intro info card for the racer being introduced — placed right ABOVE
-   * the spotlit animal (not a top-of-screen banner) so name, species, and team
-   * read in one spot with no up/down eye travel. Rows (top→bottom):
-   *   • name (large)            — the participant's (possibly custom) display name
-   *   • "🐧 펭귄" species line   — the animal kind from characterCatalog (so a custom
-   *                               name is still grounded to its animal)
-   *   • "● {팀}팀" team chip     — team mode only, reusing the shared teamPalette
-   *                               (same fill/trim as the leaderboard dot / vest)
-   * In individual mode the team chip is omitted. The card anchors at its BOTTOM
-   * centre (y=0 = card bottom) so the tick can just sit it above the racer's head.
-   */
-  function makeIntroCard(name: string, species: string, tint: number, team: (typeof teamPalette)[TeamId] | null): Container {
-    const c = new Container();
-    const nameText = new Text({
-      text: name,
-      style: { fontFamily: 'sans-serif', fontSize: 28, fontWeight: '900', fill: 0xffffff, stroke: { color: 0x1f2a1c, width: 6 }, align: 'center' },
-    });
-    nameText.anchor.set(0.5);
-    const speciesText = new Text({
-      text: species,
-      style: { fontFamily: 'sans-serif', fontSize: 17, fontWeight: '800', fill: 0xfff0c0, stroke: { color: 0x1f2a1c, width: 4 }, align: 'center' },
-    });
-    speciesText.anchor.set(0.5);
-
-    // Team chip (colour dot + "{팀}팀"), sized first so the card width fits it.
-    let chip: Container | null = null;
-    let chipW = 0;
-    if (team) {
-      chip = new Container();
-      const chipLabel = new Text({
-        text: `${team.label}팀`,
-        style: { fontFamily: 'sans-serif', fontSize: 15, fontWeight: '800', fill: 0xffffff, stroke: { color: 0x1f2a1c, width: 4 } },
-      });
-      chipLabel.anchor.set(0.5);
-      const dotR = 6;
-      const gap = 7;
-      chipW = dotR * 2 + gap + chipLabel.width;
-      // Colour dot (team fill) + trim ring for white/black readability — the same
-      // fill/trim pair the vest + leaderboard use.
-      const dot = new Graphics().circle(0, 0, dotR).fill({ color: hexNum(team.fill) });
-      dot.stroke({ color: hexNum(team.trim), width: 2 });
-      dot.position.set(-chipW / 2 + dotR, 0);
-      chipLabel.position.set(-chipW / 2 + dotR * 2 + gap + chipLabel.width / 2, 0);
-      chip.addChild(dot, chipLabel);
-    }
-
-    const w = Math.max(nameText.width, speciesText.width, chipW) + 36;
-    const h = (chip ? 78 : 58);
-    // Bottom-anchored card: top at -h, bottom at 0 (sits above the racer's head).
-    const bg = new Graphics().roundRect(-w / 2, -h, w, h, 14).fill({ color: tint, alpha: 0.92 });
-    bg.stroke({ color: team ? hexNum(team.fill) : 0xffffff, width: team ? 5 : 3 });
-    c.addChild(bg);
-
-    // Stack the rows from the top of the card down.
-    let y = -h + 22;
-    nameText.position.set(0, y);
-    c.addChild(nameText);
-    y += 23;
-    speciesText.position.set(0, y);
-    c.addChild(speciesText);
-    if (chip) {
-      y += 21;
-      chip.position.set(0, y);
-      c.addChild(chip);
-    }
-    return c;
-  }
-
   const renderer: RaceRenderer = {
     get canvas() {
       return app.canvas as HTMLCanvasElement | undefined;
@@ -918,8 +797,7 @@ export function createRaceRenderer(): RaceRenderer {
     buildScene(cfg, opts) {
       config = cfg;
       theme = resolveTheme(opts?.arenaId, cfg.seed);
-      clearIntroVisuals(); // drop any stale intro reel before rebuilding the field
-      introDone = null;
+      laneIntro.clear(); // drop any stale intro reel before rebuilding the field
       clearPodium();
       for (const v of views.values()) v.character.destroy();
       views.clear();
@@ -1662,173 +1540,7 @@ export function createRaceRenderer(): RaceRenderer {
       fx.root.visible = false;
       bubbles.root.visible = false;
 
-      podiumScene = new Container();
-      const baseY = height * 0.66;
-      podiumScene.addChild(new Graphics().rect(0, 0, width, height).fill(0x4aa3e0));
-      podiumScene.addChild(new Graphics().rect(0, baseY, width, height - baseY).fill(0x3f8fd0));
-      app.stage.addChildAt(podiumScene, 1); // above track, below characters
-
-      const slotX = [width / 2, width / 2 - 160, width / 2 + 160]; // 1st centre, 2nd left, 3rd right
-      const blockH = [150, 108, 80];
-      const blockColor = [0xffd23f, 0xc8cbd0, 0xcd8b53];
-      const bw = 120;
-      const shown = new Set<string>();
-
-      if (config.teamMode) {
-        // ── TEAM podium: blocks are TEAMS, ranked by engine team score. ──────────
-        // `result.scoring.order` is the authoritative winner-first teamId array for
-        // all three team modes (teamRankSum / teamFirstPlace / teamRelay, s24).
-        //   • 1·2·3등팀 → blocks 1/2/3 (up to 4 members each, clustered on the block)
-        //   • 1등팀만 방방(celebrate); 2·3등팀 서 있음('finished'); 4등팀↓ 단상 밑 좌절.
-        // Members of a team are ordered by finish so its best racer leads the cluster.
-        const teamOrder = result.scoring.type === 'team' ? result.scoring.order : [];
-        const finishRank = new Map<string, number>();
-        result.order.forEach((id, i) => finishRank.set(id, i));
-        const membersOf = (teamId: string): string[] =>
-          config!.participants
-            .filter((p) => (p.teamId ?? p.id) === teamId && views.has(p.id))
-            .map((p) => p.id)
-            .sort((a, b) => (finishRank.get(a) ?? 1e9) - (finishRank.get(b) ?? 1e9));
-        const MAX_ON_BLOCK = 4; // crowd cap per block
-
-        teamOrder.forEach((teamId, teamRank) => {
-          const allMembers = membersOf(teamId);
-          if (!allMembers.length) return;
-
-          if (teamRank < 3) {
-            // On a podium block. 1 등팀 깝친다, 2·3 등팀 중립. Up to MAX_ON_BLOCK stand
-            // on the block; any overflow (a big team) clusters on the GROUND in
-            // front of the block in the SAME pose (winning team still celebrates).
-            const onBlock = allMembers.slice(0, MAX_ON_BLOCK);
-            const overflow = allMembers.slice(MAX_ON_BLOCK);
-            const x = slotX[teamRank];
-            const h = blockH[teamRank];
-            // Scale block width to team size (wider for bigger teams).
-            const teamSpan = allMembers.length;
-            const scaledBw = Math.max(bw, bw + (teamSpan - 1) * 20);
-            const block = new Graphics().roundRect(x - scaledBw / 2, baseY - h, scaledBw, h, 8).fill(blockColor[teamRank]);
-            block.stroke({ color: 0xffffff, width: 3, alpha: 0.65 });
-            const num = new Text({ text: `${teamRank + 1}`, style: { fontSize: 46, fontWeight: '900', fill: 0xffffff } });
-            num.anchor.set(0.5);
-            num.position.set(x, baseY - h / 2);
-            podiumScene!.addChild(block, num);
-            // Widen the number text anchor area to match the block.
-            num.scale.set(scaledBw / bw, 1);
-
-            const phase = teamRank === 0 ? 'celebrate' : 'finished';
-            // Fan the on-block members across the block top in a tidy huddle.
-            onBlock.forEach((id, i) => {
-              const v = views.get(id);
-              if (!v) return;
-              const span = onBlock.length;
-              const t = span > 1 ? i / (span - 1) - 0.5 : 0; // -0.5..0.5
-              const px = x + t * Math.min(scaledBw * 0.62, 26 + span * 14);
-              const py = baseY - h - 14 + (i % 2) * 12; // slight stagger so they don't fully overlap
-              v.character.root.visible = true;
-              v.character.root.position.set(px, py);
-              v.character.root.scale.set((teamRank === 0 ? 0.72 : 0.6) * v.size);
-              v.character.root.zIndex = 1000 + (3 - teamRank) * 10 + i;
-              // Show all team members' names on the podium.
-              v.tag.root.visible = true;
-              v.tag.setPosition(px, py - 78);
-              v.tag.root.zIndex = 200000 + i;
-              podiumChars.push({ char: v.character, winner: teamRank === 0, phase });
-              shown.add(id);
-            });
-            // Overflow members huddle on the ground hugging the block's base, in
-            // the same pose as the team (winning team keeps celebrating).
-            overflow.forEach((id, i) => {
-              const v = views.get(id);
-              if (!v) return;
-              const span = overflow.length;
-              const t = span > 1 ? i / (span - 1) - 0.5 : 0;
-              const px = x + t * Math.min(scaledBw * 0.92, 30 + span * 16);
-              const py = baseY + 30 + (i % 2) * 16; // just in front of the block, on the field
-              v.character.root.visible = true;
-              v.character.root.position.set(px, py);
-              v.character.root.scale.set(0.54 * v.size);
-              v.character.root.zIndex = 900 + (3 - teamRank) * 10 + i; // in front of the block face
-              v.tag.root.visible = true;
-              v.tag.setPosition(px, py - 68);
-              v.tag.root.zIndex = 200000 + i;
-              podiumChars.push({ char: v.character, winner: false, phase });
-              shown.add(id);
-            });
-          } else {
-            // 4 등팀 이하: no block — the whole team slumps below the podium, dejected
-            // (show all members with names so everyone is recognized).
-            const members = allMembers;
-            const span = members.length;
-            const teamSlot = teamRank - 3; // 0,1,... among the also-rans
-            const baseX = width / 2 + (teamSlot - 0.5) * 240; // spread also-ran teams along the front
-            members.forEach((id, i) => {
-              const v = views.get(id);
-              if (!v) return;
-              const t = span > 1 ? i / (span - 1) - 0.5 : 0;
-              const px = baseX + t * Math.min(120, 50 + span * 20);
-              const py = baseY + 56 + (i % 2) * 16; // on the field, below the blocks
-              v.character.root.visible = true;
-              v.character.root.position.set(px, py);
-              v.character.root.scale.set(0.52 * v.size);
-              v.character.root.zIndex = 800 + i;
-              v.tag.root.visible = true;
-              v.tag.setPosition(px, py - 68);
-              v.tag.root.zIndex = 200000 + i;
-              podiumChars.push({ char: v.character, winner: false, phase: 'dejected' });
-              shown.add(id);
-            });
-          }
-        });
-      } else {
-        // ── INDIVIDUAL podium (unchanged): top-3 racers, all celebrate. ──────────
-        const top = result.order.slice(0, Math.min(3, result.order.length));
-        top.forEach((id, rank) => {
-          const x = slotX[rank];
-          const h = blockH[rank];
-          const block = new Graphics().roundRect(x - bw / 2, baseY - h, bw, h, 8).fill(blockColor[rank]);
-          block.stroke({ color: 0xffffff, width: 3, alpha: 0.65 });
-          const num = new Text({ text: `${rank + 1}`, style: { fontSize: 46, fontWeight: '900', fill: 0xffffff } });
-          num.anchor.set(0.5);
-          num.position.set(x, baseY - h / 2);
-          podiumScene!.addChild(block, num);
-
-          const v = views.get(id);
-          if (!v) return;
-          v.character.root.visible = true;
-          v.character.root.position.set(x, baseY - h - 14);
-          v.character.root.scale.set((rank === 0 ? 0.85 : 0.72) * v.size);
-          v.character.root.zIndex = 1000 + (3 - rank);
-          v.tag.root.visible = true;
-          v.tag.setPosition(x, baseY - h - 92);
-          v.tag.root.zIndex = 200000;
-          podiumChars.push({ char: v.character, winner: rank === 0, phase: 'celebrate' });
-          shown.add(id);
-        });
-      }
-
-      for (const [id, v] of views) {
-        if (!shown.has(id)) {
-          v.character.root.visible = false;
-          v.tag.root.visible = false;
-        }
-      }
-
-      podiumClock = 0;
-      podiumTick = (ticker) => {
-        podiumClock += ticker.deltaMS / 1000;
-        for (const pc of podiumChars) {
-          // 1등팀 깝친다 (celebrate); 2·3등팀 중립 'finished'; 4등팀↓ 'dejected' 좌절.
-          pc.char.update({
-            phase: pc.phase,
-            speedNorm: pc.phase === 'celebrate' ? (pc.winner ? 1 : 0.7) : 0.4,
-            clock: podiumClock,
-            facing: 0,
-            heading: 1,
-            reducedMotion,
-          });
-        }
-      };
-      app.ticker.add(podiumTick);
+      podiumHandle = createPodiumScene(app, width, height, config, result, views, () => reducedMotion);
     },
 
     pumpFx(seconds) {
@@ -1844,156 +1556,11 @@ export function createRaceRenderer(): RaceRenderer {
     },
 
     playLaneIntro(onDone) {
-      // Restart cleanly if called while one is already running.
-      if (introActive) clearIntroVisuals();
-      introActive = true;
-      introDone = onDone;
-
-      // Intro order: slot order by default. In TEAM mode, group teammates so each
-      // team is introduced back-to-back (team appearance order; slot order kept
-      // WITHIN a team) — a stable group sort, so it only reorders, never drops/
-      // dupes. Individual mode is untouched (plain slot order). Renderer-only.
-      const slotOrder = config ? config.participants.filter((p) => views.has(p.id)) : [];
-      let order: string[];
-      if (config?.teamMode) {
-        const teamRank = new Map<string, number>(); // teamId → first-appearance index
-        for (const p of slotOrder) {
-          const key = p.teamId ?? p.id;
-          if (!teamRank.has(key)) teamRank.set(key, teamRank.size);
-        }
-        order = slotOrder
-          .map((p, i) => ({ id: p.id, rank: teamRank.get(p.teamId ?? p.id)!, i }))
-          .sort((a, b) => a.rank - b.rank || a.i - b.i) // group by team, slot order within
-          .map((e) => e.id);
-      } else {
-        order = slotOrder.map((p) => p.id);
-      }
-      // Nothing to introduce (no scene / empty field) → just signal completion.
-      if (!order.length) {
-        introActive = false;
-        const cb = introDone;
-        introDone = null;
-        cb?.();
-        return;
-      }
-
-      // Reduced motion: skip the theatrics, fire onDone next tick so the caller's
-      // flow stays async-consistent (no spotlight reel under reduced motion).
-      if (reducedMotion) {
-        const cb = introDone;
-        introDone = null;
-        introActive = false;
-        queueMicrotask(() => cb?.());
-        return;
-      }
-
-      // Full-screen shadow + the spotlight live in their own layer above the
-      // racers (so the lifted racer + spotlight draw over the dim).
-      app.stage.addChild(introLayer);
-      introLayer.zIndex = 5; // above charLayer/fx, below commentary added later
-      introDim = new Graphics().rect(0, 0, width, height).fill({ color: 0x0a0e16, alpha: 1 });
-      introDim.alpha = 0; // ramps up via introDim.alpha in the tick
-      introSpot = new Graphics();
-      introSpot.zIndex = 1; // under the lifted racer (added at higher z below)
-      introLayer.addChildAt(introDim, 0);
-      introLayer.addChild(introSpot);
-      // Hide every racer's small name tag for the reel — they all start stacked on
-      // the same spot, so their tags would bleed through the spotlight. Each
-      // racer's tag is revealed only while it is the one under the light (and the
-      // big banner names it anyway). Restored on cleanup so the race shows them.
-      for (const vw of views.values()) vw.tag.root.visible = false;
-
-      let idx = -1; // current racer index; -1 → not started (forces first setup)
-      let beat = 0; // seconds into the current racer's beat
-      const DIM_ALPHA = 0.62;
-
-      const startBeat = (i: number): void => {
-        lowerIntroRacer();
-        const id = order[i];
-        const v = views.get(id);
-        if (!v) return;
-        introLifted = v;
-        // Lift this racer above the dim. The small name tag stays hidden — the
-        // info card (built below) names the racer right above its head, so the
-        // tag would just overlap it.
-        introLayer.addChild(v.character.root);
-        v.character.root.zIndex = 10;
-        v.glow.visible = false;
-        // Fresh info card for this racer: name + "🐧 펭귄" species + (team mode)
-        // team chip. Positioned above the racer's head each tick (not top-centre)
-        // so everything reads in one spot. Team accent reuses the shared teamPalette.
-        introBanner?.destroy();
-        const teamId = config?.participants.find((p) => p.id === id)?.teamId;
-        const team = isTeamId(teamId) ? teamPalette[teamId] : null;
-        introBanner = makeIntroCard(namesById[id] ?? id, speciesLabel(charIdById.get(id) ?? id), v.tint, team);
-        introBanner.zIndex = 11;
-        introLayer.addChild(introBanner);
-      };
-
-      introTick = (ticker) => {
-        const step = ticker.deltaMS / 1000;
-        // First tick: open with the very first racer.
-        if (idx < 0) {
-          idx = 0;
-          beat = 0;
-          startBeat(0);
-        } else {
-          beat += step;
-          if (beat >= INTRO_BEAT) {
-            idx++;
-            beat = 0;
-            if (idx >= order.length) {
-              // Done — tear down and fire onDone exactly once.
-              const cb = introDone;
-              introDone = null;
-              clearIntroVisuals();
-              cb?.();
-              return;
-            }
-            startBeat(idx);
-          }
-        }
-
-        const v = introLifted;
-        if (!v || !introSpot || !introDim) return;
-        // Spotlight follows the racer's start-line screen spot (set by the shell's
-        // frame-0 render, held in character.root.position).
-        const px = v.character.root.position.x;
-        const py = v.character.root.position.y;
-        const easeIn = Math.min(1, beat / INTRO_IN); // 0→1 over the slide-in
-
-        // Dim ramps up on the first racer, then stays down for the rest.
-        introDim.alpha = idx === 0 ? DIM_ALPHA * easeIn : DIM_ALPHA;
-
-        // Spotlight: a bright soft cone of light pooled on the racer. Pops in with
-        // the beat, then holds with a gentle breathing pulse.
-        const pulse = 1 + Math.sin(beat * 6) * 0.03;
-        const rad = (132 + 18 * Math.sin(beat * 4)) * easeIn * pulse;
-        introSpot.clear();
-        introSpot.circle(px, py + 6, rad * 1.06).fill({ color: 0xfff4c2, alpha: 0.18 * easeIn });
-        introSpot.circle(px, py + 6, rad).fill({ color: 0xfff8d8, alpha: 0.3 * easeIn });
-        introSpot.circle(px, py + 6, rad * 0.6).fill({ color: 0xffffff, alpha: 0.34 * easeIn });
-        introSpot.blendMode = 'add';
-
-        // Info card sits just above the racer's head (bottom-anchored), popping in
-        // with a scale overshoot. Riding the racer keeps name+species+team in one
-        // spot so the eye doesn't dart to the top of the screen.
-        if (introBanner) {
-          const pop = Math.min(1, beat / INTRO_IN);
-          introBanner.position.set(px, py - 84);
-          introBanner.scale.set(0.7 + 0.3 * pop + Math.sin(beat * 10) * 0.02 * (1 - pop));
-          introBanner.alpha = pop;
-        }
-        v.character.greet(beat, easeIn);
-      };
-      app.ticker.add(introTick);
+      laneIntro.play(onDone);
     },
 
     skipLaneIntro() {
-      const cb = introDone;
-      introDone = null;
-      clearIntroVisuals();
-      cb?.();
+      laneIntro.skip();
     },
 
     setReducedMotion(on) {
@@ -2013,8 +1580,7 @@ export function createRaceRenderer(): RaceRenderer {
     },
 
     destroy() {
-      clearIntroVisuals();
-      introDone = null;
+      laneIntro.clear();
       clearPodium();
       for (const v of views.values()) v.character.destroy();
       views.clear();

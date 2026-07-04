@@ -4,23 +4,30 @@ const SHOTS = 'tests/e2e/__screens__';
 
 // End-to-end: setup → start → countdown → race → finish gate → result + records.
 test('plays a full race and shows results with records', async ({ page }, info) => {
-  test.setTimeout(45_000);
+  test.setTimeout(90_000);
   await page.goto('/');
 
-  // Individual mode (default): add 3 participants via the "+ 참가자 추가" button.
+  // 1 lap so the real-time race finishes fast (default is 5 → gate never appears
+  // inside the timeout).
+  await page.locator('select[aria-label="바퀴 수"]').selectOption('1');
+
+  // Individual mode (default) seeds 2 participants on load — clear first, then
+  // add exactly 3 so the count is deterministic regardless of the seed.
+  await page.locator('.reset-all').click();
   const addBtn = page.locator('.add-btn');
   for (let i = 0; i < 3; i++) await addBtn.click();
   await expect(page.locator('.participant')).toHaveCount(3);
 
   await page.locator('button.start').click();
 
-  // Skip the countdown for a faster, deterministic-ish test.
-  const skip = page.locator('button.skip');
-  await skip.click().catch(() => {});
+  // Two skippable phases now precede the race: the lane-intro reel, then the
+  // countdown. Skip both (each has its own button; intro-skip also carries .skip).
+  await page.locator('button.intro-skip').click({ timeout: 5_000 }).catch(() => {});
+  await page.locator('button.skip').click({ timeout: 5_000 }).catch(() => {});
 
   // Feature C: the race ends on a "시상식 보러가기" gate, not the podium directly.
   const gate = page.locator('button.podium-gate');
-  await expect(gate).toBeVisible({ timeout: 30_000 });
+  await expect(gate).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('.result-overlay')).toHaveCount(0);
   // force: the gate gently bobs (CSS animation), which Playwright reads as unstable.
   await gate.click({ force: true });
