@@ -150,3 +150,40 @@ export function easeOutCubic(t: number): number {
   const c = Math.max(0, Math.min(1, t));
   return 1 - (1 - c) * (1 - c) * (1 - c);
 }
+
+/** Just the fields the intro/podium ordering needs from a participant. */
+type Rostered = { readonly id: string; readonly teamId?: string };
+
+/**
+ * Lane-intro order (renderer/effects/LaneIntro): which racers are introduced and
+ * in what order. `present` filters to racers actually laid in the scene.
+ *   • individual → slot order untouched
+ *   • team       → teammates grouped back-to-back (team appearance order, slot
+ *                  order WITHIN a team) via a STABLE sort — only reorders, never
+ *                  drops or duplicates.
+ */
+export function laneIntroOrder(participants: readonly Rostered[], present: (id: string) => boolean, teamMode: boolean): string[] {
+  const slotOrder = participants.filter((p) => present(p.id));
+  if (!teamMode) return slotOrder.map((p) => p.id);
+  const teamRank = new Map<string, number>(); // teamId → first-appearance index
+  for (const p of slotOrder) {
+    const key = p.teamId ?? p.id;
+    if (!teamRank.has(key)) teamRank.set(key, teamRank.size);
+  }
+  return slotOrder
+    .map((p, i) => ({ id: p.id, rank: teamRank.get(p.teamId ?? p.id)!, i }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i) // group by team, slot order within
+    .map((e) => e.id);
+}
+
+/**
+ * Podium team members (renderer/ui/PodiumScene): a team's racers present in the
+ * scene, ordered by finish so the best finisher leads the cluster. Members
+ * missing from `finishRank` sort last (1e9 sentinel).
+ */
+export function podiumTeamMembers(participants: readonly Rostered[], teamId: string, present: (id: string) => boolean, finishRank: ReadonlyMap<string, number>): string[] {
+  return participants
+    .filter((p) => (p.teamId ?? p.id) === teamId && present(p.id))
+    .map((p) => p.id)
+    .sort((a, b) => (finishRank.get(a) ?? 1e9) - (finishRank.get(b) ?? 1e9));
+}

@@ -12,7 +12,7 @@ import { Application, Container, Graphics, Text } from 'pixi.js';
 import type { RaceConfig } from '../../engine/types.ts';
 import type { RacerView } from '../RaceRenderer.ts';
 import { teamPalette, type TeamId } from '../../data/teams.ts';
-import { speciesLabel, isTeamId, hexNum } from '../renderUtils.ts';
+import { speciesLabel, isTeamId, hexNum, laneIntroOrder } from '../renderUtils.ts';
 
 export interface LaneIntroDeps {
   app: Application;
@@ -175,21 +175,7 @@ export function createLaneIntro(deps: LaneIntroDeps): LaneIntroHandle {
     // team is introduced back-to-back (team appearance order; slot order kept
     // WITHIN a team) — a stable group sort, so it only reorders, never drops/
     // dupes. Individual mode is untouched (plain slot order). Renderer-only.
-    const slotOrder = config ? config.participants.filter((p) => views.has(p.id)) : [];
-    let order: string[];
-    if (config?.teamMode) {
-      const teamRank = new Map<string, number>(); // teamId → first-appearance index
-      for (const p of slotOrder) {
-        const key = p.teamId ?? p.id;
-        if (!teamRank.has(key)) teamRank.set(key, teamRank.size);
-      }
-      order = slotOrder
-        .map((p, i) => ({ id: p.id, rank: teamRank.get(p.teamId ?? p.id)!, i }))
-        .sort((a, b) => a.rank - b.rank || a.i - b.i) // group by team, slot order within
-        .map((e) => e.id);
-    } else {
-      order = slotOrder.map((p) => p.id);
-    }
+    const order = laneIntroOrder(config ? config.participants : [], (id) => views.has(id), config?.teamMode ?? false);
     // Nothing to introduce (no scene / empty field) → just signal completion.
     if (!order.length) {
       introActive = false;
