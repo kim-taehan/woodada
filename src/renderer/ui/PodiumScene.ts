@@ -12,6 +12,7 @@ import { Application, Container, Graphics, Text } from 'pixi.js';
 import type { RaceConfig, RaceResult } from '../../engine/types.ts';
 import type { PartsCharacter } from '../character/PartsCharacter.ts';
 import type { RacerView } from '../RaceRenderer.ts';
+import { podiumTeamMembers } from '../renderUtils.ts';
 
 export interface PodiumHandle {
   destroy(): void;
@@ -60,10 +61,7 @@ export function createPodiumScene(
     const finishRank = new Map<string, number>();
     result.order.forEach((id, i) => finishRank.set(id, i));
     const membersOf = (teamId: string): string[] =>
-      config.participants
-        .filter((p) => (p.teamId ?? p.id) === teamId && views.has(p.id))
-        .map((p) => p.id)
-        .sort((a, b) => (finishRank.get(a) ?? 1e9) - (finishRank.get(b) ?? 1e9));
+      podiumTeamMembers(config.participants, teamId, (id) => views.has(id), finishRank);
     const MAX_ON_BLOCK = 4; // crowd cap per block
 
     teamOrder.forEach((teamId, teamRank) => {
